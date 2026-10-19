@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+build/
+out/
+# Compiled jars
+*.jar
+# IDE
+.idea/
+*.iml
+.vscode/
+# MC server stuff (never commit)
+world/
+world_nether/
+world_the_end/
+logs/
+cache/
+libraries/
+*.log
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,56 @@
+// MC-AI Paper 插件构建配置
+// 使用纯 Paper API 依赖（无 paperweight），因为 M1 功能全是公开 API 能覆盖的
+// shadow 插件把 Gson shade 进 fat jar，避免与服务器已有插件版本冲突
+
+plugins {
+    id 'java'
+    id 'com.gradleup.shadow' version '9.5.0'
+}
+
+group = 'com.howard'
+version = '0.1.0'
+
+repositories {
+    mavenCentral()
+    // Paper 官方 Maven 仓库
+    maven { url 'https://repo.papermc.io/repository/maven-public/' }
+}
+
+dependencies {
+    // Paper API — compileOnly 因为 Paper 服务器自带运行时
+    compileOnly 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
+
+    // Gson — shade 进 fat jar，避免插件间版本冲突
+    implementation 'com.google.code.gson:gson:2.11.0'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}
+
+// shadow 配置：输出 MC-AI.jar（不带 classifier/版本号），shade Gson 到独立包防冲突
+tasks.shadowJar {
+    archiveClassifier = ''
+    archiveFileName = 'MC-AI.jar'    // 固定文件名，方便服务器替换
+    
+    // 把 Gson 重定位，防止与 Paper 服务器上其他插件的 Gson 版本冲突
+    relocate 'com.google.gson', 'com.howard.mcai.lib.gson'
+    
+    // 保持 MANIFEST.MF 里的插件入口
+    manifest {
+        attributes(
+            'Main-Class': 'com.howard.mcai.McaiPlugin'
+        )
+    }
+}
+
+tasks.build {
+    dependsOn tasks.shadowJar
+}

@@ -1,0 +1,18 @@
+# Paper 插件描述文件
+# Paper 1.21.1 加载插件时读这个文件识别入口和元数据
+
+name: MC-AI
+version: '0.1.1'
+main: com.howard.mcai.McaiPlugin
+api-version: '1.21'
+authors: ['Howard']
+description: 'MC AI v2 - M1 milestone: 中央计划器 + 单村民 + LLM 对话'
+commands:
+  ai:
+    description: 'MC-AI 管理命令'
+    usage: /<command> reload | test
+    permission: mcai.admin
+permissions:
+  mcai.admin:
+    description: 'MC-AI 管理员权限'
+    default: op

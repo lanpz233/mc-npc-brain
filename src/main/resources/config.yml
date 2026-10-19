@@ -1,0 +1,86 @@
+# MC-AI 插件配置
+# 所有配置项都有默认值，可以直接用
+
+# ===== LLM 后端（任意 OpenAI 兼容接口都可接）=====
+# 换后端 = 改下面 url / api-key / model 三行，然后游戏里执行 /ai reload 即可，不用重启服务器。
+# 也可以在游戏里用命令一键切（自动写回本文件）：
+#   /ai llm                       查看当前后端
+#   /ai llm preset deepseek sk-xxx   切到预置后端（deepseek/openai/qwen/siliconflow/moonshot/ollama/local）
+#   /ai llm set <url> <model> [api-key]   自定义后端
+#
+# 常见云端后端（url 可只填域名或到 /v1，插件会自动补 /v1/chat/completions）：
+#   DeepSeek    url: https://api.deepseek.com/v1          model: deepseek-chat
+#   OpenAI      url: https://api.openai.com/v1            model: gpt-4o-mini
+#   通义千问     url: https://dashscope.aliyuncs.com/compatible-mode/v1   model: qwen-plus
+#   硅基流动     url: https://api.siliconflow.cn/v1        model: Qwen/Qwen2.5-7B-Instruct
+#   Moonshot    url: https://api.moonshot.cn/v1           model: moonshot-v1-8k
+#   本地 Ollama  url: http://localhost:11434/v1           model: qwen3.5-9b   （需保持 Ollama 常驻，api-key 随便填）
+#   本地 llama-server（当前默认，最省事：不用起任何云服务，但每次要自己启进程）
+#               url: http://localhost:8080/v1/chat/completions   model: qwen3.5-9b
+#
+# 想让 NPC 有反应又不想自己启模型 → 把 url/api-key/model 换成上面任一云端值即可。
+llm:
+  url: 'http://localhost:8080/v1/chat/completions'
+  api-key: 'mcai'             # 留空 = 不发 Authorization 头（本机 llama-server / 内网代理常用）
+  # 模型名。填 'auto'（或留空）= 插件在运行时自动探测后端"当前在用的模型"：
+  #   ① Ollama /api/ps（当前加载在显存的，就是你在 Ollama 里选的）→ ② /api/tags → ③ /v1/models
+  #   30 秒缓存；模型被换掉/删掉时自动重探并重试一次 —— 在 Ollama 里换模型后不用改这里。
+  # 想固定用某个模型就直接写名字（如 deepseek-chat / qwen3.5-9b-uncensored-mc）。
+  # 游戏内改：/ai llm model <模型名|auto>，或 /ai llm list 看后端有哪些模型
+  model: 'qwen3.5-9b'
+  connect-timeout-ms: 5000
+  read-timeout-ms: 30000      # 云端 API 建议 60000（排队+长回复可能超 30 秒）
+  max-tokens: 1024
+  reasoning-effort: ''        # 关思考填 'none'（Qwen3.5/Ollama）；云端不支持的留空
+  keep-alive: '60m'           # Ollama 专用（模型驻留时长）；只在 url 指向本机时才发送，云端自动跳过
+
+tick:
+  interval-ticks: 60          # 表现层频率：3 秒（Paper 服 20 tps）
+  social-interval-ticks: 1200 # 社交层频率：60 秒（八卦传话 / 好感衰减，全村范围）
+  player-scan-radius: 10      # 扫描半径（方块）—— 玩家 10 格内的生物才"醒着"
+
+social:
+  ambient-chat-enabled: true     # NPC 自动闲聊：32 格内有 AI 村民且附近 48 格有玩家时，每轮由 LLM 真实对话
+  ambient-chat-radius: 32        # 自动闲聊触发半径（方块）
+  ambient-chat-interval-seconds: 30  # 自动闲聊触发间隔（秒）
+  group-chat-enabled: true       # 玩家群体聊天：附近 NPC 规则附和 + 点名/说"大家"时单独 LLM 回复
+  group-chat-radius: 12          # 群体聊天收集附近 NPC 的半径（方块）
+
+bubble:
+  duration-ticks: 120        # 6 秒后自动消失（长回复按字数自动加时，最长 40 秒）
+  offset-y: 0.4               # 气泡相对生物头顶的 Y 偏移（0.4 低一点贴近头，0.8 偏高）
+  text-scale: 0.6             # 气泡文字缩放（0.5~0.7 观感最佳，1.0 会显得太大）
+  background-alpha: 70        # 底板不透明度 0~255（70=半透明，200=深黑，255=全黑）
+
+memory:
+  max-chat-history-tokens: 1500
+  debounce-flush-ticks: 10    # 500ms debounce
+
+# 需求系统（SPEC 2.14）—— NPC 主动性来源：hunger/energy/boredom/curiosity/social 五项需求
+# 随时间自然增长（性格标签修正涨速），越过 threshold 触发 LLM 自主行动（找吃/闲逛/找人聊/探索）
+needs:
+  autonomy-enabled: true        # 是否启用需求驱动的 LLM 自主行动（增长/吃东西等规则行为不受影响）
+  interval-seconds: 30          # 需求层 tick 间隔（秒）
+  threshold: 80                 # 自主行动触发阈值（0-100）
+  autonomy-cooldown-seconds: 120  # 每个 NPC 自主行动的冷却（秒）
+  visibility-radius: 32         # 范围内无玩家则不触发自主行动（省本地模型算力）
+
+# 权限三档（SPEC 2.14）—— 平民（默认）/ 亲信（favor 派生）/ 神使（指令授予，audit.log 审计）
+# 注：favor（好感度）按玩家独立计算，每个玩家对每个 NPC 各有各的好感。
+permissions:
+  confidant-favor: 60           # 与玩家 favor ≥ 该值自动成为亲信（可进其领地、用工作台箱子）
+  territory-radius: 24          # 玩家领地半径（以床重生点为圆心），平民不得在内破坏方块
+  teleport-confirm-timeout-seconds: 30  # 神使传送玩家的聊天确认"好"的有效期
+  request-item-favor: 40        # 「可以跟 NPC 索要物品」的好感门槛（按玩家独立）：不够则婉拒
+
+# 调试开关
+debug:
+  enabled: false                # true = 把 MC-AI 蓝色调试行发到玩家聊天框（默认只进控制台日志，不刷屏）
+
+villagers:
+  blacksmith:
+    name: '老王'
+    spawn-world: 'world'
+    spawn-x: 100
+    spawn-y: 64
+    spawn-z: 100
