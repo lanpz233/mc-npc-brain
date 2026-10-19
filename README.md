@@ -16,10 +16,16 @@
 
 ## 构建
 
-```bash
-./gradlew shadowJar
-# 输出 build/libs/MC-AI.jar，扔进服务器 plugins/ 重启即可
+```bat
+gradle shadowJar
 ```
+输出 `build\libs\MC-AI.jar`，覆盖服务器 `plugins/` 里的旧 jar，然后**重启服务器**（别用 `/reload`）。
+
+前置条件（只需装一次）：
+1. JDK 21（[Temurin 21](https://adoptium.net/zh-CN/temurin/releases/?version=21) 下 Windows x64 的 `.msi`，一路下一步）
+2. Gradle：[官网](https://gradle.org/install/) 下 `binary-only` zip，解压后把 `bin` 目录加到 PATH；或直接让你的 agent 打包（它之前打过 v0.1.1，环境现成）
+
+第一次构建会自动下载依赖（Paper API 等），多等几分钟。
 
 ## 运行要求
 
