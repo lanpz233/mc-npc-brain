@@ -21,7 +21,7 @@ import java.util.Map;
 public final class NeedsState {
 
     public static final String HUNGER = "hunger";      // 饥饿：涨得快，满了找吃的/做饭/买食物
-    public static final String ENERGY = "energy";      // 精力：干活熬夜消耗，低了回家睡觉（反向：睡觉恢复）
+    public static final String ENERGY = "energy";      // 疲惫：越高越累；熬夜/干活涨，睡觉恢复
     public static final String BOREDOM = "boredom";    // 无聊：无所事事涨，满了找朋友唠嗑/闲逛
     public static final String CURIOSITY = "curiosity";// 好奇：看到新事物涨，满了去探索/围观
     public static final String SOCIAL = "social";      // 社交：独处涨，满了主动找人聊天
@@ -65,7 +65,7 @@ public final class NeedsState {
             Map.entry("money_grubber", Map.of(BOREDOM, 1.2)));
 
     public NeedsState() {
-        this(30, 70, 20, 20, 30);
+        this(30, 30, 20, 20, 30);
     }
 
     public NeedsState(double hunger, double energy, double boredom, double curiosity, double social) {

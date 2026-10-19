@@ -308,9 +308,27 @@ public final class BubbleManager implements Listener {
         cleanupTaskId.put(entityUuid, taskId);
     }
 
+    /**
+     * 清掉某个生物的气泡（村民死亡时立即清，不等自然过期）。
+     * 主线程调用。
+     */
+    public void clearFor(UUID entityUuid) {
+        Integer taskId = cleanupTaskId.remove(entityUuid);
+        if (taskId != null) {
+            Bukkit.getScheduler().cancelTask(taskId);
+        }
+        pendingBubbles.remove(entityUuid);
+        UUID bubbleUuid = villagerToBubble.remove(entityUuid);
+        if (bubbleUuid != null) {
+            Entity b = Bukkit.getEntity(bubbleUuid);
+            if (b != null && b.isValid()) {
+                b.remove();
+            }
+        }
+    }
+
     /** 清理所有气泡（onDisable 调用） */
-    public void clearAll() {
-        // 停掉 pending 监视任务并清空等待队列
+    public void clearAll() {        // 停掉 pending 监视任务并清空等待队列
         if (watcherTask != null) {
             watcherTask.cancel();
             watcherTask = null;

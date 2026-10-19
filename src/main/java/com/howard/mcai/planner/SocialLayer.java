@@ -46,6 +46,9 @@ public final class SocialLayer extends TickLayer {
         this.bubbleManager = bubbleManager;
     }
 
+    /** 上次补货的"天数"（getFullTime()/24000），跨天触发一次 */
+    private long lastRestockDay = -1;
+
     @Override
     protected void onTick(CentralPlanner planner) {
         for (VillagerState vState : villagers.values()) {
@@ -54,6 +57,45 @@ public final class SocialLayer extends TickLayer {
             plugin.refreshVillagerProfession(vState);
             maybeGossip(vState);
             decayFavor(vState);
+        }
+        dailyRestock();
+    }
+
+    /**
+     * 每日补货（SPEC 2.13"NPC 每天按职业补少量基础物资"）：
+     * 商店卖空不能永久空店。每天（游戏时间）一次：
+     * <ul>
+     *   <li>口粮保底：面包少于 4 → 补到 8（别让村民饿死）</li>
+     *   <li>职业招牌：seedProfessionPool 补 2-3 种职业物品（小量）</li>
+     *   <li>囤货超 96 件的不补（防背包无限膨胀）</li>
+     * </ul>
+     */
+    private void dailyRestock() {
+        long day = -1;
+        for (VillagerState vs : villagers.values()) {
+            if (vs.entity().isValid()) {
+                day = vs.entity().getWorld().getFullTime() / 24000L;
+                break;
+            }
+        }
+        if (day < 0 || day == lastRestockDay) return;
+        lastRestockDay = day;
+        int n = 0;
+        for (VillagerState vs : java.util.List.copyOf(villagers.values())) {
+            if (!vs.entity().isValid() || vs.entity().isDead()) continue;
+            int total = vs.inventorySnapshot().values().stream()
+                    .mapToInt(i -> i == null ? 0 : i).sum();
+            if (total > 96) continue;
+            int bread = vs.stockOf(org.bukkit.Material.BREAD);
+            if (bread < 8) {
+                vs.addToInventory(org.bukkit.Material.BREAD, 8 - bread);
+            }
+            vs.seedProfessionPool();
+            plugin.getMemoryStore().markDirty(vs.getUniqueId());
+            n++;
+        }
+        if (n > 0) {
+            plugin.getLogger().info("§b[MC-AI] 每日补货: " + n + " 个村民（第 " + day + " 天）");
         }
     }
 

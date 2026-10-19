@@ -73,9 +73,9 @@ public final class NeedsLayer extends TickLayer {
     private static final double SOCIAL_ALONE = 8.0;   // 独处涨
     private static final double SOCIAL_COMPANY = 2.0; // 有伴涨得慢
     private static final double SOCIAL_CHAT = 20.0;   // 跟玩家对话时大幅回落
-    private static final double ENERGY_SLEEP = 25.0;  // 睡觉恢复
-    private static final double ENERGY_NIGHT = 8.0;   // 夜间熬夜消耗
-    private static final double ENERGY_DAY = 4.0;     // 白天干活消耗
+    private static final double ENERGY_SLEEP = 25.0;  // 睡觉恢复（疲惫下降）
+    private static final double ENERGY_NIGHT = 8.0;   // 夜间熬夜涨疲惫
+    private static final double ENERGY_DAY = 4.0;     // 白天干活涨疲惫
 
     public NeedsLayer(McaiPlugin plugin, Map<UUID, VillagerState> villagers, BubbleManager bubbleManager) {
         super("needs", plugin.getPluginConfig().needsIntervalSeconds() * 20);
@@ -115,9 +115,12 @@ public final class NeedsLayer extends TickLayer {
             } else {
                 needs.add(NeedsState.HUNGER, -HUNGER_RATE * minutes * 0.3);  // 睡觉饿了也饿得慢
             }
+            // 疲惫语义（越高越累）：醒着涨疲惫（熬夜涨得快），睡觉恢复。
+            // 旧版符号反了（睡觉 +25、醒着 −8），导致"睡得越香越被判定困得不行"、
+            // 真累了反而永远触发不了睡觉 —— 2026-10-20 修正。
             needs.add(NeedsState.ENERGY, sleeping
-                    ? ENERGY_SLEEP * minutes
-                    : -(night ? ENERGY_NIGHT : ENERGY_DAY) * minutes);
+                    ? -ENERGY_SLEEP * minutes
+                    : (night ? ENERGY_NIGHT : ENERGY_DAY) * minutes);
             needs.add(NeedsState.BOREDOM,
                     (moving ? -BOREDOM_MOVE : (conversing ? 0 : (isIdle(vs) ? BOREDOM_IDLE : BOREDOM_BUSY))) * minutes
                             + (conversing ? -8.0 * minutes : 0));
@@ -138,6 +141,12 @@ public final class NeedsLayer extends TickLayer {
             // 睡觉时顺带缓解无聊/孤独（睡得香就不闷了）
             if (sleeping) {
                 needs.satisfy(NeedsState.BOREDOM, 2.0 * minutes * 10);
+            }
+
+            // === 2.5 真睡觉：疲惫 ≥70 + 天黑 → 找床真睡（不是干站着）
+            // 之前 autonomy 只会 move_to"走回家"，没有真正上床，疲惫永远下不来
+            if (!sleeping && night && needs.get(NeedsState.ENERGY) >= 70) {
+                trySleep(vs);
             }
 
             // 需求渐变是"软状态"：离散事件（吃东西/自主行动/需求满足）各自已 markDirty，
@@ -185,6 +194,10 @@ public final class NeedsLayer extends TickLayer {
             if (vs.stockOf(food) > 0) {
                 vs.removeFromInventory(food, 1);
                 vs.needs().satisfy(NeedsState.HUNGER, NeedsState.SATISFY_ON_EAT);
+                // 吃东西的样子：摆手 + 咀嚼音效 —— 不然就是凭空扣库存冒个气泡，像变魔术
+                vs.entity().swingMainHand();
+                vs.entity().getWorld().playSound(vs.entity().getLocation(),
+                        org.bukkit.Sound.ENTITY_GENERIC_EAT, 1.0f, 0.9f);
                 String zh = PromptBuilder.materialToZh(food);
                 bubbleManager.showDialog(vs.entity(), Smalltalk.nameOf(vs), "（掏出" + zh + "啃了几口，真香）");
                 plugin.getMemoryStore().markDirty(vs.getUniqueId());
@@ -193,6 +206,53 @@ public final class NeedsLayer extends TickLayer {
                 return;
             }
         }
+    }
+
+    // ===== 规则满足：真睡觉 =====
+
+    /**
+     * 真睡觉（规则动作，不调 LLM）：
+     * 疲惫 ≥70 + 天黑 → 找 16 格内的床；走到床边（2.5 格内）就上床睡。
+     * 睡着后本层每轮按 ENERGY_SLEEP 回疲惫，天亮原版 AI 叫醒。
+     * 没床 → 不瞎跑（原地待着），等天亮或玩家搭话。
+     */
+    private void trySleep(VillagerState vs) {
+        Villager v = vs.entity();
+        if (v.isSleeping() || v.isDead()) return;
+        Location bed = findNearbyBed(v, 16);
+        if (bed == null) return;  // 没床睡不了，别梦游
+        if (v.getLocation().distanceSquared(bed) <= 2.5 * 2.5) {
+            if (v.sleep(bed)) {
+                plugin.getLogger().info("§b[MC-AI] 睡觉: " + Smalltalk.nameOf(vs)
+                        + " 上床了（疲惫 " + (int) vs.needs().get(NeedsState.ENERGY) + "）");
+            }
+            return;
+        }
+        // 还没走到：挪过去（walkTowards 每 20 tick 走一步，对话中自动取消；下几轮 tick 走到就睡）
+        walkTowards(vs, bed.clone().add(0.5, 0, 0.5));
+    }
+
+    /** 16 格内找最近的床（y 上下 2 格），没有返回 null */
+    private Location findNearbyBed(Villager v, int radius) {
+        org.bukkit.World w = v.getWorld();
+        Location c = v.getLocation();
+        int cx = c.getBlockX(), cy = c.getBlockY(), cz = c.getBlockZ();
+        Location best = null;
+        double bestD2 = Double.MAX_VALUE;
+        for (int x = cx - radius; x <= cx + radius; x++) {
+            for (int y = cy - 2; y <= cy + 2; y++) {
+                for (int z = cz - radius; z <= cz + radius; z++) {
+                    org.bukkit.block.Block b = w.getBlockAt(x, y, z);
+                    if (!b.getType().name().endsWith("_BED")) continue;
+                    double d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz);
+                    if (d2 < bestD2) {
+                        bestD2 = d2;
+                        best = b.getLocation();
+                    }
+                }
+            }
+        }
+        return best;
     }
 
     // ===== LLM 自主行动 =====
@@ -204,6 +264,10 @@ public final class NeedsLayer extends TickLayer {
     private void maybeAutonomousAction(VillagerState vs, long cooldownMs) {
         var cfg = plugin.getPluginConfig();
         if (vs.interactingPlayer() != null || vs.llmBusy()) return;
+        // 睡着了别折腾：疲惫 ≥70 睡觉时会触发 trySleep 规则，LLM 再插一脚只会把人叫醒
+        if (vs.entity().isSleeping()) return;
+        // 下雨天不瞎逛：村民躲雨是常识，vanilla AI 会找遮蔽；需求等雨停再说
+        if (vs.entity().getWorld().hasStorm()) return;
         String dominant = vs.needs().dominantUrgent(cfg.needsThreshold());
         if (dominant == null) return;
         long now = System.currentTimeMillis();

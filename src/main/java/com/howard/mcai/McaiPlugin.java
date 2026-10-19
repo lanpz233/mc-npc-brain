@@ -16,6 +16,7 @@ import com.howard.mcai.listener.PlayerChatListener;
 import com.howard.mcai.listener.PlayerInteractListener;
 import com.howard.mcai.listener.PlayerQuitListener;
 import com.howard.mcai.listener.VillagerAutoRegisterListener;
+import com.howard.mcai.listener.VillagerDeathListener;
 import com.howard.mcai.memory.MemoryStore;
 import com.howard.mcai.mob.MobState;
 import com.howard.mcai.mob.VillagerProfession;
@@ -172,6 +173,8 @@ public final class McaiPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new PlayerInteractListener(this, villagers, mobStates, bubbleManager, planner), this);
         Bukkit.getPluginManager().registerEvents(new PlayerChatListener(this, villagers, planner, groupChat), this);
         Bukkit.getPluginManager().registerEvents(new PlayerAttackListener(villagers, mobStates, memoryStore, bubbleManager), this);
+        // AI 村民死亡 → 销户/掉落库存/亲友反应/记仇（"死人是大事"，和现实一样）
+        Bukkit.getPluginManager().registerEvents(new VillagerDeathListener(this, villagers, memoryStore, bubbleManager), this);
         // 原版村民自动注册 —— 监听 ChunkLoadEvent，把村庄里自然 spawn 的农夫/牧师等也纳入 AI 管理
         Bukkit.getPluginManager().registerEvents(new VillagerAutoRegisterListener(this, villagers), this);
         // 玩家下线 → 全量整理记忆（recent 并入 summary + 昨日小结，供下次上线开场白引用）
