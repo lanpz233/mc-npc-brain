@@ -356,10 +356,14 @@ public final class MemoryStore {
         // 每次调度时动态读配置（而非构造时缓存）—— /ai reload 换了新 config 对象后立即生效
         int taskId = Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, () -> {
             try {
-                for (UUID villagerUuid : dirtySet) {
+                // 先把脏集合"取走"再写：直接 for(dirtySet)+clear() 有竞态 ——
+                // 遍历和 clear 之间新 markDirty 的村民会被 clear 掉且没写盘，
+                // 关服时这部分记忆就丢了。快照+removeAll 让新标记的留到下一轮。
+                Set<UUID> batch = new java.util.HashSet<>(dirtySet);
+                dirtySet.removeAll(batch);
+                for (UUID villagerUuid : batch) {
                     writeToFile(villagerUuid);
                 }
-                dirtySet.clear();
             } finally {
                 flushScheduled.set(false);
             }

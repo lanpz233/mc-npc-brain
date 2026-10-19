@@ -59,6 +59,9 @@ public final class NeedsLayer extends TickLayer {
     /** 每轮 tick 全村最多触发 1 次自主决策调用（硬性限流） */
     private boolean autonomyTriggeredThisRound;
 
+    /** onTick 轮次计数 —— 需求渐变落盘节流用（每 10 轮补一次，不用每轮全量写盘） */
+    private long tickCount = 0;
+
     // ===== 增长速率（每分钟基准值，config 未覆盖时用默认） =====
     private static final double HUNGER_RATE = 10.0;   // 0→80 约 8 分钟（验收：10 分钟内出 3 种行为）
     private static final double BOREDOM_IDLE = 9.0;   // 无所事事时
@@ -86,6 +89,7 @@ public final class NeedsLayer extends TickLayer {
         var cfg = plugin.getPluginConfig();
         double minutes = cfg.needsIntervalSeconds() / 60.0;
         autonomyTriggeredThisRound = false;
+        tickCount++;
 
         for (VillagerState vs : List.copyOf(villagers.values())) {
             Villager v = vs.entity();
@@ -136,7 +140,12 @@ public final class NeedsLayer extends TickLayer {
                 needs.satisfy(NeedsState.BOREDOM, 2.0 * minutes * 10);
             }
 
-            plugin.getMemoryStore().markDirty(vs.getUniqueId());
+            // 需求渐变是"软状态"：离散事件（吃东西/自主行动/需求满足）各自已 markDirty，
+            // 这里每 10 轮（约 5 分钟）补一次即可。之前每 30 秒全村全量写盘，
+            // 写文件走主线程，村民一多就是周期性卡顿。
+            if (tickCount % 10 == 0) {
+                plugin.getMemoryStore().markDirty(vs.getUniqueId());
+            }
 
             // === 4. LLM 自主行动（限流：对话中/忙/冷却/没观众/本轮已触发 → 跳过） ===
             if (cfg.needsEnabled() && !autonomyTriggeredThisRound) {

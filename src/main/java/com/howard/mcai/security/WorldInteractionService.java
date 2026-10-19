@@ -53,6 +53,42 @@ public final class WorldInteractionService {
     /** 确认词 —— 玩家回复这些短词之一才放行（配合 SPEC"传送玩家需其聊天确认'好'"） */
     private static final String[] CONFIRM_WORDS = {"好", "好呀", "好的", "好吧", "行", "可以", "嗯", "没问题", "来吧"};
 
+    /** 世界交互动作半径（格）—— NPC 够不着太远的地方，防 LLM 传个千格外的坐标乱拆乱放 */
+    private static final double ACTION_RANGE = 32.0;
+
+    /**
+     * 目标点是否在 NPC 动作半径内（同世界才比距离）。
+     * break/place/teleport 的坐标都先过这一关：LLM 偶尔会编一个很远的坐标，
+     * 不拦的话村民能隔着整个地图拆方块。
+     */
+    private boolean inRange(VillagerState vs, Location loc) {
+        Location from = vs.entity().getLocation();
+        if (from.getWorld() == null || !from.getWorld().equals(loc.getWorld())) return false;
+        return from.distanceSquared(loc) <= ACTION_RANGE * ACTION_RANGE;
+    }
+
+    /**
+     * 落点安全检查（SPEC 2.13"传送只传自己且检查落点安全"）。
+     *
+     * @return null = 安全；非 null = 不安全的原因（直接拼进给玩家的反馈）
+     */
+    private static String unsafeLandingReason(Location dest) {
+        Block feet = dest.getBlock();
+        Block head = dest.clone().add(0, 1, 0).getBlock();
+        Block ground = dest.clone().add(0, -1, 0).getBlock();
+        Material feetType = feet.getType();
+        Material headType = head.getType();
+        if (feetType == Material.LAVA || headType == Material.LAVA) return "岩浆";
+        if (feetType == Material.FIRE || headType == Material.FIRE) return "火";
+        if (feetType == Material.CACTUS || headType == Material.CACTUS) return "仙人掌";
+        if (!feetType.isAir() || !headType.isAir()) return "卡在方块里";
+        Material groundType = ground.getType();
+        if (groundType.isAir()) return "悬空";
+        if (groundType == Material.LAVA) return "脚下是岩浆";
+        if (!groundType.isSolid()) return "脚下站不住";
+        return null;
+    }
+
     public WorldInteractionService(McaiPlugin plugin, PermissionManager permissions, AuditLog auditLog) {
         this.plugin = plugin;
         this.permissions = permissions;
@@ -190,12 +226,22 @@ public final class WorldInteractionService {
     public int takeFromPlayer(VillagerState vs, Player player, Material mat, int count) {
         if (vs == null || player == null || mat == null || mat.isAir() || count <= 0) return 0;
         int taken = 0;
-        for (ItemStack st : player.getInventory().getContents()) {
+        var inv = player.getInventory();
+        ItemStack[] contents = inv.getContents();
+        for (int i = 0; i < contents.length; i++) {
             if (taken >= count) break;
+            ItemStack st = contents[i];
             if (st == null || st.getType() != mat) continue;
             int need = count - taken;
             int take = Math.min(need, st.getAmount());
-            st.setAmount(st.getAmount() - take);
+            int rest = st.getAmount() - take;
+            if (rest <= 0) {
+                // 扣光直接清格：setAmount(0) 会在背包里留一个 0 数量的"幽灵物品"，
+                // 看着是空格但 getContents() 还能扫到，后续计数/收礼逻辑会把它当真格子
+                inv.setItem(i, null);
+            } else {
+                st.setAmount(rest);
+            }
             taken += take;
         }
         if (taken == 0) return 0;
@@ -213,6 +259,7 @@ public final class WorldInteractionService {
     private String breakBlock(VillagerState vs, String npcName, NpcRank rank, ToolCall tool) {
         Block block = argBlock(vs, tool);
         if (block == null) return "§e坐标无效";
+        if (!inRange(vs, block.getLocation())) return "§e太远了，够不着（" + (int) ACTION_RANGE + " 格内才行）";
         String params = "x=" + block.getX() + ",y=" + block.getY() + ",z=" + block.getZ()
                 + ",type=" + block.getType().name();
 
@@ -240,6 +287,7 @@ public final class WorldInteractionService {
     private String placeBlock(VillagerState vs, String npcName, NpcRank rank, ToolCall tool) {
         Block block = argBlock(vs, tool);
         if (block == null) return "§e坐标无效";
+        if (!inRange(vs, block.getLocation())) return "§e太远了，够不着（" + (int) ACTION_RANGE + " 格内才行）";
         Material mat = resolveItem(safeStr(tool, "material"));
         if (mat == null || !mat.isBlock()) return "§e那不是能放置的方块";
         boolean envoy = rank == NpcRank.ENVOY;
@@ -323,6 +371,13 @@ public final class WorldInteractionService {
         double z = argNum(tool, "z", Double.NaN);
         if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)) return "§e坐标无效";
         Location dest = new Location(vs.entity().getWorld(), x, y, z);
+        if (!inRange(vs, dest)) return "§e太远了，传不过去（" + (int) ACTION_RANGE + " 格内才行）";
+        String unsafe = unsafeLandingReason(dest);
+        if (unsafe != null) {
+            plugin.getLogger().info("§c[MC-AI] teleport 落点不安全: " + npcName + " → "
+                    + fmtLoc(dest) + " — " + unsafe);
+            return "§e那个地方落不了脚（" + unsafe + "），换个地方吧";
+        }
         boolean ok = vs.entity().teleport(dest);
         if (rank == NpcRank.ENVOY) {
             auditLog.log(npcName, vs.getUniqueId(), "teleport", "to=" + fmtLoc(dest), ok ? "OK" : "FAILED");

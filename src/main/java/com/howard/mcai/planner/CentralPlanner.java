@@ -744,6 +744,21 @@ public final class CentralPlanner extends BukkitRunnable {
             return;
         }
 
+        try {
+            triggerLLMInner(vState, player);
+        } catch (Exception e) {
+            // buildMessages()/chat() 若同步抛异常（如 prompt 拼装 bug），锁必须释放，
+            // 否则该 NPC 的 llmInFlight 永远 true → 永久失声，只能重启服务器
+            plugin.getLogger().log(java.util.logging.Level.SEVERE, "[MC-AI] triggerLLM 同步异常，已释放 LLM 锁", e);
+            vState.releaseLLM();
+        }
+    }
+
+    /**
+     * triggerLLM 的真实 body —— 抽成独立方法，让外层 try/catch 兜住同步异常。
+     * 注意：异步回调里的异常仍走各自的 exceptionally/runTask 分支，与这里无关。
+     */
+    private void triggerLLMInner(VillagerState vState, Player player) {
         int histSize = vState.chatHistory().size();
         String lastRole = vState.chatHistory().isEmpty() ? "空" : vState.chatHistory().getLast().role();
         sendDebug(player, "§b[MC-AI] → 调 LLM chatHistory=" + histSize + " 最后role=" + lastRole);
@@ -988,6 +1003,14 @@ public final class CentralPlanner extends BukkitRunnable {
     /** 幻想身份自称兜底（村民不该自称的身份）—— 不跟 rpGimmicks 重复 */
     private static final String[] FANTASY_IDENTITIES = {"冒险家", "猎人", "贵族", "佣兵", "勇士"};
 
+    /**
+     * 第四面墙词（拉丁）：必须整词匹配。
+     * 旧版用 lower.contains("ai")，会误伤所有含 ai 的英文词；更糟的是
+     * .replace("AI","俺") 大小写敏感地啃掉大写单词里的 AI（如 "TRAIN"→"TR俺N"）。
+     * 中文词（人工智能/游戏/服务器/模组）无此问题，保持 substring 匹配。
+     */
+    private static final Pattern META_TERM = Pattern.compile("(?i)\\b(ai|system|bug|mod)\\b");
+
     /** "我是X"/"俺是X"/"我是干X"/"就是X" 自称句式判定（去空格后匹配，单纯提到不算） */
     private static boolean isProfessionClaim(String noSpaceDialogue, String name) {
         return noSpaceDialogue.contains("我是" + name) || noSpaceDialogue.contains("俺是" + name)
@@ -1036,11 +1059,10 @@ public final class CentralPlanner extends BukkitRunnable {
         }
 
         // === 层级 4：轻微违规修正（AI/游戏机制 → 改成更自然的 MC 说法） ===
-        if (lower.contains("ai") || lower.contains("人工智能") || lower.contains("system")
-                || lower.contains("游戏") || lower.contains("bug") || lower.contains("版本")
-                || lower.contains("服务器") || lower.contains("mod") || lower.contains("模组")) {
-            dialogue = dialogue
-                    .replace("AI", "俺")
+        if (META_TERM.matcher(dialogue).find()
+                || lower.contains("人工智能") || lower.contains("游戏") || lower.contains("版本")
+                || lower.contains("服务器") || lower.contains("模组")) {
+            dialogue = META_TERM.matcher(dialogue).replaceAll("俺")
                     .replace("人工智能", "俺")
                     .replace("游戏", "村里事")
                     .replace("服务器", "村子")
