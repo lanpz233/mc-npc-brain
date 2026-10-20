@@ -1,6 +1,7 @@
 package com.howard.mcai.bubble;
 
 import com.howard.mcai.McaiPlugin;
+import com.howard.mcai.ai.LLMClient;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
@@ -119,7 +120,10 @@ public final class BubbleManager implements Listener {
      * @param durationTicks 显示时长（tick），传固定值覆盖自动计算
      */
     public void showDialog(LivingEntity entity, String speakerName, String text, long durationTicks) {
-        String body = text == null ? "" : text;
+        // 最终收口：无论调用方是谁，气泡正文都再过一遍剥离 —— 防止未来新增的展示路径
+        // 忘记清洗，把模型原始 JSON / 工具调用直接怼到玩家脸上。
+        String body = LLMClient.stripToolCalls(text == null ? "" : text);
+        if (body.isBlank()) return;  // 清洗后没有可读内容 → 不创建空气泡
         String display = "§6§l" + (speakerName == null || speakerName.isBlank() ? "村民" : speakerName)
                 + "\n§f" + body;
         // 会话框比裸气泡高，Y 偏移多抬一点，防止长回复盖住村民的脸

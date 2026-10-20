@@ -63,6 +63,46 @@ class LlmClientStripTest {
         assertEquals("好嘞", LLMClient.stripToolCalls("工具：say，content=\"好嘞\""));
     }
 
+    /** 没有外壳的 action/content 文本 */
+    @Test
+    void stripsBareActionKeyValueTail() {
+        assertEquals("", LLMClient.stripToolCalls("action: say, content: \"你好\""));
+    }
+
+    /** 裸 JSON 里 arguments 排在 name 前面也要能剥 */
+    @Test
+    void stripsBareJsonWithArgumentsBeforeName() {
+        assertEquals("走好", LLMClient.stripToolCalls(
+                "走好{\"arguments\":{\"message\":\"走好\"},\"name\":\"say\"}"));
+    }
+
+    /** 台词 + JSON 混排：只保留台词 */
+    @Test
+    void keepsDialogueAroundBareJson() {
+        assertEquals("行，我这就去。", LLMClient.stripToolCalls(
+                "行，我这就去。{\"name\":\"move_to\",\"arguments\":{\"x\":1,\"y\":2,\"z\":3}}"));
+    }
+
+    /** 残余守卫：黑名单没覆盖到的未知格式，整行丢弃（宁可沉默也不显示代码） */
+    @Test
+    void residualGuardDropsUnknownCodeFormats() {
+        // 未闭合的 JSON 尾巴
+        assertEquals("", LLMClient.stripToolCalls("你好{\"x\":1"));
+        // 中文 + 工具名残留
+        assertEquals("", LLMClient.stripToolCalls("你好，工具调用: npc_move_to"));
+        // 函数调用尾巴
+        assertEquals("", LLMClient.stripToolCalls("好嘞 x=1"));
+        // 引号 + 右括号的调用残骸
+        assertEquals("", LLMClient.stripToolCalls("好嘞\")"));
+    }
+
+    /** 正常中文台词（含全角括号、标点、数字）不能被残余守卫误伤 */
+    @Test
+    void keepsNormalChineseDialogue() {
+        String line = "（挠挠头）夜里怪黑的，你说这村里最近有啥新鲜事没？我今年 32 岁，住在村东头。";
+        assertEquals(line, LLMClient.stripToolCalls(line));
+    }
+
     /** 正常台词不能被误伤 */
     @Test
     void keepsPlainDialogue() {

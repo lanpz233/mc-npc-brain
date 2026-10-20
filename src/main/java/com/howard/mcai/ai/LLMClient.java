@@ -89,6 +89,26 @@ public final class LLMClient {
                     + "(?:content|message|text|内容|台词)\\s*[=:：]\\s*[\"']([^\"']*)[\"']\\s*[\\)）]?");
 
     /**
+     * 残余代码特征（最后一道守卫）：中文台词里几乎不会出现的 ASCII 组合。
+     * <ul>
+     *   <li>大括号、反引号 —— JSON / 代码块尾巴</li>
+     *   <li>ASCII 标识符紧跟 {@code (}、{@code =}、{@code :} —— 函数调用或 key:value</li>
+     *   <li>{@code <tag>} —— XML 标签</li>
+     *   <li>{@code snake_case} —— 工具名残留（npc_move_to 等）</li>
+     *   <li>引号后跟右括号 —— 被杀了一半的调用尾巴</li>
+     * </ul>
+     */
+    private static final Pattern CODE_RESIDUE = Pattern.compile(
+            "[{}`]"
+                    + "|\\b[A-Za-z_][A-Za-z0-9_]*\\s*[(=:]"
+                    + "|<\\s*/?\\s*[A-Za-z][^>]*>"
+                    + "|\\b[a-z][a-z0-9]*_[a-z0-9_]+\\b"
+                    + "|[\"']\\s*[)\\]}]");
+
+    /** 残余告警节流时间戳（毫秒） */
+    private static volatile long lastResidueWarnAt = 0L;
+
+    /**
      * 把统一工具注册表里的工具名并入 fallback 正则。可在每次 /ai reload 后重复调用（幂等）。
      *
      * @param names 工具名（传 wire 名：点号会破坏正则，注册表里 wire 名是下划线形式）
@@ -938,7 +958,35 @@ public final class LLMClient {
         cleaned = cleaned.replaceAll("(?s)```[\\s\\S]*?```", "").trim();
         cleaned = cleaned.replaceAll("(?s)```.*$", "").trim();
 
+        // 7. 残余代码守卫（最后一道白名单式保险）——
+        //    黑名单永远追不上模型的花样，所以凡仍带代码特征的整行直接丢弃：
+        //    大括号/反引号、ASCII 标识符跟括号或等号、XML 标签、下划线标识符、
+        //    引号后跟右括号（调用尾巴）。返回空串由调用方透传 "..."，并且打日志留证，
+        //    方便下次直接按真实格式补规则，而不是等玩家再报一次。
+        if (looksLikeCodeResidue(cleaned)) {
+            warnResidue(cleaned);
+            return "";
+        }
+
         return cleaned.trim();
+    }
+
+    /**
+     * 中文台词里几乎不会出现这些 ASCII 特征 —— 一旦出现，基本就是没剥干净的调用/JSON/XML。
+     * 注意刻意不把「ASCII 圆括号」整类判死：模型有时写 {@code (挠头)}，那是动作描写不是代码。
+     */
+    private static boolean looksLikeCodeResidue(String text) {
+        return text != null && !text.isEmpty() && CODE_RESIDUE.matcher(text).find();
+    }
+
+    /** 残余代码告警限流：30 秒最多一条，避免模型抽风时刷爆控制台 */
+    private static void warnResidue(String cleaned) {
+        long now = System.currentTimeMillis();
+        if (now - lastResidueWarnAt < 30_000L) return;
+        lastResidueWarnAt = now;
+        String sample = cleaned.length() > 160 ? cleaned.substring(0, 160) + "…" : cleaned;
+        java.util.logging.Logger.getLogger("MC-AI")
+                .warning("疑似代码残留，已整行丢弃: " + sample);
     }
 
     /**
