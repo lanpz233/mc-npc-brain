@@ -54,6 +54,15 @@ class LlmClientStripTest {
         assertEquals("好嘞", LLMClient.stripToolCalls("好嘞\n```json\n{\"action\":\"say\""));
     }
 
+    /** 伪调用外壳里包着台词：必须取出 content，而不是把台词一起删掉 */
+    @Test
+    void extractsSpeechFromWrappedCall() {
+        String raw = "工具 (\"say\",\ncontent=\"老李，今日这日头真毒，你那炉子火大没？\")";
+        assertEquals("老李，今日这日头真毒，你那炉子火大没？", LLMClient.stripToolCalls(raw));
+        // 冒号写法的外壳同样兼容
+        assertEquals("好嘞", LLMClient.stripToolCalls("工具：say，content=\"好嘞\""));
+    }
+
     /** 正常台词不能被误伤 */
     @Test
     void keepsPlainDialogue() {

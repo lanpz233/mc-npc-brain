@@ -232,7 +232,7 @@ ollama list
 | 命令 | 说明 |
 | --- | --- |
 | `/ai tool list` | 列出所有已注册工具 |
-| `/ai tool <工具名> <村民名> [JSON]` | 绕过模型直接调用工具（验收/排查） |
+| `/ai tool <工具名> <村民名> [参数... \| JSON]` | 绕过模型直接调用工具（验收/排查） |
 | `/ai behavior <村民名> [提示]` | 让行为模型基于真实状态选一步动作 |
 | `/ai spawn <名字>` | 生成一个 AI 村民 |
 | `/ai list` | 列出当前管理的 NPC |
@@ -246,12 +246,17 @@ ollama list
 ```text
 /ai tool npc.status.get 汤孟和
 /ai tool npc.inventory.get 汤孟和
-/ai tool world.observe.entities 汤孟和 {"radius":16,"limit":10}
+/ai tool world.observe.entities 汤孟和 16 10
+/ai tool npc.move_to 汤孟和 100 64 105
+/ai tool npc.move_to 汤孟和 ~1 ~0 ~-15
 /ai tool npc.move_to 汤孟和 {"x":100,"y":64,"z":105}
 /ai tool npc.task.get 汤孟和 {"task_id":"<上一步返回的 task_id>"}
 /ai tool npc.task.cancel 汤孟和 {"task_id":"<task_id>"}
 /ai behavior 汤孟和 走到玩家身后三格
 ```
+
+参数两种写法等价：位置参数按工具 schema 声明顺序填写（`npc.move_to` 为 `x y z speed`），
+也可以继续传 JSON 对象。坐标支持原版相对写法：`~` = 村民当前坐标，`~1` = +1 格，`~-15` = -15 格。
 
 工具名也可以写模型侧的短名（如 `npc_move_to`），分发层会归一化。
 

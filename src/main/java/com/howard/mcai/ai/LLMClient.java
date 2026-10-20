@@ -76,6 +76,19 @@ public final class LLMClient {
             "\\b([A-Za-z_]+)\\s*=\\s*\"?([^\\s,\\]\"']*)\"?");
 
     /**
+     * "工具 ("say", content="台词")" 这类伪调用外壳。
+     * <p>
+     * 实测 Qwen 会把调用写成：
+     * {@code 工具 ("say",\ncontent="老李，今日这日头真毒，你那炉子火大没？")}
+     * 外壳是 JSON/代码，只有 content 里的才是真正要对玩家说的话 —— 直接删掉会把台词一起吞了，
+     * 所以这里先"拆壳取台词"，再让后续规则去剥其余的调用语法。
+     * 中英文外壳（工具/tool）、圆括号/中文括号/冒号、= 或 : 都兼容。
+     */
+    private static final Pattern WRAPPED_SAY_CALL = Pattern.compile(
+            "(?is)(?:工具|tool)\\s*[\\(（:：]\\s*[\"']?(?:say|speak)[\"']?\\s*[,，]\\s*"
+                    + "(?:content|message|text|内容|台词)\\s*[=:：]\\s*[\"']([^\"']*)[\"']\\s*[\\)）]?");
+
+    /**
      * 把统一工具注册表里的工具名并入 fallback 正则。可在每次 /ai reload 后重复调用（幂等）。
      *
      * @param names 工具名（传 wire 名：点号会破坏正则，注册表里 wire 名是下划线形式）
@@ -855,7 +868,11 @@ public final class LLMClient {
 
         String cleaned = content;
 
-        // 0. 剥掉内联 [动作:…] 标记 —— 这是我们自己写进对话历史的动作摘要格式，
+        // 0. 拆壳取台词：工具 ("say", content="…") / 工具: say, content="…"。
+        //    必须最先做 —— 后面的规则会把整段调用语法删掉，台词也会跟着消失。
+        cleaned = extractWrappedSpeech(cleaned);
+
+        // 0.1 剥掉内联 [动作:…] 标记 —— 这是我们自己写进对话历史的动作摘要格式，
         //    模型学会了照抄进正文。解析成功的话动作已执行，这里必须剥掉防它漏进气泡/聊天框。
         cleaned = cleaned.replaceAll("\\[动作[:：][^\\]]*\\]", "").trim();
 
@@ -922,6 +939,30 @@ public final class LLMClient {
         cleaned = cleaned.replaceAll("(?s)```.*$", "").trim();
 
         return cleaned.trim();
+    }
+
+    /**
+     * 把 {@code 工具("say", content="台词")} 的外壳换成台词本身，保留前后可能存在的正常文本。
+     * <p>
+     * 只取 content/message 字段 —— 这是模型唯一真正想说给玩家听的部分；
+     * 外壳里的 say、引号、括号全是代码，不能进气泡。
+     */
+    private static String extractWrappedSpeech(String text) {
+        if (text == null || text.isEmpty()) return text;
+        Matcher m = WRAPPED_SAY_CALL.matcher(text);
+        StringBuilder out = new StringBuilder();
+        int last = 0;
+        boolean replaced = false;
+        while (m.find()) {
+            out.append(text, last, m.start());
+            String speech = m.group(1);
+            out.append(speech == null ? "" : speech);
+            last = m.end();
+            replaced = true;
+        }
+        if (!replaced) return text;
+        out.append(text.substring(last));
+        return out.toString().trim();
     }
 
     /**

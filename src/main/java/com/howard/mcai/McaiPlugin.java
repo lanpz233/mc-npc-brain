@@ -38,6 +38,7 @@ import com.howard.mcai.tool.ToolPolicyService;
 import com.howard.mcai.tool.ToolRegistry;
 import com.howard.mcai.tool.ToolRequest;
 import com.howard.mcai.tool.ToolResult;
+import com.howard.mcai.tool.ToolSchema;
 import com.howard.mcai.tool.tools.NpcInventoryGetTool;
 import com.howard.mcai.tool.tools.NpcMoveToTool;
 import com.howard.mcai.tool.tools.NpcStatusGetTool;
@@ -58,6 +59,7 @@ import org.bukkit.entity.Villager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -485,7 +487,7 @@ public final class McaiPlugin extends JavaPlugin {
             sender.sendMessage("§e/ai envoy revoke <名字> §f- 撤销神使");
             sender.sendMessage("§e/ai envoy list §f- 查看权限等级说明与神使名单");
             sender.sendMessage("§e/ai tool list §f- 查看已注册工具");
-            sender.sendMessage("§e/ai tool <工具名> <村民名> [JSON参数] §f- 直接调用工具（调试用）");
+            sender.sendMessage("§e/ai tool <工具名> <村民名> [参数1 参数2 ... | JSON] §f- 直接调用工具（调试用）");
             sender.sendMessage("§e/ai behavior <村民名> [提示] §f- 让行为模型基于真实状态选一步动作");
             return true;
         }
@@ -812,7 +814,9 @@ public final class McaiPlugin extends JavaPlugin {
 
     /**
      * /ai tool list —— 列出所有已注册工具。
-     * /ai tool <工具名> <村民名> [JSON参数] —— 不经过模型直接调用工具，用于验收和排查。
+     * /ai tool <工具名> <村民名> [参数1 参数2 ... | JSON] —— 不经过模型直接调用工具，用于验收和排查。
+     * 位置参数按工具 schema 顺序填写，坐标支持 ~ 相对值，如：
+     * {@code /ai tool npc.move_to 汤孟和 100 64 105}、{@code /ai tool npc.move_to 汤孟和 ~1 ~0 ~-15}
      */
     private void handleTool(CommandSender sender, String[] args) {
         if (args.length < 2 || "list".equalsIgnoreCase(args[1])) {
@@ -821,11 +825,11 @@ public final class McaiPlugin extends JavaPlugin {
                 sender.sendMessage("§e" + tool.name() + " §7[" + tool.category() + "/" + tool.risk() + "] §f"
                         + tool.description());
             }
-            sender.sendMessage("§7用法: /ai tool <工具名> <村民名> [JSON参数]");
+            sender.sendMessage("§7用法: /ai tool <工具名> <村民名> [参数1 参数2 ... | JSON]");
             return;
         }
         if (args.length < 3) {
-            sender.sendMessage("§c用法: /ai tool <工具名> <村民名> [JSON参数]");
+            sender.sendMessage("§c用法: /ai tool <工具名> <村民名> [参数1 参数2 ... | JSON]");
             return;
         }
 
@@ -837,10 +841,24 @@ public final class McaiPlugin extends JavaPlugin {
                 break;
             }
         }
-        int nameEnd = jsonIndex == -1 ? args.length : jsonIndex;
-        String npcName = String.join(" ", java.util.Arrays.copyOfRange(args, 2, nameEnd));
-        String json = jsonIndex == -1 ? null
-                : String.join(" ", java.util.Arrays.copyOfRange(args, jsonIndex, args.length));
+
+        String npcName;
+        String json = null;
+        List<String> positional = new ArrayList<>();
+        if (jsonIndex != -1) {
+            npcName = String.join(" ", java.util.Arrays.copyOfRange(args, 2, jsonIndex));
+            json = String.join(" ", java.util.Arrays.copyOfRange(args, jsonIndex, args.length));
+        } else {
+            // 位置参数形式：/ai tool npc.move_to 汤孟和 100 64 105
+            // 从尾部往前收集坐标样子的 token（数字 / ~数字），剩下整体当村民名，
+            // 这样村民名里带空格也不会被误拆。
+            int valueStart = args.length;
+            while (valueStart > 3 && isCoordinateToken(args[valueStart - 1])) {
+                valueStart--;
+            }
+            npcName = String.join(" ", java.util.Arrays.copyOfRange(args, 2, valueStart));
+            for (int i = valueStart; i < args.length; i++) positional.add(args[i]);
+        }
 
         VillagerState target = findVillagerByExactName(npcName);
         if (target == null) {
@@ -859,6 +877,18 @@ public final class McaiPlugin extends JavaPlugin {
                 arguments = parsed.getAsJsonObject();
             } catch (Exception e) {
                 sender.sendMessage("§cJSON 参数无效: " + e.getMessage());
+                return;
+            }
+        } else if (!positional.isEmpty()) {
+            NpcTool tool = toolRegistry.find(toolName);
+            if (tool == null) {
+                sender.sendMessage("§c未知工具: " + toolName);
+                return;
+            }
+            try {
+                arguments = resolvePositionalArgs(tool, target, positional);
+            } catch (IllegalArgumentException e) {
+                sender.sendMessage("§c" + e.getMessage());
                 return;
             }
         }
@@ -880,6 +910,77 @@ public final class McaiPlugin extends JavaPlugin {
         } catch (Exception e) {
             sender.sendMessage("§c工具调用异常: " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
+    }
+
+    /**
+     * 位置参数 → 工具参数对象（按 schema 声明顺序一一对应）。
+     * <p>
+     * 例如 npc.move_to 的顺序是 x y z speed：
+     * {@code /ai tool npc.move_to 汤孟和 100 64 105}。
+     * 坐标支持原版风格相对值：{@code ~} 表示村民当前位置，{@code ~1} 表示 +1，{@code ~-15} 表示 -15。
+     */
+    private JsonObject resolvePositionalArgs(NpcTool tool, VillagerState target, List<String> tokens) {
+        Map<String, ToolSchema.Param> params = tool.schema().params();
+        List<String> names = new ArrayList<>(params.keySet());
+        if (tokens.size() > names.size()) {
+            throw new IllegalArgumentException("参数过多：该工具最多 " + names.size()
+                    + " 个（顺序: " + String.join(" ", names) + "）");
+        }
+        Location base = target.entity().getLocation();
+        JsonObject out = new JsonObject();
+        for (int i = 0; i < tokens.size(); i++) {
+            String key = names.get(i);
+            ToolSchema.Param param = params.get(key);
+            String token = tokens.get(i);
+            switch (param.type()) {
+                case NUMBER -> out.addProperty(key, parseCoordinate(token, key, base));
+                case INTEGER -> out.addProperty(key, (long) parseCoordinate(token, key, base));
+                case BOOLEAN -> out.addProperty(key, Boolean.parseBoolean(token));
+                case STRING -> out.addProperty(key, token);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 解析单个坐标参数：绝对数字原样使用；{@code ~}/{@code ~1}/{@code ~-15} 以村民当前位置为基准偏移。
+     * 只允许 x/y/z 用相对坐标，其它数值参数（如 speed）必须写绝对数字。
+     */
+    private static double parseCoordinate(String token, String key, Location base) {
+        boolean coordinate = key.equals("x") || key.equals("y") || key.equals("z");
+        if (token.startsWith("~")) {
+            if (!coordinate) {
+                throw new IllegalArgumentException("参数 " + key + " 不支持相对坐标，请填数字");
+            }
+            String offset = token.substring(1).trim();
+            if (offset.isEmpty()) {
+                return switch (key) {
+                    case "x" -> base.getX();
+                    case "y" -> base.getY();
+                    default -> base.getZ();
+                };
+            }
+            try {
+                double delta = Double.parseDouble(offset);
+                return switch (key) {
+                    case "x" -> base.getX() + delta;
+                    case "y" -> base.getY() + delta;
+                    default -> base.getZ() + delta;
+                };
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("坐标格式错误: " + token + "（应为 ~、~1、~-15 或数字）");
+            }
+        }
+        try {
+            return Double.parseDouble(token);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("坐标格式错误: " + token + "（应为数字或 ~ 相对坐标）");
+        }
+    }
+
+    /** 判断一个命令行 token 是否像坐标：数字或 ~ 开头的相对坐标（单独一个 ~ 也表示相对） */
+    private static boolean isCoordinateToken(String token) {
+        return token.matches("~(-?\\d+(\\.\\d+)?)?") || token.matches("-?\\d+(\\.\\d+)?");
     }
 
     /**
