@@ -349,7 +349,9 @@ public final class VillagerState {
         this.profession = VillagerProfession.fromMinecraftProfession(entity.getProfession());
         this.emotion = new EmotionState();
         this.openness = 25 + (int) (Math.random() * 71);  // 25~95，人人不同
-        this.personalityTagIds = com.howard.mcai.ai.PersonalityTagLibrary.drawTagIds();
+        // 新 NPC 好感为 0 → 不抽 romance，避免刚生成就带暧昧标签；
+        // 好感 ≥25 后由 PromptBuilder 按当前好感二次过滤兜底。
+        this.personalityTagIds = com.howard.mcai.ai.PersonalityTagLibrary.drawTagIds(0);
         this.gender = inferGenderOrDefault(entity);  // 优先按名字定性别，判不出才随机
         seedProfessionInventory();
         this.inventorySeeded = true;
@@ -360,7 +362,7 @@ public final class VillagerState {
         this.profession = profession != null ? profession : VillagerProfession.fromMinecraftProfession(entity.getProfession());
         this.emotion = new EmotionState();
         this.openness = 25 + (int) (Math.random() * 71);
-        this.personalityTagIds = com.howard.mcai.ai.PersonalityTagLibrary.drawTagIds();
+        this.personalityTagIds = com.howard.mcai.ai.PersonalityTagLibrary.drawTagIds(0);
         this.gender = inferGenderOrDefault(entity);
         seedProfessionInventory();
         this.inventorySeeded = true;

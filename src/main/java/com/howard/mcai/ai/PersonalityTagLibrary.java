@@ -9,6 +9,7 @@ import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -144,26 +145,66 @@ public final class PersonalityTagLibrary {
      * 抽取一个 NPC 的人格标签 id 列表 —— 分配规则见类注释。
      * 未加载/缺 core 标签时返回空列表（NPC 退回纯职业人设，不崩）。
      */
-    public static List<String> drawTagIds() {
+    // 硬性互斥组（按旧版 id；若新增 hoarder/generous_spirit 已入 JSON，最后一组自动生效）
+    private static final List<String[]> HARD_EXCLUSIVE = List.of(
+        new String[]{"optimist", "pessimist"},
+        new String[]{"hot_tempered", "aloof"},
+        new String[]{"talkative", "terse"},
+        new String[]{"show_off", "coward"},
+        new String[]{"hoarder", "generous_spirit"}
+    );
+    private static final java.util.Random RANDOM = new java.util.Random();
+    public static List<String> drawTagIds(int playerAffection) {
         List<String> ids = new ArrayList<>();
         if (!loaded) return ids;
 
+        // 1 core 必选
         List<String> cores = categoryIds("core");
         if (cores.isEmpty()) return ids;
-
-        // 1 core 必选
         ids.add(randomOf(cores));
-        // speech / quirks / romance 各 50% 概率补一个（总 1-4 个，最常见 2-3 个）
+
+        // speech 可选（40%）
         List<String> speeches = categoryIds("speech");
-        if (!speeches.isEmpty() && Math.random() < 0.5) ids.add(randomOf(speeches));
-        List<String> quirks = categoryIds("quirks");
-        if (!quirks.isEmpty() && Math.random() < 0.5) ids.add(randomOf(quirks));
+        if (!speeches.isEmpty() && RANDOM.nextDouble() < 0.4) {
+            ids.add(randomOf(speeches));
+        }
+
+        // quirks 强制 1~3（防御性复制 + 均匀分布）
+        List<String> quirks = new ArrayList<>(categoryIds("quirks"));
+        if (!quirks.isEmpty()) {
+            Collections.shuffle(quirks, RANDOM);
+            int count = 1 + RANDOM.nextInt(Math.min(3, quirks.size()));
+            ids.addAll(quirks.subList(0, count));
+        }
+
+        // biography 强制 1~2（新增，P0）
+        List<String> bios = new ArrayList<>(categoryIds("biography"));
+        if (!bios.isEmpty()) {
+            Collections.shuffle(bios, RANDOM);
+            int count = 1 + RANDOM.nextInt(Math.min(2, bios.size()));
+            ids.addAll(bios.subList(0, count));
+        }
+
+        // romance：好感 ≥25 才抽，且低概率（方案 A）
         List<String> romances = categoryIds("romance");
-        if (!romances.isEmpty() && Math.random() < 0.5) ids.add(randomOf(romances));
+        if (!romances.isEmpty() && playerAffection >= 25 && RANDOM.nextDouble() < 0.10) {
+            ids.add(randomOf(romances));
+        }
+
+        // 互斥剔除（保留先抽到的）
+        resolveExclusive(ids);
         return ids;
     }
 
-    private static List<String> categoryIds(String category) {
+    private static void resolveExclusive(List<String> ids) {
+        for (String[] pair : HARD_EXCLUSIVE) {
+            if (ids.contains(pair[0]) && ids.contains(pair[1])) {
+                ids.remove(pair[1]);
+            }
+        }
+    }
+
+    public static List<String> categoryIds(String category) {
         List<String> ids = new ArrayList<>();
         for (var e : TAGS.entrySet()) {
             if (e.getValue().category().equals(category)) ids.add(e.getKey());

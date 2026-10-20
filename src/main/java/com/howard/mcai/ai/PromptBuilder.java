@@ -163,9 +163,24 @@ public final class PromptBuilder {
                 """.formatted(name, profession.zhName, personality, zhSpeechNotes));
 
         // 人格标签（personality_tags.json）—— 每个 NPC 独有的性格底色，中文直接拼进人设。
-        // 没加载/没抽到标签时跳过，不污染 prompt（NPC 退回纯职业人设）。
+        // v2：biography 单独成段注入（个人经历），与性格底色分开展示；
+        // 其余（core/speech/quirks/已按好感过滤的 romance）走原有 buildPromptTraits。
         if (PersonalityTagLibrary.isLoaded() && personalityTagIds != null && !personalityTagIds.isEmpty()) {
-            sb.append("\n").append(PersonalityTagLibrary.buildPromptTraits(personalityTagIds));
+            java.util.Set<String> biographyIdSet = new java.util.HashSet<>(
+                    PersonalityTagLibrary.categoryIds("biography"));
+            List<String> otherTagIds = new ArrayList<>();
+            List<String> biographyTagIds = new ArrayList<>();
+            for (String id : personalityTagIds) {
+                if (biographyIdSet.contains(id)) biographyTagIds.add(id);
+                else otherTagIds.add(id);
+            }
+            if (!otherTagIds.isEmpty()) {
+                sb.append("\n").append(PersonalityTagLibrary.buildPromptTraits(otherTagIds));
+            }
+            if (!biographyTagIds.isEmpty()) {
+                sb.append("\n## Personal History（个人经历 —— 让这些经历自然影响你的措辞和态度，不要生硬罗列）\n");
+                sb.append(PersonalityTagLibrary.buildPromptTraits(biographyTagIds));
+            }
         }
 
         // 家庭 & 社交关系（社会关系系统）—— 性别 + 夫妻/兄弟姐妹。
@@ -367,10 +382,18 @@ public final class PromptBuilder {
         List<Map<String, String>> messages = new ArrayList<>();
 
         // 1. System prompt（按职业 + 人格标签动态生成人设）
+         // v2：romance 标签按好感门槛二次兜底 —— 好感 <25 不注入，避免陌生人越界暧昧。
+        // （抽取层已按生成时好感做过一次判定；此处兜底 NPC 生成后好感回落、
+        //   或 nearPlayer 与生成时抽取的玩家不是同一人的情况。）
         String customName = villagerState.entity().getCustomName();
+        double currentFavor = nearPlayer != null
+                ? villagerState.emotion().favor(nearPlayer.getUniqueId())
+                : 0.0;
+        List<String> effectiveTagIds = filterRomanceByFavor(
+                villagerState.personalityTagIds(), currentFavor);
         messages.add(Map.of("role", "system",
                 "content", buildVillagerSystemPrompt(villagerState.profession(), customName,
-                        villagerState.personalityTagIds(), villagerState)));
+                        effectiveTagIds, villagerState)));
 
         // 2. 上下文（记忆 / 商店 / 场景）**合并成一条 user** ——
         // 旧版是 3 条连续 user（memory + shop + scene），头部 4 连 user，离 user↔assistant 交替更远；
@@ -483,6 +506,26 @@ public final class PromptBuilder {
         }
 
         return messages;
+    }
+
+    /**
+     * 好感 &lt;25 时剔除所有 romance 标签，避免陌生人越界暧昧（v2 硬性规则）。
+     * <p>
+     * 好感 ≥25 原样返回；标签库未加载 / 无 romance 标签也原样返回。
+     * 依赖 {@link PersonalityTagLibrary#categoryIds(String)}，与抽取层同源。
+     */
+    private static List<String> filterRomanceByFavor(List<String> tagIds, double favor) {
+        if (tagIds == null || tagIds.isEmpty()) return tagIds;
+        if (favor >= 25) return tagIds;
+        if (!PersonalityTagLibrary.isLoaded()) return tagIds;
+        java.util.Set<String> romanceIds = new java.util.HashSet<>(
+                PersonalityTagLibrary.categoryIds("romance"));
+        if (romanceIds.isEmpty()) return tagIds;
+        List<String> filtered = new ArrayList<>(tagIds.size());
+        for (String id : tagIds) {
+            if (!romanceIds.contains(id)) filtered.add(id);
+        }
+        return filtered;
     }
 
     /**
