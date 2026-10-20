@@ -196,6 +196,13 @@ public final class BukkitGameStateProvider implements GameStateProvider {
         json.addProperty("kind", kindOf(entity));
         json.addProperty("hostile", entity instanceof Monster);
 
+        // 给行为模型可用的绝对坐标：只说"走到玩家面前"时，模型需要玩家的 x/y/z 才能填 move_to 参数，
+        // 否则只能照抄 NPC 自己的位置（走 0 格就"到达"）或凭空编坐标。
+        Location loc = entity.getLocation();
+        json.addProperty("x", round(loc.getX(), 2));
+        json.addProperty("y", round(loc.getY(), 2));
+        json.addProperty("z", round(loc.getZ(), 2));
+
         if (entity instanceof LivingEntity living) {
             json.addProperty("health", round(living.getHealth(), 2));
             json.addProperty("max_health", round(living.getMaxHealth(), 2));

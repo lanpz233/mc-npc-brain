@@ -72,6 +72,33 @@ class BehaviorDecisionParserTest {
     }
 
     @Test
+    void repairsActionWithParenthesizedInlineArgs() {
+        // 实测 MiniCPM 输出：工具名后面直接跟圆括号参数，且 args 里混入 reason 字段
+        String raw = "{\"action\":\"npc_move_to(x:100.7,y:66.0,z:715.54)\","
+                + "\"args\":{\"x\":100.7,\"y\":66.0,\"z\":715.54,\"speed\":1.0,"
+                + "\"reason\":\"走到玩家面前以获取信息\"}}";
+
+        BehaviorDecisionParser.Outcome outcome = parse(raw);
+
+        assertTrue(outcome.ok(), "应能解析圆括号内联参数，实际错误: " + outcome.error());
+        assertEquals("npc.move_to", outcome.request().tool());
+        assertEquals(715.54, outcome.request().arguments().get("z").getAsDouble(), 0.001);
+    }
+
+    @Test
+    void dropsUnknownExtraArgsWhenKnownOnesAreValid() {
+        // 实测 MiniCPM 会照抄任务状态字段：status/progress/error/result
+        String raw = "{\"action\":\"npc.move_to\",\"args\":{\"x\":100,\"y\":64,\"z\":120,"
+                + "\"status\":\"RUNNING\",\"progress\":0.5,\"error\":null,\"result\":{}}}";
+
+        BehaviorDecisionParser.Outcome outcome = parse(raw);
+
+        assertTrue(outcome.ok(), "多余状态字段应被剔除后接受，实际错误: " + outcome.error());
+        assertNull(outcome.request().arguments().get("status"));
+        assertEquals(100.0, outcome.request().arguments().get("x").getAsDouble(), 0.001);
+    }
+
+    @Test
     void treatsIdleWordsAsNoAction() {
         BehaviorDecisionParser.Outcome outcome = parse(
                 "{\"action\":\"idle\",\"args\":{},\"reason\":\"nothing to do\"}");

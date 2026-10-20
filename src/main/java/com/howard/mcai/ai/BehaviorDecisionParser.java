@@ -95,11 +95,12 @@ public final class BehaviorDecisionParser {
         action = action.trim();
 
         JsonObject args = resolveArgs(obj, action);
-        // action 里残留的 "{x:1,y:2}" 兜底再抽一次（Gson 能解析但名字带花括号的情况）
-        int brace = action.indexOf('{');
-        if (brace >= 0) {
-            String inline = action.substring(brace);
-            action = action.substring(0, brace).trim();
+        // action 里残留的内联参数兜底再抽一次（Gson 能解析但名字带参数的情况）。
+        // 实测 MiniCPM 会写成 npc_move_to(x:100,y:66,z:715) —— 花括号和圆括号都要认。
+        int inlineStart = firstInlineArgStart(action);
+        if (inlineStart >= 0) {
+            String inline = action.substring(inlineStart);
+            action = action.substring(0, inlineStart).trim();
             if (args.entrySet().isEmpty()) {
                 args = parseLooseObject(inline);
             }
@@ -116,6 +117,20 @@ public final class BehaviorDecisionParser {
         }
 
         List<String> errors = tool.schema().validate(args);
+        if (!errors.isEmpty()) {
+            // MiniCPM 常把状态字段（status/progress/error/result）顺手塞进 args，
+            // 导致"未知参数"校验失败、整条决策被丢弃。只保留 schema 声明的参数后重新校验：
+            // 若这样就能通过（必填/类型都满足），说明多余字段只是噪声，直接接受；
+            // 否则仍返回原始错误，让模型有机会改正。
+            JsonObject filtered = keepKnownArgs(args, tool.schema().params().keySet());
+            if (filtered.size() != args.size()) {
+                List<String> afterFilter = tool.schema().validate(filtered);
+                if (afterFilter.isEmpty()) {
+                    args = filtered;
+                    errors = afterFilter;
+                }
+            }
+        }
         if (!errors.isEmpty()) {
             return new Outcome(null, "参数不合法: " + String.join("; ", errors));
         }
@@ -261,15 +276,36 @@ public final class BehaviorDecisionParser {
     }
 
     /**
-     * 裸参数对象 → JSON：{@code {x:100,y:64, speed:1.0}} → {@code {"x":100,"y":64,"speed":1.0}}。
+     * action 字符串里第一个内联参数起点 —— 花括号或圆括号，取更靠前的那个。
+     * 返回 -1 表示 action 只有工具名。
+     */
+    private static int firstInlineArgStart(String action) {
+        int brace = action.indexOf('{');
+        int paren = action.indexOf('(');
+        if (brace < 0) return paren;
+        if (paren < 0) return brace;
+        return Math.min(brace, paren);
+    }
+
+    /** 只保留 schema 声明过的参数，剔除 MiniCPM 夹带的多余字段 */
+    private static JsonObject keepKnownArgs(JsonObject args, Set<String> allowed) {
+        JsonObject out = new JsonObject();
+        for (String key : args.keySet()) {
+            if (allowed.contains(key)) out.add(key, args.get(key));
+        }
+        return out;
+    }
+
+    /**
+     * 裸参数对象 → JSON：{@code {x:100,y:64, speed:1.0}} → {@code {"x":100,"y":64,"speed":"1.0"}}。
      * 只处理简单标量，够 MiniCPM 这种 1B 模型的输出形态。
      */
     static JsonObject parseLooseObject(String body) {
         JsonObject out = new JsonObject();
         if (body == null) return out;
         String trimmed = body.trim();
-        int l = trimmed.indexOf('{');
-        int r = trimmed.lastIndexOf('}');
+        int l = Math.max(trimmed.indexOf('{'), trimmed.indexOf('('));
+        int r = Math.max(trimmed.lastIndexOf('}'), trimmed.lastIndexOf(')'));
         if (l >= 0) trimmed = trimmed.substring(l + 1, r > l ? r : trimmed.length());
 
         for (String pair : trimmed.split(",")) {
