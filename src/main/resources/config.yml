@@ -45,6 +45,10 @@ llm:
     max-tokens: 256
     # 是否让需求驱动的自主行动改由行为模型决策；false = 仍用对话模型（旧路径）
     autonomy-enabled: false
+    # 候选模式：服务端预生成 2-4 个已校验的合法动作，模型只回一个序号。
+    # 1B 模型自由生成 JSON/坐标的合法率很低，选择模式能显著提高可用率；
+    # 换成 2B 或更大的行为模型后可设为 false，回到自由 JSON 决策（同一套校验，无需改代码）。
+    candidate-mode: true
 
 tick:
   interval-ticks: 60          # 表现层频率：3 秒（Paper 服 20 tps）

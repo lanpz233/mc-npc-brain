@@ -9,6 +9,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Monster;
@@ -17,6 +18,7 @@ import org.bukkit.entity.Villager;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,6 +33,13 @@ public final class BukkitGameStateProvider implements GameStateProvider {
 
     private static final double MAX_RADIUS = 32.0;
     private static final int MAX_LIMIT = 64;
+    /**
+     * 方块扫描半径上限。
+     * <p>
+     * 实体查询走世界空间索引，32 格很便宜；方块只能逐个 getBlockAt（半径 32 的立方体约 27 万次），
+     * 在主线程做会明显掉 TPS，所以单独收紧到 16 格（约 3.6 万次）。
+     */
+    private static final double MAX_BLOCK_RADIUS = 16.0;
 
     private final McaiPlugin plugin;
 
@@ -185,6 +194,105 @@ public final class BukkitGameStateProvider implements GameStateProvider {
             array.add(describeEntity(entry.entity(), entry.distance()));
         }
         return array;
+    }
+
+    @Override
+    public JsonObject nearbyBlocks(UUID npcId, double radius, int limit) {
+        requireMainThread();
+        VillagerState state = plugin.getVillagers().get(npcId);
+        if (state == null || !npcExists(npcId)) return null;
+
+        Location origin = state.entity().getLocation();
+        World world = origin.getWorld();
+        if (world == null) return null;
+
+        double safeRadius = Math.max(1.0, Math.min(radius, MAX_BLOCK_RADIUS));
+        int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
+
+        int r = (int) Math.ceil(safeRadius);
+        int ox = origin.getBlockX();
+        int oy = origin.getBlockY();
+        int oz = origin.getBlockZ();
+        int minY = Math.max(world.getMinHeight(), oy - r);
+        int maxY = Math.min(world.getMaxHeight() - 1, oy + r);
+        double radiusSq = safeRadius * safeRadius;
+
+        Map<Material, Integer> counts = new HashMap<>();
+        int scanned = 0;
+        // 只扫描水平圆形范围内的方块；角落剪掉能省下约 21% 的 getBlockAt 调用
+        for (int x = ox - r; x <= ox + r; x++) {
+            double dx = x + 0.5 - origin.getX();
+            for (int z = oz - r; z <= oz + r; z++) {
+                double dz = z + 0.5 - origin.getZ();
+                if (dx * dx + dz * dz > radiusSq) continue;
+                for (int y = minY; y <= maxY; y++) {
+                    Block block = world.getBlockAt(x, y, z);
+                    Material type = block.getType();
+                    if (type.isAir()) continue;
+                    counts.merge(type, 1, Integer::sum);
+                    scanned++;
+                }
+            }
+        }
+
+        List<Map.Entry<Material, Integer>> sorted = new ArrayList<>(counts.entrySet());
+        sorted.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+
+        JsonArray blocks = new JsonArray();
+        for (Map.Entry<Material, Integer> entry : sorted) {
+            if (blocks.size() >= safeLimit) break;
+            JsonObject item = new JsonObject();
+            item.addProperty("material", entry.getKey().name());
+            item.addProperty("name_zh", PromptBuilder.materialToZh(entry.getKey()));
+            item.addProperty("count", entry.getValue());
+            blocks.add(item);
+        }
+
+        JsonObject json = new JsonObject();
+        json.addProperty("npc_id", npcId.toString());
+        json.addProperty("radius", round(safeRadius, 1));
+        json.addProperty("limit", safeLimit);
+        json.addProperty("scanned_blocks", scanned);
+        json.addProperty("types", blocks.size());
+        json.add("blocks", blocks);
+        return json;
+    }
+
+    @Override
+    public JsonObject environment(UUID npcId) {
+        requireMainThread();
+        VillagerState state = plugin.getVillagers().get(npcId);
+        if (state == null || !npcExists(npcId)) return null;
+
+        Location location = state.entity().getLocation();
+        World world = location.getWorld();
+        if (world == null) return null;
+
+        long time = world.getTime();
+        boolean storm = world.hasStorm();
+        boolean thunder = world.isThundering();
+        // 雪地群系的降水是雪而不是雨：用温度判定，避免把"积雪的地面"和"正在下雪"混为一谈
+        boolean snowyBiome = location.getBlock().getTemperature() < 0.15;
+        String precipitation = snowyBiome
+                ? (storm ? "下雪" : "没有下雪")
+                : (storm ? "下雨" : "没有下雨");
+
+        JsonObject json = new JsonObject();
+        json.addProperty("npc_id", npcId.toString());
+        json.addProperty("world", world.getName());
+        json.addProperty("biome", location.getBlock().getBiome().name());
+        json.addProperty("time_ticks", time);
+        json.addProperty("clock", PromptBuilder.mcClock(time));
+        json.addProperty("period", PromptBuilder.mcPeriod(time));
+        json.addProperty("period_zh", PromptBuilder.mcPeriodZh(time));
+        json.addProperty("is_day", PromptBuilder.mcIsDay(time));
+        json.addProperty("weather", thunder ? "thunder" : storm ? "rain" : "clear");
+        json.addProperty("raining", storm);
+        json.addProperty("thundering", thunder);
+        json.addProperty("snowy_biome", snowyBiome);
+        json.addProperty("precipitation_zh", precipitation);
+        json.addProperty("light_level", location.getBlock().getLightLevel());
+        return json;
     }
 
     private JsonObject describeEntity(Entity entity, double distance) {

@@ -40,6 +40,8 @@ import com.howard.mcai.tool.ToolRequest;
 import com.howard.mcai.tool.ToolResult;
 import com.howard.mcai.tool.ToolSchema;
 import com.howard.mcai.tool.tools.NpcInventoryGetTool;
+import com.howard.mcai.tool.tools.WorldEnvironmentTool;
+import com.howard.mcai.tool.tools.WorldNearbyBlocksTool;
 import com.howard.mcai.tool.tools.NpcMoveToTool;
 import com.howard.mcai.tool.tools.NpcStatusGetTool;
 import com.howard.mcai.tool.tools.NpcTaskCancelTool;
@@ -213,7 +215,9 @@ public final class McaiPlugin extends JavaPlugin {
                 npcTaskManager,
                 task -> Bukkit.getScheduler().runTask(this, task),
                 message -> getLogger().warning("[tool] " + message),
-                5 * 60_000L);
+                5 * 60_000L,
+                // 主线程闸门：Dispatcher 自己不依赖 Bukkit，插件把权威判定注入进去
+                Bukkit::isPrimaryThread);
         registerBuiltinTools();
         // 模型输出适配层：wire 名（npc_move_to）与规范名（npc.move_to）统一归一到 ToolRequest
         llmToolAdapter = new LlmToolAdapter(toolRegistry);
@@ -465,6 +469,8 @@ public final class McaiPlugin extends JavaPlugin {
         toolRegistry.register(new NpcStatusGetTool(gameStateProvider));
         toolRegistry.register(new NpcInventoryGetTool(gameStateProvider));
         toolRegistry.register(new WorldObserveEntitiesTool(gameStateProvider));
+        toolRegistry.register(new WorldNearbyBlocksTool(gameStateProvider));
+        toolRegistry.register(new WorldEnvironmentTool(gameStateProvider));
         toolRegistry.register(new NpcTaskGetTool(npcTaskManager));
         toolRegistry.register(new NpcTaskCancelTool(npcTaskManager));
         toolRegistry.register(new NpcMoveToTool(this));

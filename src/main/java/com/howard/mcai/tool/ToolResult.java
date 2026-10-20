@@ -56,6 +56,8 @@ public record ToolResult(
         TASK_CANCELLED,
         TASK_TIMEOUT,
         DUPLICATE_REQUEST,
+        /** 持续行动长时间没有实际位移（被方块/地形卡住），需要上层换个目标。 */
+        MOVE_STUCK,
         INTERNAL_ERROR;
 
         public String code() {

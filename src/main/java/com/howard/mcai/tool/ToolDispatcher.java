@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 /**
@@ -30,6 +31,11 @@ public final class ToolDispatcher {
     private final Consumer<Runnable> mainThreadExecutor;
     private final Consumer<String> warningSink;
     private final long dedupeTtlMs;
+    /**
+     * 主线程判定。必须由注入方提供（插件里传 {@code Bukkit::isPrimaryThread}）：
+     * 本类不能直接依赖 Bukkit，否则纯单元测试无法加载。
+     */
+    private final BooleanSupplier mainThreadCheck;
     private final Map<String, CachedResult> recentRequests = new ConcurrentHashMap<>();
 
     public ToolDispatcher(ToolRegistry registry,
@@ -45,27 +51,40 @@ public final class ToolDispatcher {
                           Consumer<Runnable> mainThreadExecutor,
                           Consumer<String> warningSink,
                           long dedupeTtlMs) {
+        // 旧构造器用于单元测试/非 Bukkit 场景：默认"永远算主线程"，保持原有行为
+        this(registry, policy, tasks, mainThreadExecutor, warningSink, dedupeTtlMs, () -> true);
+    }
+
+    public ToolDispatcher(ToolRegistry registry,
+                          ToolPolicyService policy,
+                          NpcTaskManager tasks,
+                          Consumer<Runnable> mainThreadExecutor,
+                          Consumer<String> warningSink,
+                          long dedupeTtlMs,
+                          BooleanSupplier mainThreadCheck) {
         this.registry = registry;
         this.policy = policy;
         this.tasks = tasks;
         this.mainThreadExecutor = mainThreadExecutor;
         this.warningSink = warningSink == null ? message -> { } : warningSink;
         this.dedupeTtlMs = Math.max(1_000L, dedupeTtlMs);
+        this.mainThreadCheck = mainThreadCheck == null ? () -> true : mainThreadCheck;
     }
 
     /**
      * 异步入口：把请求切到主线程后执行。适配层不应在异步线程直接访问 Bukkit。
+     * <p>
+     * 没有主线程执行器时返回失败 future，而不是"就地同步执行"：
+     * 异步线程里直接跑 Bukkit API 会抛 IllegalStateException 或更糟地悄悄破坏世界状态，
+     * 静默退化会把"配置漏了执行器"这种部署错误掩盖到运行时才爆。
      */
     public CompletableFuture<ToolResult> dispatchAsync(ToolRequest request) {
-        CompletableFuture<ToolResult> future = new CompletableFuture<>();
         if (mainThreadExecutor == null) {
-            try {
-                future.complete(dispatchSync(request));
-            } catch (Throwable t) {
-                future.completeExceptionally(t);
-            }
-            return future;
+            return CompletableFuture.failedFuture(new IllegalStateException(
+                    "ToolDispatcher 未配置主线程执行器，无法异步调用工具: "
+                            + (request == null ? "<null>" : request.tool())));
         }
+        CompletableFuture<ToolResult> future = new CompletableFuture<>();
         mainThreadExecutor.accept(() -> {
             try {
                 future.complete(dispatchSync(request));
@@ -80,6 +99,15 @@ public final class ToolDispatcher {
      * 同步入口，必须在主线程调用。
      */
     public ToolResult dispatchSync(ToolRequest request) {
+        // 兜底闸门：调用方漏切主线程时这里必须拒绝，而不是把 Bukkit 调用带到异步线程。
+        // 返回 REJECTED 而不是抛异常，避免异常在 CompletableFuture 链里被吞掉后无人排查。
+        if (!mainThreadCheck.getAsBoolean()) {
+            String message = "工具调用必须在 Paper 主线程执行，已拒绝: "
+                    + (request == null ? "<null>" : request.tool());
+            warningSink.accept(message);
+            return ToolResult.rejected(ToolResult.ErrorCode.INTERNAL_ERROR, message);
+        }
+
         long now = System.currentTimeMillis();
         purgeExpired(now);
 

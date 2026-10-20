@@ -135,5 +135,15 @@ class QueryToolsTest {
         public JsonArray nearbyEntities(UUID npcId, double radius, int limit) {
             return entities;
         }
+
+        @Override
+        public JsonObject nearbyBlocks(UUID npcId, double radius, int limit) {
+            return exists ? new JsonObject() : null;
+        }
+
+        @Override
+        public JsonObject environment(UUID npcId) {
+            return exists ? new JsonObject() : null;
+        }
     }
 }

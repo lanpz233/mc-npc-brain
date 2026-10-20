@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ToolDispatcherTest {
@@ -153,12 +154,27 @@ class ToolDispatcherTest {
     }
 
     @Test
-    void asyncDispatchWorksWithoutMainThreadExecutor() {
+    void asyncDispatchFailsWithoutMainThreadExecutor() {
         registry.register(FakeTool.query("test.echo"));
 
-        ToolResult result = dispatcher.dispatchAsync(request("test.echo", new JsonObject())).join();
+        // 旧实现会在调用线程直接同步执行；那等于允许异步线程访问 Bukkit。
+        // 现在必须显式失败，让部署时缺执行器的问题立刻暴露。
+        assertThrows(java.util.concurrent.CompletionException.class, () ->
+                dispatcher.dispatchAsync(request("test.echo", new JsonObject())).join());
+    }
 
-        assertEquals(ToolResult.Status.COMPLETED, result.status());
+    @Test
+    void rejectsSyncCallOutsideMainThread() {
+        registry.register(FakeTool.query("test.echo"));
+        ToolPolicyService policy = new ToolPolicyService(
+                id -> id.equals(npc), id -> false, (npcId, playerUuid) -> NpcRank.CIVILIAN);
+        ToolDispatcher guarded = new ToolDispatcher(registry, policy, tasks,
+                Runnable::run, message -> { }, 60_000L, () -> false);
+
+        ToolResult result = guarded.dispatchSync(request("test.echo", new JsonObject()));
+
+        assertEquals(ToolResult.Status.REJECTED, result.status());
+        assertEquals(ToolResult.ErrorCode.INTERNAL_ERROR.code(), result.errorCode());
     }
 
     @Test

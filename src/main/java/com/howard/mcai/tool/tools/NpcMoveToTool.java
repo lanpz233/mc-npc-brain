@@ -30,6 +30,16 @@ public final class NpcMoveToTool implements NpcTool {
     private static final double ARRIVE_DISTANCE = 1.5;
     /** 允许的目标高度差；NPC 只有水平速度，差太多会永远到不了。 */
     private static final double MAX_VERTICAL_DIFF = 3.0;
+    /**
+     * 卡住判定：连续这么久没有实际位移就判失败。
+     * <p>
+     * 村民没有原版寻路，移动靠 setVelocity 推 —— 撞墙/卡树/被栅栏围住时速度会被物理引擎抵消，
+     * 任务会一直"RUNNING"拖到 60 秒超时，期间该 NPC 无法接受新行动（NpcTaskManager 单任务限制）。
+     * 8 秒足够走过 1 格以上，正常绕障碍不该触发。
+     */
+    private static final long STUCK_WINDOW_MS = 8_000L;
+    /** 判定"有进展"的最小水平位移（格）。 */
+    private static final double STUCK_MIN_MOVE = 0.5;
 
     private final McaiPlugin plugin;
 
@@ -153,12 +163,48 @@ public final class NpcMoveToTool implements NpcTool {
                 return;
             }
 
-            double horizontal = horizontalDistance(villager.getLocation(), target);
+            long nowMs = System.currentTimeMillis();
+            Location current = villager.getLocation();
+            double horizontal = horizontalDistance(current, target);
             if (horizontal <= ARRIVE_DISTANCE) {
                 stop(villager);
-                task.complete(System.currentTimeMillis(), result(task, villager));
+                task.complete(nowMs, result(task, villager));
                 return;
             }
+
+            // 卡住检测：进度基准点存在 task.data()，随 npc.task.get 一起可查
+            JsonObject progress = task.data();
+            double lastX = current.getX();
+            double lastZ = current.getZ();
+            long lastProgressMs = nowMs;
+            if (progress != null && progress.has("last_progress_x")
+                    && progress.has("last_progress_z") && progress.has("last_progress_ms")) {
+                lastX = progress.get("last_progress_x").getAsDouble();
+                lastZ = progress.get("last_progress_z").getAsDouble();
+                lastProgressMs = progress.get("last_progress_ms").getAsLong();
+            }
+            double dx = current.getX() - lastX;
+            double dz = current.getZ() - lastZ;
+            if (Math.sqrt(dx * dx + dz * dz) >= STUCK_MIN_MOVE) {
+                lastX = current.getX();
+                lastZ = current.getZ();
+                lastProgressMs = nowMs;
+            } else if (nowMs - lastProgressMs >= STUCK_WINDOW_MS) {
+                stop(villager);
+                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                        "移动卡住：" + (STUCK_WINDOW_MS / 1000) + " 秒内位移不足 " + STUCK_MIN_MOVE + " 格");
+                return;
+            }
+
+            JsonObject progressData = new JsonObject();
+            progressData.addProperty("target_x", target.getX());
+            progressData.addProperty("target_y", target.getY());
+            progressData.addProperty("target_z", target.getZ());
+            progressData.addProperty("remaining_distance", round(horizontal));
+            progressData.addProperty("last_progress_x", lastX);
+            progressData.addProperty("last_progress_z", lastZ);
+            progressData.addProperty("last_progress_ms", lastProgressMs);
+            task.updateData(progressData);
 
             double speed = ToolArgs.number(arguments, "speed", 0.8);
             CentralPlanner.moveEntityTowards(villager, target, speed);

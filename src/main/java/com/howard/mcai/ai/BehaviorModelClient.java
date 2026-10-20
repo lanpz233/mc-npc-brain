@@ -7,6 +7,7 @@ import com.howard.mcai.config.LlmSettings;
 import com.howard.mcai.tool.NpcTool;
 import com.howard.mcai.tool.ToolContext.CallerType;
 import com.howard.mcai.tool.ToolRegistry;
+import com.howard.mcai.tool.ToolRequest;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,6 +18,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 行为模型客户端（MiniCPM-1B）—— 只管"下一步做什么"，不负责说话。
@@ -43,7 +46,40 @@ public final class BehaviorModelClient {
     private final LlmSettings settings;
     private final ToolRegistry registry;
     private final BehaviorDecisionParser parser;
+    private final LlmToolAdapter adapter;
     private final HttpClient httpClient;
+
+    /**
+     * 候选动作：由服务端预先校验过的"可执行选项"。
+     * <p>
+     * 1B 模型自由生成工具名 + 坐标的合法率太低（实测 10 次只有 5 次能被 schema 接受），
+     * 但它从 2-4 个已合法选项中挑一个的能力明显更强。候选模式把"生成"换成"选择"，
+     * 模型只输出序号，参数与合法性由服务端保证。
+     *
+     * @param action 工具规范名；"idle" 表示什么都不做
+     * @param label  给模型看的一行人话说明（英文，避免弱模型语言漂移）
+     * @param args   已通过 schema 校验的参数；idle 用空对象
+     */
+    public record Candidate(String action, String label, JsonObject args) {
+    }
+
+    /**
+     * 候选选择结果。
+     *
+     * @param request 选中的可执行请求；idle 或失败时为 null
+     * @param index   选中的序号（失败为 -1）
+     * @param error   失败原因；成功/idle 为 null
+     */
+    public record ChoiceOutcome(ToolRequest request, int index, String error) {
+        public boolean ok() {
+            return error == null;
+        }
+
+        /** 合法但决定什么都不做 */
+        public boolean idle() {
+            return request == null && error == null;
+        }
+    }
 
     /** 后端是否 Ollama（有 /api/version）；null = 未探测，60 秒后允许重探 */
     private volatile Boolean ollamaBackend;
@@ -54,6 +90,7 @@ public final class BehaviorModelClient {
         this.settings = settings;
         this.registry = registry;
         this.parser = new BehaviorDecisionParser(registry);
+        this.adapter = new LlmToolAdapter(registry);
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(settings.connectTimeoutMs()))
                 .build();
@@ -82,6 +119,148 @@ public final class BehaviorModelClient {
         return chat(messages)
                 .thenCompose(content -> attemptParse(content, npcId, playerUuid, callerId,
                         messages, 1));
+    }
+
+    /**
+     * 候选模式决策：模型只回候选序号，不生成工具名/坐标。
+     * <p>
+     * 这是为 1B 级行为模型准备的兜底方案；换成更大的模型后，调用方可以通过
+     * {@code llm.behavior.candidate-mode: false} 回到 {@link #decide} 的自由 JSON 模式，
+     * 两种模式共用同一套 schema 校验与请求构造，替换模型不需要改代码。
+     */
+    public CompletableFuture<ChoiceOutcome> decideChoice(
+            UUID npcId, UUID playerUuid, String callerId,
+            JsonObject state, String hint, List<Candidate> candidates) {
+
+        if (settings.isAutoModel()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(
+                    "llm.behavior.model 必须显式指定（auto 会探测到对话模型，行为模型不能用 auto）"));
+        }
+        if (candidates == null || candidates.isEmpty()) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("候选动作不能为空"));
+        }
+
+        List<JsonObject> messages = choiceMessages(state, hint, candidates);
+        return chat(messages).thenCompose(content -> attemptChoice(
+                content, npcId, playerUuid, callerId, candidates, messages, 1));
+    }
+
+    /** 候选模式的重试循环：序号缺失/越界时把错误反馈给模型再给一次机会 */
+    private CompletableFuture<ChoiceOutcome> attemptChoice(
+            String content, UUID npcId, UUID playerUuid, String callerId,
+            List<Candidate> candidates, List<JsonObject> messages, int attempt) {
+
+        int index = parseChoiceIndex(content);
+        if (index < 0 || index >= candidates.size()) {
+            if (attempt >= MAX_PARSE_ATTEMPTS) {
+                return CompletableFuture.completedFuture(new ChoiceOutcome(null, -1,
+                        "序号无效或越界: " + abbreviate(content)));
+            }
+            List<JsonObject> next = new ArrayList<>(messages);
+            next.add(message("assistant", content));
+            next.add(message("user", "Invalid choice. Output ONLY {\"choice\": <0-"
+                    + (candidates.size() - 1) + ">, \"reason\": \"<short>\"}."));
+            return chat(next).thenCompose(retry ->
+                    attemptChoice(retry, npcId, playerUuid, callerId, candidates, next, attempt + 1));
+        }
+
+        Candidate picked = candidates.get(index);
+        if (picked.action() == null || "idle".equalsIgnoreCase(picked.action())) {
+            return CompletableFuture.completedFuture(new ChoiceOutcome(null, index, null));
+        }
+
+        NpcTool tool = registry.find(picked.action());
+        if (tool == null) {
+            return CompletableFuture.completedFuture(new ChoiceOutcome(null, index,
+                    "未知工具: " + picked.action()));
+        }
+        JsonObject args = picked.args() == null ? new JsonObject() : picked.args();
+        List<String> errors = tool.schema().validate(args);
+        if (!errors.isEmpty()) {
+            return CompletableFuture.completedFuture(new ChoiceOutcome(null, index,
+                    "参数不合法: " + String.join("; ", errors)));
+        }
+        ToolRequest request = adapter.toRequest(new ToolCall(tool.name(), args),
+                CallerType.BEHAVIOR_MODEL, callerId, npcId, playerUuid);
+        if (request == null) {
+            return CompletableFuture.completedFuture(new ChoiceOutcome(null, index,
+                    "工具未注册: " + tool.name()));
+        }
+        return CompletableFuture.completedFuture(new ChoiceOutcome(request, index, null));
+    }
+
+    /** 候选模式的 prompt：明确"只能选，不许造" */
+    private List<JsonObject> choiceMessages(JsonObject state, String hint,
+                                            List<Candidate> candidates) {
+        List<JsonObject> messages = new ArrayList<>();
+        messages.add(message("system",
+                "You are the behavior controller of a Minecraft villager NPC. You never speak to players.\n"
+                        + "Choose exactly ONE option from the numbered OPTIONS list. "
+                        + "The options are already validated server-side; never invent actions or parameters.\n"
+                        + "Output ONLY one JSON object, no markdown, no explanation:\n"
+                        + "{\"choice\": <option number>, \"reason\": \"<short reason>\"}\n"
+                        + "Prefer idle if nothing important is happening. "
+                        + "Do not choose an action that is already RUNNING."));
+        StringBuilder user = new StringBuilder();
+        user.append("STATE: ").append(state == null ? "{}" : state.toString());
+        if (hint != null && !hint.isBlank()) {
+            user.append("\nHINT: ").append(hint);
+        }
+        user.append("\nOPTIONS:\n");
+        for (int i = 0; i < candidates.size(); i++) {
+            Candidate candidate = candidates.get(i);
+            user.append(i).append(". ").append(candidate.action())
+                    .append(" — ").append(candidate.label()).append('\n');
+        }
+        user.append("Decide. Output ONLY the JSON object.");
+        messages.add(message("user", user.toString()));
+        return messages;
+    }
+
+    /**
+     * 从模型输出里提取候选序号；-1 = 提取不到。
+     * <p>
+     * 按严格度递减尝试三种写法：标准 JSON 的 "choice": N → "choice: N" → 全文只有一个数字。
+     * 单独抽成包内静态方法，便于不起 HTTP 的单元测试覆盖。
+     */
+    static int parseChoiceIndex(String raw) {
+        if (raw == null || raw.isBlank()) return -1;
+        String text = raw
+                .replaceAll("(?s)<think>.*?</think>", "")
+                .replaceAll("(?s)<\\|think\\|>.*?</\\|think\\|>", "")
+                .trim();
+        Matcher fence = Pattern.compile("(?s)```(?:json)?\\s*(.*?)```").matcher(text);
+        if (fence.find() && !fence.group(1).isBlank()) {
+            text = fence.group(1).trim();
+        }
+
+        Matcher strict = Pattern.compile("\"choice\"\\s*:\\s*\"?(-?\\d+)\"?").matcher(text);
+        if (strict.find()) return nonNegative(strict.group(1));
+        Matcher loose = Pattern.compile("(?i)\\bchoice\\b\\s*[:=]?\\s*\"?(-?\\d+)").matcher(text);
+        if (loose.find()) return nonNegative(loose.group(1));
+
+        // 最后兜底：模型只回了 "2" / "I choose 2."。要求全文只有一个数字，避免从 STATE 里误抓。
+        Matcher digit = Pattern.compile("\\d+").matcher(text);
+        if (digit.find()) {
+            String only = digit.group();
+            if (!digit.find()) return nonNegative(only);
+        }
+        return -1;
+    }
+
+    private static int nonNegative(String value) {
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed >= 0 ? parsed : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private static String abbreviate(String s) {
+        String oneLine = s.replaceAll("\\s+", " ").trim();
+        return oneLine.length() <= 160 ? oneLine : oneLine.substring(0, 160) + "…";
     }
 
     /** 递归给出重试机会：解析失败时把原因反馈给模型 */

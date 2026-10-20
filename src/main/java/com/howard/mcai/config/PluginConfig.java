@@ -34,6 +34,11 @@ public record PluginConfig(
         int llmBehaviorMaxTokens,
         /** 需求驱动的自主行动是否交给行为模型决策；false = 沿用原对话模型自主行动 */
         boolean llmBehaviorAutonomyEnabled,
+        /**
+         * 候选模式：服务端预生成已校验的合法动作，模型只回序号。
+         * true = 适合 1B 小模型；false = 让模型自由生成工具名与参数（适合 2B 以上）。
+         */
+        boolean llmBehaviorCandidateMode,
 
         // Tick 配置
         int tickIntervalTicks,
@@ -124,6 +129,7 @@ public record PluginConfig(
                 blankToNull(cfg.getString("llm.behavior.model", "")),
                 cfg.getInt("llm.behavior.max-tokens", 256),
                 cfg.getBoolean("llm.behavior.autonomy-enabled", false),
+                cfg.getBoolean("llm.behavior.candidate-mode", true),
                 // Tick
                 cfg.getInt("tick.interval-ticks", 60),
                 cfg.getInt("tick.social-interval-ticks", 1200),

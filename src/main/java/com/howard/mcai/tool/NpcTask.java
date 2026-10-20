@@ -63,6 +63,16 @@ public final class NpcTask {
     public synchronized String errorMessage() { return errorMessage; }
     public synchronized JsonObject data() { return data; }
 
+    /**
+     * 更新进行中的进度快照（例如 move_to 的卡住检测基准点）。
+     * <p>
+     * 任务结束后不再覆盖：COMPLETED 的 data 是最终结果，不能被进度数据污染。
+     */
+    public synchronized void updateData(JsonObject progress) {
+        if (!isActive()) return;
+        data = progress;
+    }
+
     public synchronized boolean isActive() {
         return state == ToolResult.Status.ACCEPTED || state == ToolResult.Status.RUNNING;
     }
