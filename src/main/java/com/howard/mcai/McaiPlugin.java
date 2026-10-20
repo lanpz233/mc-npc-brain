@@ -197,7 +197,8 @@ public final class McaiPlugin extends JavaPlugin {
         // 5.1 工具系统 —— 统一注册 / 参数校验 / 权限策略 / 任务生命周期
         //     所有 Bukkit 状态读取与行动执行仍然走主线程，Dispatcher 只负责编排
         gameStateProvider = new BukkitGameStateProvider(this);
-        npcTaskManager = new NpcTaskManager();
+        // 任务生命周期全量打控制台：创建 / 完成 / 失败 / 取消 / 超时都能追溯
+        npcTaskManager = new NpcTaskManager(message -> getLogger().info(message));
         toolRegistry = new ToolRegistry();
         toolPolicyService = new ToolPolicyService(
                 gameStateProvider::npcExists,
@@ -217,7 +218,9 @@ public final class McaiPlugin extends JavaPlugin {
                 message -> getLogger().warning("[tool] " + message),
                 5 * 60_000L,
                 // 主线程闸门：Dispatcher 自己不依赖 Bukkit，插件把权威判定注入进去
-                Bukkit::isPrimaryThread);
+                Bukkit::isPrimaryThread,
+                // 每次工具调用（命令/行为模型/自主行动）都写一行到控制台
+                message -> getLogger().info(message));
         registerBuiltinTools();
         // 模型输出适配层：wire 名（npc_move_to）与规范名（npc.move_to）统一归一到 ToolRequest
         llmToolAdapter = new LlmToolAdapter(toolRegistry);
@@ -902,6 +905,8 @@ public final class McaiPlugin extends JavaPlugin {
         UUID playerUuid = sender instanceof Player player ? player.getUniqueId() : null;
         ToolRequest request = ToolRequest.create(ToolContext.CallerType.PLUGIN, "command",
                 target.getUniqueId(), playerUuid, toolName, arguments);
+        // 控制台留一条命令层面的记录（Dispatcher 还会打一条带结果的 [tool] 行）
+        getLogger().info("[cmd] /ai tool " + toolName + " npc=" + npcName + " args=" + arguments);
         try {
             ToolResult result = toolDispatcher.dispatchSync(request);
             sender.sendMessage("§a[tool] " + toolName + " → " + result.status()
@@ -914,6 +919,8 @@ public final class McaiPlugin extends JavaPlugin {
                 sender.sendMessage("§f" + result.data());
             }
         } catch (Exception e) {
+            getLogger().warning("[cmd] /ai tool " + toolName + " 异常: "
+                    + e.getClass().getSimpleName() + ": " + e.getMessage());
             sender.sendMessage("§c工具调用异常: " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
@@ -1024,17 +1031,24 @@ public final class McaiPlugin extends JavaPlugin {
 
         sender.sendMessage("§7行为模型: §f" + behaviorModelClient.settings().model()
                 + " §7@ §f" + behaviorModelClient.settings().url());
+        // 控制台同步留痕：命令参数、模型选择/空闲/解析失败都要能看到
+        getLogger().info("[behavior] " + npcName + " hint=" + (hint == null ? "(none)" : hint)
+                + " model=" + behaviorModelClient.settings().model());
         behaviorModelClient.decide(target.getUniqueId(), playerUuid, "command", state, hint)
                 .thenAccept(outcome -> Bukkit.getScheduler().runTask(this, () -> {
                     if (!outcome.ok()) {
+                        getLogger().warning("[behavior] " + npcName + " 解析失败: " + outcome.error());
                         sender.sendMessage("§c行为模型输出无法解析: " + outcome.error());
                         return;
                     }
                     if (outcome.idle()) {
+                        getLogger().info("[behavior] " + npcName + " → idle");
                         sender.sendMessage("§e行为模型决定: idle（这一步不行动）");
                         return;
                     }
                     ToolRequest request = outcome.request();
+                    getLogger().info("[behavior] " + npcName + " → " + request.tool()
+                            + " args=" + request.arguments());
                     sender.sendMessage("§a行为模型选择: §6" + request.tool()
                             + " §7args=" + request.arguments());
                     try {
@@ -1046,11 +1060,14 @@ public final class McaiPlugin extends JavaPlugin {
                             sender.sendMessage("§7task_id: " + result.taskId());
                         }
                     } catch (Exception e) {
+                        getLogger().warning("[behavior] " + npcName + " 工具执行异常: "
+                                + e.getClass().getSimpleName() + ": " + e.getMessage());
                         sender.sendMessage("§c工具执行异常: " + e.getClass().getSimpleName()
                                 + ": " + e.getMessage());
                     }
                 }))
                 .exceptionally(ex -> {
+                    getLogger().warning("[behavior] " + npcName + " 调用失败: " + ex.getMessage());
                     Bukkit.getScheduler().runTask(this, () ->
                             sender.sendMessage("§c行为模型调用失败: " + ex.getMessage()));
                     return null;

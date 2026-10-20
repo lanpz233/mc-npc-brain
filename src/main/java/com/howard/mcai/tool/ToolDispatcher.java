@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
@@ -36,6 +37,11 @@ public final class ToolDispatcher {
      * 本类不能直接依赖 Bukkit，否则纯单元测试无法加载。
      */
     private final BooleanSupplier mainThreadCheck;
+    /**
+     * 执行日志出口。插件里注入插件 Logger，每次工具调用无论成功/拒绝/任务启动都打一行；
+     * 单元测试传 null（不输出），避免测试刷屏。
+     */
+    private final Consumer<String> logSink;
     private final Map<String, CachedResult> recentRequests = new ConcurrentHashMap<>();
 
     public ToolDispatcher(ToolRegistry registry,
@@ -62,6 +68,18 @@ public final class ToolDispatcher {
                           Consumer<String> warningSink,
                           long dedupeTtlMs,
                           BooleanSupplier mainThreadCheck) {
+        this(registry, policy, tasks, mainThreadExecutor, warningSink, dedupeTtlMs,
+                mainThreadCheck, null);
+    }
+
+    public ToolDispatcher(ToolRegistry registry,
+                          ToolPolicyService policy,
+                          NpcTaskManager tasks,
+                          Consumer<Runnable> mainThreadExecutor,
+                          Consumer<String> warningSink,
+                          long dedupeTtlMs,
+                          BooleanSupplier mainThreadCheck,
+                          Consumer<String> logSink) {
         this.registry = registry;
         this.policy = policy;
         this.tasks = tasks;
@@ -69,6 +87,7 @@ public final class ToolDispatcher {
         this.warningSink = warningSink == null ? message -> { } : warningSink;
         this.dedupeTtlMs = Math.max(1_000L, dedupeTtlMs);
         this.mainThreadCheck = mainThreadCheck == null ? () -> true : mainThreadCheck;
+        this.logSink = logSink;
     }
 
     /**
@@ -97,8 +116,18 @@ public final class ToolDispatcher {
 
     /**
      * 同步入口，必须在主线程调用。
+     * <p>
+     * 统一在这里打执行日志：调用方（命令 / 行为模型 / 自主行动）不需要各自复制一遍，
+     * 也保证"拒绝"和"异常"同样出现在控制台，而不是只看到成功的那些。
      */
     public ToolResult dispatchSync(ToolRequest request) {
+        long startedNanos = System.nanoTime();
+        ToolResult result = dispatchSyncChecked(request);
+        logCall(request, result, (System.nanoTime() - startedNanos) / 1_000_000L);
+        return result;
+    }
+
+    private ToolResult dispatchSyncChecked(ToolRequest request) {
         // 兜底闸门：调用方漏切主线程时这里必须拒绝，而不是把 Bukkit 调用带到异步线程。
         // 返回 REJECTED 而不是抛异常，避免异常在 CompletableFuture 链里被吞掉后无人排查。
         if (!mainThreadCheck.getAsBoolean()) {
@@ -192,6 +221,36 @@ public final class ToolDispatcher {
             return ToolResult.failed(ToolResult.ErrorCode.INTERNAL_ERROR,
                     "工具执行异常: " + t.getClass().getSimpleName());
         }
+    }
+
+    /** 一行一条执行记录：谁 → 哪个 NPC → 哪个工具 → 结果（含任务号 / 错误 / 数据摘要） */
+    private void logCall(ToolRequest request, ToolResult result, long elapsedMs) {
+        if (logSink == null || request == null || result == null) return;
+        StringBuilder sb = new StringBuilder("[tool] ");
+        sb.append(request.callerType()).append('/').append(request.callerId())
+                .append(" npc=").append(shortId(request.npcId()))
+                .append(" tool=").append(request.tool())
+                .append(" args=").append(trim(request.arguments().toString()))
+                .append(" → ").append(result.status());
+        if (result.taskId() != null) sb.append(" task=").append(result.taskId());
+        if (result.errorCode() != null) {
+            sb.append(" err=").append(result.errorCode()).append(':').append(result.errorMessage());
+        }
+        if (result.data() != null) sb.append(" data=").append(trim(result.data().toString()));
+        sb.append(" (").append(elapsedMs).append("ms)");
+        logSink.accept(sb.toString());
+    }
+
+    /** 日志单行化：args/data 可能很长，超过 300 字符截断，避免把控制台刷爆 */
+    private static String trim(String value) {
+        String oneLine = value.replace('\n', ' ').replace('\r', ' ');
+        return oneLine.length() <= 300 ? oneLine : oneLine.substring(0, 300) + "...";
+    }
+
+    private static String shortId(UUID id) {
+        if (id == null) return "-";
+        String s = id.toString();
+        return s.length() <= 8 ? s : s.substring(0, 8);
     }
 
     private static JsonObject taskSummary(NpcTool tool, NpcTask task) {

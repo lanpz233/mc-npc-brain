@@ -398,6 +398,8 @@ public final class NeedsLayer extends TickLayer {
         if (plugin.getPluginConfig().llmBehaviorCandidateMode()) {
             List<BehaviorModelClient.Candidate> candidates =
                     buildCandidates(vs, dominant, activeTask);
+            // 候选清单也打出来：模型选了序号但选错时，需要能回看当时到底给了哪些选项
+            plugin.getLogger().info("§b[MC-AI] 候选动作: " + describeCandidates(candidates));
             decideByChoice(vs, dominant, state, candidates, 0);
         } else {
             decideByFreeForm(vs, dominant, state);
@@ -473,6 +475,7 @@ public final class NeedsLayer extends TickLayer {
 
         ToolResult result = plugin.getToolDispatcher().dispatchSync(outcome.request());
         plugin.getLogger().info("§b[MC-AI] 自主行动(行为模型) " + Smalltalk.nameOf(vs)
+                + " 选择#" + outcome.index()
                 + " → " + outcome.request().tool() + " " + result.status()
                 + (result.success() ? "" : " " + result.errorCode()
                 + ": " + result.errorMessage()));
@@ -495,6 +498,18 @@ public final class NeedsLayer extends TickLayer {
 
         vs.needs().satisfy(dominant, NeedsState.SATISFY_ON_ACTION);
         plugin.getMemoryStore().markDirty(vs.getUniqueId());
+    }
+
+    /** 候选清单的日志摘要：[0]idle [1]npc.move_to{...}，一行打完便于对照模型返回的序号 */
+    private static String describeCandidates(List<BehaviorModelClient.Candidate> candidates) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < candidates.size(); i++) {
+            BehaviorModelClient.Candidate c = candidates.get(i);
+            if (i > 0) sb.append(' ');
+            sb.append('[').append(i).append(']').append(c.action());
+            if (!c.args().isEmpty()) sb.append(c.args());
+        }
+        return sb.toString();
     }
 
     /**

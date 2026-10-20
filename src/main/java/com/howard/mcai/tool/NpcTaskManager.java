@@ -5,8 +5,10 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /**
  * 持续行动任务的生命周期管理。
@@ -21,13 +23,27 @@ public final class NpcTaskManager {
 
     private final Map<String, NpcTask> tasks = new ConcurrentHashMap<>();
     private final long retentionMs;
+    /** 已上报终止状态的任务 ID，避免 tick 每轮重复打日志 */
+    private final Set<String> reportedTerminal = ConcurrentHashMap.newKeySet();
+    /** 生命周期日志出口（插件 Logger）；测试传 null 时不输出 */
+    private final Consumer<String> logSink;
 
     public NpcTaskManager() {
-        this(DEFAULT_RETENTION_MS);
+        this(DEFAULT_RETENTION_MS, null);
     }
 
     public NpcTaskManager(long retentionMs) {
+        this(retentionMs, null);
+    }
+
+    /** 插件用：任务创建/完成/失败/取消/超时全部打到控制台 */
+    public NpcTaskManager(Consumer<String> logSink) {
+        this(DEFAULT_RETENTION_MS, logSink);
+    }
+
+    public NpcTaskManager(long retentionMs, Consumer<String> logSink) {
         this.retentionMs = Math.max(MIN_RETENTION_MS, retentionMs);
+        this.logSink = logSink;
     }
 
     /**
@@ -44,6 +60,8 @@ public final class NpcTaskManager {
         UUID npcId = context.npcId();
         for (NpcTask existing : tasks.values()) {
             if (existing.npcId().equals(npcId) && existing.isActive()) {
+                log("[task] 拒绝创建 npc=" + shortId(npcId) + " tool=" + tool.name()
+                        + "：已有进行中的任务 " + existing.id() + "(" + existing.toolName() + ")");
                 return null;
             }
         }
@@ -62,12 +80,17 @@ public final class NpcTaskManager {
         tasks.put(task.id(), task);
         task.markRunning(now);
 
+        log("[task] 创建 " + task.id() + " npc=" + shortId(npcId) + " tool=" + tool.name()
+                + " args=" + trim(arguments == null ? "{}" : arguments.toString()));
+
         try {
             task.action().start(task, context, task.arguments());
         } catch (Throwable t) {
             task.fail(now, ToolResult.ErrorCode.INTERNAL_ERROR,
                     "任务启动异常: " + t.getClass().getSimpleName() + ": " + t.getMessage());
         }
+        // 有的工具在 start 里就直接判定完成/失败，这里补一条终止日志，避免任务"只创建不结束"
+        if (task.isTerminal()) reportTerminal(task);
         return task;
     }
 
@@ -109,6 +132,7 @@ public final class NpcTaskManager {
         long now = System.currentTimeMillis();
         task.cancel(now, reason);
         notifyCancel(task);
+        reportTerminal(task);
         return true;
     }
 
@@ -123,6 +147,7 @@ public final class NpcTaskManager {
             if (!task.npcId().equals(npcId) || !task.isActive()) continue;
             task.cancel(now, reason);
             notifyCancel(task);
+            reportTerminal(task);
             count++;
         }
         return count;
@@ -145,6 +170,7 @@ public final class NpcTaskManager {
                 if (startedAt > 0 && nowMs - startedAt >= task.timeoutMs()) {
                     task.timeout(nowMs);
                     notifyCancel(task);
+                    reportTerminal(task);
                     continue;
                 }
                 try {
@@ -153,11 +179,14 @@ public final class NpcTaskManager {
                     task.fail(nowMs, ToolResult.ErrorCode.INTERNAL_ERROR,
                             "任务 tick 异常: " + t.getClass().getSimpleName() + ": " + t.getMessage());
                 }
+                // 任务可能在 tick 里完成/失败（到达、卡住判定），这里统一上报一次
+                if (task.isTerminal()) reportTerminal(task);
             }
 
             if (task.isTerminal() && task.finishedAtMs() > 0
                     && nowMs - task.finishedAtMs() > retentionMs) {
                 tasks.remove(task.id(), task);
+                reportedTerminal.remove(task.id());
             }
         }
     }
@@ -171,8 +200,43 @@ public final class NpcTaskManager {
             if (!task.isActive()) continue;
             task.cancel(now, "插件关闭");
             notifyCancel(task);
+            reportTerminal(task);
         }
         tasks.clear();
+        reportedTerminal.clear();
+    }
+
+    /** 任务终止日志：状态 / 工具 / 时长 / 错误 / 最终数据，一行一条便于控制台排查 */
+    private void reportTerminal(NpcTask task) {
+        if (task == null || !reportedTerminal.add(task.id())) return;
+        StringBuilder sb = new StringBuilder("[task] ")
+                .append(task.state()).append(' ')
+                .append(task.toolName())
+                .append(" id=").append(task.id())
+                .append(" npc=").append(shortId(task.npcId()));
+        if (task.startedAtMs() > 0 && task.finishedAtMs() > 0) {
+            sb.append(" 用时=").append(task.finishedAtMs() - task.startedAtMs()).append("ms");
+        }
+        if (task.errorCode() != null) {
+            sb.append(" err=").append(task.errorCode()).append(':').append(task.errorMessage());
+        }
+        if (task.data() != null) sb.append(" data=").append(trim(task.data().toString()));
+        log(sb.toString());
+    }
+
+    private static String trim(String value) {
+        String oneLine = value.replace('\n', ' ').replace('\r', ' ');
+        return oneLine.length() <= 300 ? oneLine : oneLine.substring(0, 300) + "...";
+    }
+
+    private static String shortId(UUID id) {
+        if (id == null) return "-";
+        String s = id.toString();
+        return s.length() <= 8 ? s : s.substring(0, 8);
+    }
+
+    private void log(String message) {
+        if (logSink != null) logSink.accept(message);
     }
 
     private static void notifyCancel(NpcTask task) {
