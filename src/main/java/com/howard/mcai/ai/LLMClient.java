@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.howard.mcai.config.LlmSettings;
 import com.howard.mcai.config.PluginConfig;
 
 import java.net.URI;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,15 +37,27 @@ import java.util.regex.Pattern;
  */
 public final class LLMClient {
 
+    /**
+     * 旧工具白名单之外的动态工具名（统一 ToolRegistry 里的 wire 名，如 npc_move_to）。
+     * <p>
+     * 为什么要有：fallback 正则原本只认 BehaviorRegistry 的 18 个旧工具，模型如果按新工具名
+     * 输出 {@code npc_move_to(...)} 或裸 JSON，既解析不出来也剥不干净 → 调用丢失 + JSON 原文进气泡。
+     * 注册表装配完成后调用 {@link #registerFallbackToolNames(java.util.Collection)} 同步过来。
+     * <p>
+     * 注意：必须声明在下面三个 Pattern 之前 —— 它们是静态字段，初始化时会调用
+     * {@link #toolNameAlternation()}；字段按声明顺序初始化，放在后面会读到 null 直接炸在 onEnable。
+     */
+    private static volatile Set<String> extraToolNames = Set.of();
+
     /** Python 风格函数调用匹配：.say(message="...") 或 say(message="...") */
-    private static final Pattern PY_FUNC_CALL = Pattern.compile(
+    private static volatile Pattern PY_FUNC_CALL = Pattern.compile(
             "\\.?\\b(" + toolNameAlternation() + ")\\s*\\(");
 
     /**
      * 判断一段 JSON 是不是真的 tool_call —— "name" 的值必须是注册过的工具名。
      * 之前裸找 "name" 键会把正文里的普通 JSON（比如玩家聊到 {"name":"铁剑"}）误伤剥掉。
      */
-    private static final Pattern TOOL_NAME_IN_JSON = Pattern.compile(
+    private static volatile Pattern TOOL_NAME_IN_JSON = Pattern.compile(
             "\"name\"\\s*:\\s*\"?(" + toolNameAlternation() + ")\"?");
 
     /**
@@ -54,7 +68,7 @@ public final class LLMClient {
      * 不解析成 ToolCall 就永远不会执行，于是出现"NPC 满口答应给你改价/给你东西，实际什么都没发生"。
      * 必须解析，且要和 sanitizeDialogue 的剥离对齐（先解析、再剥）。
      */
-    private static final Pattern BRACKET_ACTION = Pattern.compile(
+    private static volatile Pattern BRACKET_ACTION = Pattern.compile(
             "\\[动作[:：]\\s*(" + toolNameAlternation() + ")\\b([^\\]]*)\\]");
 
     /** {@code [动作:…]} 里的 {@code key=value}（值可带引号）；抽走后原位置替换成空格 */
@@ -62,34 +76,62 @@ public final class LLMClient {
             "\\b([A-Za-z_]+)\\s*=\\s*\"?([^\\s,\\]\"']*)\"?");
 
     /**
+     * 把统一工具注册表里的工具名并入 fallback 正则。可在每次 /ai reload 后重复调用（幂等）。
+     *
+     * @param names 工具名（传 wire 名：点号会破坏正则，注册表里 wire 名是下划线形式）
+     */
+    public static void registerFallbackToolNames(java.util.Collection<String> names) {
+        if (names == null || names.isEmpty()) return;
+        Set<String> merged = new java.util.LinkedHashSet<>(extraToolNames);
+        merged.addAll(names);
+        extraToolNames = Set.copyOf(merged);
+        String alt = toolNameAlternation();
+        PY_FUNC_CALL = Pattern.compile("\\.?\\b(" + alt + ")\\s*\\(");
+        TOOL_NAME_IN_JSON = Pattern.compile("\"name\"\\s*:\\s*\"?(" + alt + ")\"?");
+        BRACKET_ACTION = Pattern.compile("\\[动作[:：]\\s*(" + alt + ")\\b([^\\]]*)\\]");
+    }
+
+    /**
      * 用 BehaviorRegistry 的白名单拼正则交替项 —— 工具名清单只在 VALID_TOOL_NAMES
      * 一处维护，之前这里硬编码 10 个、漏了 learn/nod，fallback 路径会丢这两个工具的调用。
      * 长名排前面：正则交替"先到先得"，短名在前可能截断长名（防御性排序，保证行为确定）。
+     * 每个名字都 Pattern.quote，避免未来出现带正则元字符的工具名。
      */
     private static String toolNameAlternation() {
-        return BehaviorRegistry.validToolNames().stream()
+        List<String> names = new ArrayList<>(BehaviorRegistry.validToolNames());
+        names.addAll(extraToolNames);
+        return names.stream()
+                .distinct()
                 .sorted((a, b) -> b.length() - a.length())
+                .map(Pattern::quote)
                 .collect(java.util.stream.Collectors.joining("|"));
     }
 
-    private final PluginConfig config;
+    private final LlmSettings settings;
     private final HttpClient httpClient;
 
     /**
-     * 构造函数 —— 根据 config 创建一个 HttpClient 实例。
-     * HttpClient 是重量级对象（内置连接池），所以整个插件共用一个。
+     * 对话模型客户端 —— 沿用 PluginConfig 里的 llm.* 配置。
      */
     public LLMClient(PluginConfig config) {
-        this.config = config;
+        this(config, config.dialogSettings());
+    }
+
+    /**
+     * 指定角色的客户端 —— 双模型架构里 dialog / behavior 各持一份 settings。
+     * HttpClient 是重量级对象（内置连接池），所以整个插件共用一个。
+     */
+    public LLMClient(PluginConfig config, LlmSettings settings) {
+        this.settings = settings;
         this.httpClient = HttpClient.newBuilder()
                 // connect timeout: 网络连不上 llama-server 时快速失败，不阻塞 tick
-                .connectTimeout(Duration.ofMillis(config.connectTimeoutMs()))
+                .connectTimeout(Duration.ofMillis(settings.connectTimeoutMs()))
                 .build();
         // 每次新建（onEnable / /ai reload / /ai llm 换后端）打一行，方便确认当前连的是哪个后端
-        org.bukkit.Bukkit.getLogger().info("[MC-AI] LLM 后端: " + config.llmUrl()
-                + "  model=" + config.llmModel()
+        org.bukkit.Bukkit.getLogger().info("[MC-AI] LLM 后端(" + settings.role() + "): "
+                + settings.url() + "  model=" + settings.model()
                 + (isAutoModel() ? " (auto：运行时自动探测)" : "")
-                + (PluginConfig.isLocalEndpoint(config.llmUrl()) ? "  (本机)" : "  (云端)"));
+                + (PluginConfig.isLocalEndpoint(settings.url()) ? "  (本机)" : "  (云端)"));
     }
 
     /**
@@ -105,7 +147,7 @@ public final class LLMClient {
                                                 List<Map<String, Object>> tools) {
         // llm.model = 'auto' → 每次（按 30s TTL）实时探测"后端当前在用的模型"，跟随你在 Ollama 里的切换
         if (!isAutoModel()) {
-            return doChat(messages, tools, config.llmModel(), false);
+            return doChat(messages, tools, settings.model(), false);
         }
         return currentModelAsync().thenCompose(model -> doChat(messages, tools, model, true));
     }
@@ -138,22 +180,22 @@ public final class LLMClient {
         final HttpRequest request;
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
-                    .uri(URI.create(config.llmUrl()))
+                    .uri(URI.create(settings.url()))
                     .header("Content-Type", "application/json")
                     // read timeout：默认 30 秒没回就放弃。注意云端 API 排队/长回复可能超 30 秒，
                     // 用 /ai llm 切云端时会自动把 llm.read-timeout-ms 抬到 60 秒
-                    .timeout(Duration.ofMillis(config.readTimeoutMs()))
+                    .timeout(Duration.ofMillis(settings.readTimeoutMs()))
                     .POST(HttpRequest.BodyPublishers.ofString(body));
             // api-key 留空 → 不发 Authorization 头（本地 llama-server、内网 one-api 之类常不需要）
-            if (config.llmApiKey() != null && !config.llmApiKey().isBlank()) {
-                builder.header("Authorization", "Bearer " + config.llmApiKey());
+            if (settings.apiKey() != null && !settings.apiKey().isBlank()) {
+                builder.header("Authorization", "Bearer " + settings.apiKey());
             }
             request = builder.build();
         } catch (IllegalArgumentException e) {
             // url 写错（URI 非法）不能同步抛出去 —— 调用方在异步链路里，抛出去等于打穿调度。
             // 包成 failedFuture，让统一的 exceptionally 分支（降级 idle / 释放 LLM 锁）兜住。
             return CompletableFuture.failedFuture(
-                    new RuntimeException("LLM url 非法，请检查 config.yml 的 llm.url: " + config.llmUrl(), e));
+                    new RuntimeException("LLM url 非法，请检查 config.yml 的 llm.url: " + settings.url(), e));
         }
 
         // 3. 异步发送
@@ -171,7 +213,7 @@ public final class LLMClient {
                         return currentModelAsync().thenCompose(fresh -> doChat(messages, tools, fresh, false));
                     }
                     // 带上 url 一起报错：换后端后最常见的坑就是 url 写错（404）或 key 没填（401）
-                    throw new RuntimeException("LLM (" + config.llmUrl() + ") returned HTTP "
+                    throw new RuntimeException("LLM (" + settings.url() + ") returned HTTP "
                             + statusCode + ": " + response.body());
                 });
     }
@@ -197,13 +239,13 @@ public final class LLMClient {
 
     /** 是否配置为自动跟随模型 */
     public boolean isAutoModel() {
-        String m = config.llmModel();
+        String m = settings.model();
         return m == null || m.isBlank() || m.equalsIgnoreCase(AUTO_MODEL);
     }
 
     /** 当前该用的模型：非 auto → 配置值；auto → 探测值（过期则重探） */
     private CompletableFuture<String> currentModelAsync() {
-        if (!isAutoModel()) return CompletableFuture.completedFuture(config.llmModel());
+        if (!isAutoModel()) return CompletableFuture.completedFuture(settings.model());
         String cached = autoResolvedModel;
         if (cached != null && System.currentTimeMillis() - autoResolvedAtMs < AUTO_MODEL_TTL_MS) {
             return CompletableFuture.completedFuture(cached);
@@ -214,7 +256,7 @@ public final class LLMClient {
     /** endpoint 的 scheme://authority 部分（探测接口挂在根路径，不在 /v1 下） */
     private String endpointRoot() {
         try {
-            URI u = URI.create(config.llmUrl());
+            URI u = URI.create(settings.url());
             return u.getScheme() + "://" + u.getAuthority();
         } catch (Exception e) {
             return "";
@@ -341,10 +383,10 @@ public final class LLMClient {
             HttpRequest.Builder b = HttpRequest.newBuilder()
                     .uri(URI.create(root + "/api/show"))
                     .header("Content-Type", "application/json")
-                    .timeout(Duration.ofMillis(Math.max(2000, config.connectTimeoutMs())))
+                    .timeout(Duration.ofMillis(Math.max(2000, settings.connectTimeoutMs())))
                     .POST(HttpRequest.BodyPublishers.ofString("{\"model\":\"" + escape(name) + "\"}"));
-            if (config.llmApiKey() != null && !config.llmApiKey().isBlank()) {
-                b.header("Authorization", "Bearer " + config.llmApiKey());
+            if (settings.apiKey() != null && !settings.apiKey().isBlank()) {
+                b.header("Authorization", "Bearer " + settings.apiKey());
             }
             request = b.build();
         } catch (IllegalArgumentException e) {
@@ -407,10 +449,10 @@ public final class LLMClient {
         try {
             HttpRequest.Builder b = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .timeout(Duration.ofMillis(Math.max(2000, config.connectTimeoutMs())))
+                    .timeout(Duration.ofMillis(Math.max(2000, settings.connectTimeoutMs())))
                     .GET();
-            if (config.llmApiKey() != null && !config.llmApiKey().isBlank()) {
-                b.header("Authorization", "Bearer " + config.llmApiKey());
+            if (settings.apiKey() != null && !settings.apiKey().isBlank()) {
+                b.header("Authorization", "Bearer " + settings.apiKey());
             }
             request = b.build();
         } catch (IllegalArgumentException e) {
@@ -437,8 +479,8 @@ public final class LLMClient {
                         .uri(URI.create(root + path))
                         .timeout(Duration.ofSeconds(3))
                         .GET();
-                if (config.llmApiKey() != null && !config.llmApiKey().isBlank()) {
-                    b.header("Authorization", "Bearer " + config.llmApiKey());
+                if (settings.apiKey() != null && !settings.apiKey().isBlank()) {
+                    b.header("Authorization", "Bearer " + settings.apiKey());
                 }
                 HttpResponse<String> r = httpClient.send(b.build(), HttpResponse.BodyHandlers.ofString());
                 if (r.statusCode() != 200) continue;
@@ -471,12 +513,18 @@ public final class LLMClient {
         // model 由调用方传入：显式配置值，或 auto 模式实时探测到的值（见 chat/doChat）
         sb.append("\"model\":\"").append(escape(model)).append("\",");
         sb.append("\"stream\":false,");
-        sb.append("\"max_tokens\":").append(config.maxTokens()).append(",");
+        sb.append("\"max_tokens\":").append(settings.maxTokens()).append(",");
 
         // 思考开关（Ollama 等 OpenAI 兼容后端）—— reasoning_effort:none 关闭 Qwen3.5 的 <think>，
         // 不关的话 token 全花在思考上、正文为空。llama-server 忽略此字段，两个后端通用。
-        if (config.reasoningEffort() != null && !config.reasoningEffort().isBlank()) {
-            sb.append("\"reasoning_effort\":\"").append(escape(config.reasoningEffort())).append("\",");
+        if (settings.reasoningEffort() != null && !settings.reasoningEffort().isBlank()) {
+            sb.append("\"reasoning_effort\":\"").append(escape(settings.reasoningEffort())).append("\",");
+        }
+
+        // 行为模型专用：MiniCPM 开着 thinking 时会把输出预算全耗在思考上，正文为空（实测）。
+        // think 是 Ollama 专有顶层字段，只在 endpoint 是本机时发送，云端 API 收到会 400。
+        if (settings.disableThinking() && PluginConfig.isLocalEndpoint(settings.url())) {
+            sb.append("\"think\":false,");
         }
 
         // 模型驻留 60 分钟 —— Ollama 默认 5 分钟空闲就卸载 6.1GB 权重，
@@ -484,9 +532,9 @@ public final class LLMClient {
         // **只在 endpoint 是本机时发**：这是 Ollama 专有字段，云端 API（OpenAI/DeepSeek…）
         // 收到不认识的顶层参数会直接回 HTTP 400「Unrecognized request argument」；
         // 本地 llama-server 忽略它，所以本机统一发不会出问题。
-        if (config.llmKeepAlive() != null && !config.llmKeepAlive().isBlank()
-                && PluginConfig.isLocalEndpoint(config.llmUrl())) {
-            sb.append("\"keep_alive\":\"").append(escape(config.llmKeepAlive())).append("\",");
+        if (settings.keepAlive() != null && !settings.keepAlive().isBlank()
+                && PluginConfig.isLocalEndpoint(settings.url())) {
+            sb.append("\"keep_alive\":\"").append(escape(settings.keepAlive())).append("\",");
         }
 
         // messages 数组

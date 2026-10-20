@@ -37,7 +37,8 @@ import java.util.UUID;
  * <ul>
  *   <li>物品**只能通过 {@link #requestItem} 出货**，GUI 本身对所有点击/拖拽事件 cancel，
  *       玩家不能直接把东西拿走（{@link com.howard.mcai.listener.VillagerInventoryListener} 负责拦截）。</li>
- *   <li>出货受"关系门槛"约束：对当前玩家的好感 < {@code permissions.request-item-favor} → 婉拒且不动库存。</li>
+ *   <li>出货是<b>概率制</b>：对当前玩家的好感越高，NPC 越可能答应（见 {@code EmotionState.giveChance}），
+ *       掷骰没中就婉拒且不动库存。</li>
  *   <li>出货后同步 markDirty，库存变化立即进入防抖落盘，与对话侧 {@code give_item} 共用同一份库存。</li>
  *   <li>所有方法必须在 Paper 主线程调用（openInventory / 库存扣减 / 掉落物 / 读实体状态）。</li>
  * </ul>
@@ -182,8 +183,8 @@ public final class VillagerInventoryGui implements InventoryHolder {
         List<String> favorLore = new ArrayList<>();
         favorLore.add("§7恐惧值: §f" + emotion.fear() + "§7/100 " + bar(emotion.fear()));
         favorLore.add("§7对你的好感: §f" + fmt(myFavor) + " §7(" + rank.zhName() + ")");
-        favorLore.add("§8索要门槛 " + fmt(plugin.getPluginConfig().requestItemFavor())
-                + " / 亲信门槛 " + fmt(plugin.getPluginConfig().confidantFavor()));
+        favorLore.add("§8索要命中概率 " + fmt(emotion.giveChance(viewerUuid) * 100)
+                + "% §7(好感越高越容易) / 亲信门槛 " + fmt(plugin.getPluginConfig().confidantFavor()));
         favorLore.add("§7—— 对各位玩家的好感 ——");
         favorLore.addAll(topList(favorEntries(), "§8（还没有任何好感记录）"));
         putStatus(47, Material.GOLDEN_APPLE, "§6§l情绪与好感", favorLore);
@@ -241,7 +242,7 @@ public final class VillagerInventoryGui implements InventoryHolder {
         invLore.add("§7物品种类: §f" + inv.size() + " §7总件数: §f" + totalItems);
         invLore.add("§7动态改价商品: §f" + state.dynamicPrices().size() + " §7种");
         invLore.add("§7当前上架: §f" + state.offeredItems().size() + " §7种");
-        invLore.add("§8（点上方物品可直接索要，需关系达标）");
+        invLore.add("§8（左键索要 1 个，右键用主手物品交换 1 个，需 NPC 同意）");
         putStatus(52, Material.CHEST, "§6§l背包与交易", invLore);
 
         // 53 最近言行
@@ -400,7 +401,7 @@ public final class VillagerInventoryGui implements InventoryHolder {
             List<String> lore = new ArrayList<>();
             lore.add("§7库存: §e" + amount);
             lore.add("§a左键 → 索要 1 个");
-            lore.add("§b右键 → 索要这一组（" + amount + " 个）");
+            lore.add("§b右键 → 用主手物品交换 1 个");
             meta.setLore(lore);
             stack.setItemMeta(meta);
         }
@@ -431,33 +432,32 @@ public final class VillagerInventoryGui implements InventoryHolder {
 
     /**
      * GUI 点击入口（由 VillagerInventoryListener 转发，主线程）。
-     * 只有点到"真货格"才触发索要；底板/状态卡/空位/玩家自己的背包格一律忽略。
+     * 只有点到"真货格"才触发；底板/状态卡/空位/玩家自己的背包格一律忽略。
      *
-     * @param rightClick true = 右键（要一整组），false = 左键（只要 1 个）
+     * @param rightClick true = 右键（用手持物品交换），false = 左键（只要 1 个）
      */
     public void handleClick(Player player, int slot, boolean rightClick) {
         if (player == null || !player.getUniqueId().equals(viewerUuid)) return;
         Material mat = slotMap.get(slot);
         if (mat == null) return;
-        // 该格显示的库存数就是"一组"的量（重建时放进去的 amount）
-        ItemStack shown = inventory.getItem(slot);
-        int stack = (shown != null) ? Math.max(1, shown.getAmount()) : 1;
-        requestItem(player, mat, rightClick ? stack : 1);
+        if (rightClick) {
+            requestSwap(player, mat);
+        } else {
+            requestItem(player, mat, 1);
+        }
     }
 
     /**
-     * 索要物品（主线程）—— <b>转成一次真交流</b>，而不是静默把东西塞给你。
+     * 左键索要 1 个（主线程）—— <b>转成一次真交流</b>，而不是静默把东西塞给你。
      * <p>
-     * 流程：关掉背包 GUI → 进入对话 → 把"玩家点了索要 X 共 N 个"当作一句话发给 NPC，
-     * 由模型决定说什么 + 是否调用 {@code give_item}。
+     * 流程：关掉背包 GUI → 进入对话 → 把"玩家点了索要 X 共 N 个"当作一句话发给 NPC。
      * <p>
-     * 给不给的最终把关仍在代码层（{@code give_item} 内的好感门槛），但这里决定"这次该给还是该拒"，
-     * 并把结论作为"关系信息"告诉模型，让台词和最终结果一致。
-     * <p>
-     * <b>磨耐心</b>：好感不够时不是一口回绝就完了 —— 每次再来索要会消耗 NPC 的耐心，
-     * 耐心耗尽他就松口答应一次（见 {@link VillagerState#grindPatience}）。耐心值随机、不对外公开。
+     * 关键变化：<b>点击当下不再直接出货</b>。好感只用来描述 NPC 的态度（愿不愿意），
+     * 真正的交付由模型表态触发 —— 模型调用 {@code give_item}，或台词里明确答应给，
+     * 才由 {@link com.howard.mcai.planner.CentralPlanner} 执行交付接口。
+     * 这样"嘴上说给你、背包里却没有"的问题从流程上消失。
      *
-     * @param wantCount 玩家这次想要的个数（左键 = 1，右键 = 一整组）
+     * @param wantCount 玩家这次想要的个数（GUI 左键固定 = 1）
      */
     public void requestItem(Player player, Material mat, int wantCount) {
         String zh = PromptBuilder.materialToZh(mat);
@@ -473,31 +473,16 @@ public final class VillagerInventoryGui implements InventoryHolder {
         Villager villager = state.entity();
         if (villager == null || !villager.isValid()) return;
 
-        double need = plugin.getPluginConfig().requestItemFavor();
+        // 好感/态度只作为注入模型的参考，不再在这里拍板交付
         double fav = state.emotion().favor(player.getUniqueId());
-        boolean closeEnough = fav >= need;
-        // 回收窗：这件东西本来就是这位玩家刚送出去的（3 分钟内），要回去不该看好感，直接还给他
+        double chance = state.emotion().giveChance(player.getUniqueId());
+        // 回收窗：这件东西本来就是这位玩家刚送出去的（3 分钟内），态度上直接愿意归还
         boolean reclaim = state.consumeReclaim(player.getUniqueId(), mat);
-        // 好感不够 → 看能不能把 NPC 磨到没耐心。磨成功这次就放行（并记下 mercy，让代码层门槛同步放行）
-        boolean mercy = false;
-        if (!closeEnough && !reclaim) {
-            mercy = state.grindPatience(player.getUniqueId());
-            if (mercy) state.grantMercy(player.getUniqueId(), mat);
-        }
-        boolean allow = closeEnough || mercy || reclaim;
+        boolean willing = reclaim
+                || java.util.concurrent.ThreadLocalRandom.current().nextDouble() < chance;
 
-        // 代码层钉死数量：玩家点"1 个"就只给 1 个，模型自由发挥的 count 参数不算数
+        // 数量仍由代码层钉死：玩家点"1 个"就只给 1 个，模型自由发挥的 count 不算数
         state.setItemRequest(player.getUniqueId(), mat, want);
-
-        // === 代码层当场交付 ===
-        // 不给模型"要不要真的调 give_item"的裁量权：实测它常常只在台词里写 [动作:give_item 面包] 当纯文本
-        // （被 sanitizeDialogue 剥掉、工具根本没被调用），于是嘴上说"给你 1 个"、玩家背包里却什么都没有。
-        // 所以给不给由这里拍板并当场出货，再把"已经给过了"作为事实注入回话要求，台词和结果才一致。
-        String failReason = null;
-        if (allow) {
-            failReason = plugin.getWorldInteraction().handOverFromStock(state, player, mat, want);
-            if (failReason != null) allow = false;      // 库存刚被别处清空 → 退回按婉拒处理
-        }
 
         // 1. 关掉背包，把 NPC 拉进对话状态（冻结原版 AI + 会持续转向玩家）
         player.closeInventory();
@@ -505,26 +490,66 @@ public final class VillagerInventoryGui implements InventoryHolder {
         planner.switchConversation(player, state);
         plugin.getBubbleManager().showDialog(villager, displayName(), "（思考中...）");
 
-        // 2. 用 user 角色把"索要意图 + 关系现状"告诉模型（system 只能有一条且在首位 —— Jinja 铁律）。
-        //    内容用中文，system prompt 仍是英文，不影响模型的中文台词输出。
-        String relation = reclaim ? "这件东西本来就是他的，你刚收下不久"
-                : (closeEnough ? "已经够熟" : (mercy ? "本来不够熟，但被他磨得没了耐心" : "还很生疏"));
-        String note = "（玩家 " + player.getName() + " 在你的背包界面点了「" + zh
-                + "」（材质 " + mat.name() + "），向你讨要 " + want + " 个。你俩的关系：" + relation + "。"
-                + (allow
-                        ? "你刚刚已经当场从自己背包里数出 " + want + " 个给他了（现在就在他手上）。"
-                          + "只用一句中文台词把这件事说出来即可，不要再调用 give_item —— 没有东西可给了。"
-                        : "请用一句中文台词礼貌地婉拒他，什么都别给。台词里绝不能承诺「给你」「拿着」这类话，"
-                          + "因为你确实什么都没给。")
-                + "台词要直接说出来，不能只调用工具。）";
+        // 2. 把"索要意图 + 当前态度"告诉模型，由模型决定说辞并表态。
+        //    system prompt 仍是英文，这里用中文注入不影响台词语言。
+        String attitude = reclaim ? "这件东西本来就是他刚送你的，你愿意还给他"
+                : (willing ? "关系不错，你愿意给" : "关系还不到位，你不太想给");
+        String note = "（玩家 " + player.getName() + " 在你的背包界面左键点击了「" + zh
+                + "」（材质 " + mat.name() + "），向你讨要 " + want + " 个。你现在的态度：" + attitude + "。"
+                + "如果你同意给，必须调用 give_item（item=\"" + zh + "\"，count=" + want
+                + "），系统会真的把东西交到他手上；"
+                + "如果你在台词里明确答应给（例如说「给你」「拿去」「送你了」「拿着」），系统也会照你的话交货。"
+                + "不同意就用一句中文台词婉拒，不要承诺任何东西。台词要直接说出来。）";
         plugin.getLogger().info("§b[MC-AI] 索要: " + player.getName() + " → " + displayName()
                 + " " + mat.name() + " x" + want + " 好感=" + String.format("%.0f", fav)
-                + " 门槛=" + String.format("%.0f", need)
-                + " → " + (allow
-                        ? (reclaim ? "物归原主，还（代码层已交付）"
-                                   : (mercy ? "磨到松口，给（代码层已交付）" : "够熟，给（代码层已交付）"))
-                        : "婉拒"));
-        if (failReason != null) player.sendMessage(failReason);
-        planner.onPlayerMessage(state, player, note);
+                + " 态度=" + (reclaim ? "物归原主" : (willing ? "愿意" : "不太愿意"))
+                + " → 等模型表态后交付");
+        // systemNote=true：说明文字里引用了"给你/拿去"作为示例，不能被当成玩家真的在送礼
+        planner.onPlayerMessage(state, player, note, true);
+    }
+
+    /**
+     * 右键交换（主线程）—— 用玩家主手物品换 NPC 点击格的 1 个物品。
+     * <p>
+     * 只登记一笔待确认交换，不提前转移任何物品；把双方物品和数量写进对话提示，
+     * 由 NPC 的模型判断"值不值得"：值得就调用 {@code accept_swap}，代码层再一次性完成
+     * 扣玩家手持、扣 NPC 库存、把 NPC 物品给玩家、把玩家物品收进 NPC 库存。
+     */
+    public void requestSwap(Player player, Material npcMat) {
+        String npcZh = PromptBuilder.materialToZh(npcMat);
+        if (state.stockOf(npcMat) <= 0) {
+            player.sendMessage("§e" + displayName() + "的背包里已经没有 " + npcZh + " 了");
+            rebuild();
+            return;
+        }
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType().isAir()) {
+            player.sendMessage("§e你主手没有物品。右键交换需要先拿着你要给出的东西");
+            return;
+        }
+        Villager villager = state.entity();
+        if (villager == null || !villager.isValid()) return;
+
+        Material offerMat = hand.getType();
+        int offerCount = hand.getAmount();
+        String offerZh = PromptBuilder.materialToZh(offerMat);
+
+        // 只登记；模型同意后由 WorldInteractionService 重新校验主手物品是否还在
+        state.setPendingSwap(player.getUniqueId(), npcMat, 1, offerMat, offerCount);
+
+        player.closeInventory();
+        var planner = plugin.getPlanner();
+        planner.switchConversation(player, state);
+        plugin.getBubbleManager().showDialog(villager, displayName(), "（思考中...）");
+
+        String note = "（玩家 " + player.getName() + " 在你的背包界面右键点击了「" + npcZh
+                + "」，想用他主手的「" + offerZh + "」×" + offerCount + " 换你的 1 个「" + npcZh + "」。"
+                + "玩家手上确实拿着这 " + offerCount + " 个。请你按物品的稀有度、用途和你自己的需求判断值不值得："
+                + "值得就调用 accept_swap，并在 message 参数里说一句中文台词，系统会完成双方物品转移；"
+                + "不值得就用一句中文台词拒绝，不要调用 accept_swap，也不要口头承诺交换。）";
+        plugin.getLogger().info("§b[MC-AI] 交换请求: " + player.getName() + " → " + displayName()
+                + " 以 " + offerMat.name() + " x" + offerCount + " 换 " + npcMat.name() + " x1"
+                + " → 等模型审核");
+        planner.onPlayerMessage(state, player, note, true);
     }
 }

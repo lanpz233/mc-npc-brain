@@ -1,8 +1,11 @@
 package com.howard.mcai;
 
+import com.howard.mcai.ai.BehaviorDecisionParser;
+import com.howard.mcai.ai.BehaviorModelClient;
 import com.howard.mcai.ai.BehaviorRegistry;
 import com.howard.mcai.ai.LLMClient;
 import com.howard.mcai.ai.LLMResponse;
+import com.howard.mcai.ai.LlmToolAdapter;
 import com.howard.mcai.ai.NameLibrary;
 import com.howard.mcai.ai.PersonalityTagLibrary;
 import com.howard.mcai.ai.PromptBuilder;
@@ -25,6 +28,25 @@ import com.howard.mcai.planner.CentralPlanner;
 import com.howard.mcai.planner.GroupChatCoordinator;
 import com.howard.mcai.planner.SocialRelationshipGenerator;
 import com.howard.mcai.planner.TickLayer;
+import com.howard.mcai.tool.BukkitGameStateProvider;
+import com.howard.mcai.tool.GameStateProvider;
+import com.howard.mcai.tool.NpcTaskManager;
+import com.howard.mcai.tool.NpcTool;
+import com.howard.mcai.tool.ToolContext;
+import com.howard.mcai.tool.ToolDispatcher;
+import com.howard.mcai.tool.ToolPolicyService;
+import com.howard.mcai.tool.ToolRegistry;
+import com.howard.mcai.tool.ToolRequest;
+import com.howard.mcai.tool.ToolResult;
+import com.howard.mcai.tool.tools.NpcInventoryGetTool;
+import com.howard.mcai.tool.tools.NpcMoveToTool;
+import com.howard.mcai.tool.tools.NpcStatusGetTool;
+import com.howard.mcai.tool.tools.NpcTaskCancelTool;
+import com.howard.mcai.tool.tools.NpcTaskGetTool;
+import com.howard.mcai.tool.tools.WorldObserveEntitiesTool;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -103,6 +125,17 @@ public final class McaiPlugin extends JavaPlugin {
     /** 世界交互执行器（give/take/break/place/teleport/equip + 传送确认流） */
     private com.howard.mcai.security.WorldInteractionService worldInteraction;
 
+    /** 工具系统：所有 AI 能力统一从 Dispatcher 进入 */
+    private GameStateProvider gameStateProvider;
+    private ToolRegistry toolRegistry;
+    private ToolPolicyService toolPolicyService;
+    private NpcTaskManager npcTaskManager;
+    private ToolDispatcher toolDispatcher;
+    /** 模型输出 → 统一工具请求（wire 名归一） */
+    private LlmToolAdapter llmToolAdapter;
+    /** 行为模型（MiniCPM）：只做动作选择，不负责说话 */
+    private BehaviorModelClient behaviorModelClient;
+
     /** 记录一次群聊回复（GroupChatCoordinator 在回复气泡上屏时调用） */
     public void markGroupReplyAt() {
         lastGroupReplyAtMs = System.currentTimeMillis();
@@ -156,6 +189,37 @@ public final class McaiPlugin extends JavaPlugin {
         permissionManager = new com.howard.mcai.security.PermissionManager(
                 config.confidantFavor(), config.territoryRadius());
         worldInteraction = new com.howard.mcai.security.WorldInteractionService(this, permissionManager, auditLog);
+
+        // 5.1 工具系统 —— 统一注册 / 参数校验 / 权限策略 / 任务生命周期
+        //     所有 Bukkit 状态读取与行动执行仍然走主线程，Dispatcher 只负责编排
+        gameStateProvider = new BukkitGameStateProvider(this);
+        npcTaskManager = new NpcTaskManager();
+        toolRegistry = new ToolRegistry();
+        toolPolicyService = new ToolPolicyService(
+                gameStateProvider::npcExists,
+                id -> {
+                    VillagerState vs = villagers.get(id);
+                    return vs != null && vs.interactingPlayer() != null;
+                },
+                (npcId, playerUuid) -> {
+                    VillagerState vs = villagers.get(npcId);
+                    return vs == null ? null : permissionManager.rankOf(vs, playerUuid);
+                });
+        toolDispatcher = new ToolDispatcher(
+                toolRegistry,
+                toolPolicyService,
+                npcTaskManager,
+                task -> Bukkit.getScheduler().runTask(this, task),
+                message -> getLogger().warning("[tool] " + message),
+                5 * 60_000L);
+        registerBuiltinTools();
+        // 模型输出适配层：wire 名（npc_move_to）与规范名（npc.move_to）统一归一到 ToolRequest
+        llmToolAdapter = new LlmToolAdapter(toolRegistry);
+        // 把新工具名并入 LLMClient 的 fallback 正则，避免模型按新名字输出时丢调用
+        LLMClient.registerFallbackToolNames(
+                toolRegistry.all().stream().map(NpcTool::wireName).toList());
+        // 行为模型：只选动作。配置留空时自动回退对话模型（behaviorSettings() 负责）
+        behaviorModelClient = new BehaviorModelClient(config.behaviorSettings(), toolRegistry);
 
         // 5. 先造 CentralPlanner（Listener 要调它的 triggerLLM）
         //    LLMClient 不再传引用 —— planner 运行时动态取 plugin.getLlmClient()，
@@ -270,6 +334,10 @@ public final class McaiPlugin extends JavaPlugin {
         // 1.5 停掉对话注视任务
         if (planner != null) {
             planner.stopFaceTask();
+        }
+        // 1.6 取消所有持续行动任务，清掉残留速度/状态
+        if (npcTaskManager != null) {
+            npcTaskManager.shutdown();
         }
 
         // 2. force flush 所有脏记忆
@@ -386,6 +454,21 @@ public final class McaiPlugin extends JavaPlugin {
         memoryStore.markDirty(vs.getUniqueId());
     }
 
+    // ===== 工具系统 =====
+
+    /**
+     * 注册内置工具。新增工具只需要在这里加一行，不需要改 CentralPlanner 的执行 switch。
+     */
+    private void registerBuiltinTools() {
+        toolRegistry.register(new NpcStatusGetTool(gameStateProvider));
+        toolRegistry.register(new NpcInventoryGetTool(gameStateProvider));
+        toolRegistry.register(new WorldObserveEntitiesTool(gameStateProvider));
+        toolRegistry.register(new NpcTaskGetTool(npcTaskManager));
+        toolRegistry.register(new NpcTaskCancelTool(npcTaskManager));
+        toolRegistry.register(new NpcMoveToTool(this));
+        getLogger().info("工具系统: 已注册 " + toolRegistry.size() + " 个工具");
+    }
+
     // ===== 命令处理 =====
 
     private boolean handleAiCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -401,6 +484,9 @@ public final class McaiPlugin extends JavaPlugin {
             sender.sendMessage("§e/ai envoy grant <名字> §f- 授予神使（完整权限，audit.log 审计）");
             sender.sendMessage("§e/ai envoy revoke <名字> §f- 撤销神使");
             sender.sendMessage("§e/ai envoy list §f- 查看权限等级说明与神使名单");
+            sender.sendMessage("§e/ai tool list §f- 查看已注册工具");
+            sender.sendMessage("§e/ai tool <工具名> <村民名> [JSON参数] §f- 直接调用工具（调试用）");
+            sender.sendMessage("§e/ai behavior <村民名> [提示] §f- 让行为模型基于真实状态选一步动作");
             return true;
         }
         switch (args[0].toLowerCase()) {
@@ -413,6 +499,8 @@ public final class McaiPlugin extends JavaPlugin {
             case "lookup" -> handleLookup(sender, args);
             case "needs" -> handleNeeds(sender, args);
             case "envoy" -> handleEnvoy(sender, args);
+            case "tool" -> handleTool(sender, args);
+            case "behavior" -> handleBehavior(sender, args);
             default -> sender.sendMessage("§c未知子命令: " + args[0]);
         }
         return true;
@@ -723,6 +811,146 @@ public final class McaiPlugin extends JavaPlugin {
     }
 
     /**
+     * /ai tool list —— 列出所有已注册工具。
+     * /ai tool <工具名> <村民名> [JSON参数] —— 不经过模型直接调用工具，用于验收和排查。
+     */
+    private void handleTool(CommandSender sender, String[] args) {
+        if (args.length < 2 || "list".equalsIgnoreCase(args[1])) {
+            sender.sendMessage("§a已注册工具: " + toolRegistry.size());
+            for (NpcTool tool : toolRegistry.all()) {
+                sender.sendMessage("§e" + tool.name() + " §7[" + tool.category() + "/" + tool.risk() + "] §f"
+                        + tool.description());
+            }
+            sender.sendMessage("§7用法: /ai tool <工具名> <村民名> [JSON参数]");
+            return;
+        }
+        if (args.length < 3) {
+            sender.sendMessage("§c用法: /ai tool <工具名> <村民名> [JSON参数]");
+            return;
+        }
+
+        String toolName = args[1];
+        int jsonIndex = -1;
+        for (int i = 3; i < args.length; i++) {
+            if (args[i].startsWith("{")) {
+                jsonIndex = i;
+                break;
+            }
+        }
+        int nameEnd = jsonIndex == -1 ? args.length : jsonIndex;
+        String npcName = String.join(" ", java.util.Arrays.copyOfRange(args, 2, nameEnd));
+        String json = jsonIndex == -1 ? null
+                : String.join(" ", java.util.Arrays.copyOfRange(args, jsonIndex, args.length));
+
+        VillagerState target = findVillagerByExactName(npcName);
+        if (target == null) {
+            sender.sendMessage("§c找不到村民: " + npcName);
+            return;
+        }
+
+        JsonObject arguments = new JsonObject();
+        if (json != null) {
+            try {
+                JsonElement parsed = JsonParser.parseString(json);
+                if (!parsed.isJsonObject()) {
+                    sender.sendMessage("§c参数必须是 JSON 对象");
+                    return;
+                }
+                arguments = parsed.getAsJsonObject();
+            } catch (Exception e) {
+                sender.sendMessage("§cJSON 参数无效: " + e.getMessage());
+                return;
+            }
+        }
+
+        UUID playerUuid = sender instanceof Player player ? player.getUniqueId() : null;
+        ToolRequest request = ToolRequest.create(ToolContext.CallerType.PLUGIN, "command",
+                target.getUniqueId(), playerUuid, toolName, arguments);
+        try {
+            ToolResult result = toolDispatcher.dispatchSync(request);
+            sender.sendMessage("§a[tool] " + toolName + " → " + result.status()
+                    + (result.success() ? "" : " §c" + result.errorCode() + ": " + result.errorMessage()));
+            if (result.taskId() != null) {
+                sender.sendMessage("§7task_id: " + result.taskId()
+                        + "（用 /ai tool npc.task.get " + npcName + " {\"task_id\":\"" + result.taskId() + "\"} 查询）");
+            }
+            if (result.data() != null) {
+                sender.sendMessage("§f" + result.data());
+            }
+        } catch (Exception e) {
+            sender.sendMessage("§c工具调用异常: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * /ai behavior <村民名> [提示] —— 用行为模型（MiniCPM）基于真实游戏状态选一步动作，
+     * 然后走统一 Dispatcher 执行。用于阶段五"模型适配"的实机验收：
+     * 验证 1B 模型的 JSON 输出能被解析、校验并真正落地，而不经过对话模型。
+     */
+    private void handleBehavior(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage("§c用法: /ai behavior <村民名> [提示语]");
+            return;
+        }
+        if (behaviorModelClient == null) {
+            sender.sendMessage("§c行为模型尚未初始化（插件未完成启动？）");
+            return;
+        }
+        String npcName = args[1];
+        String hint = args.length > 2
+                ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length))
+                : null;
+        VillagerState target = findVillagerByExactName(npcName);
+        if (target == null) {
+            sender.sendMessage("§c找不到村民: " + npcName);
+            return;
+        }
+
+        UUID playerUuid = sender instanceof Player player ? player.getUniqueId() : null;
+        // 状态必须在主线程采集（Bukkit API 约束）
+        JsonObject state = gameStateProvider.npcStatus(target.getUniqueId(), playerUuid);
+        if (state == null) {
+            sender.sendMessage("§c读不到该村民的状态（实体已失效？）");
+            return;
+        }
+        state.add("nearby_entities", gameStateProvider.nearbyEntities(target.getUniqueId(), 16, 32));
+
+        sender.sendMessage("§7行为模型: §f" + behaviorModelClient.settings().model()
+                + " §7@ §f" + behaviorModelClient.settings().url());
+        behaviorModelClient.decide(target.getUniqueId(), playerUuid, "command", state, hint)
+                .thenAccept(outcome -> Bukkit.getScheduler().runTask(this, () -> {
+                    if (!outcome.ok()) {
+                        sender.sendMessage("§c行为模型输出无法解析: " + outcome.error());
+                        return;
+                    }
+                    if (outcome.idle()) {
+                        sender.sendMessage("§e行为模型决定: idle（这一步不行动）");
+                        return;
+                    }
+                    ToolRequest request = outcome.request();
+                    sender.sendMessage("§a行为模型选择: §6" + request.tool()
+                            + " §7args=" + request.arguments());
+                    try {
+                        ToolResult result = toolDispatcher.dispatchSync(request);
+                        sender.sendMessage("§a[tool] → " + result.status()
+                                + (result.success() ? "" : " §c" + result.errorCode() + ": "
+                                + result.errorMessage()));
+                        if (result.taskId() != null) {
+                            sender.sendMessage("§7task_id: " + result.taskId());
+                        }
+                    } catch (Exception e) {
+                        sender.sendMessage("§c工具执行异常: " + e.getClass().getSimpleName()
+                                + ": " + e.getMessage());
+                    }
+                }))
+                .exceptionally(ex -> {
+                    Bukkit.getScheduler().runTask(this, () ->
+                            sender.sendMessage("§c行为模型调用失败: " + ex.getMessage()));
+                    return null;
+                });
+    }
+
+    /**
      * /ai chat <消息> —— 对准 AI 生物说话（手动触发的快捷方式）。
      * 真正的对话现在靠 PlayerChatListener 自动处理（进入对话模式后正常聊天就行），
      * /ai chat 留着给"想指定对话对象"或者"没进入对话模式"的场景。
@@ -803,6 +1031,7 @@ public final class McaiPlugin extends JavaPlugin {
         reloadConfig();
         config = PluginConfig.load(getConfig());
         llmClient = new LLMClient(config);
+        rebuildBehaviorModelClient();
         // 新 config 对象要同步给静态镜像，否则压缩阈值永远是启动时的旧值
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
         // 顺带 reload 配方表 + 人格标签库（用户可能编辑了）
@@ -990,6 +1219,7 @@ public final class McaiPlugin extends JavaPlugin {
         reloadConfig();
         config = PluginConfig.load(getConfig());
         llmClient = new LLMClient(config);
+        rebuildBehaviorModelClient();
         sender.sendMessage("§a✓ 模型已设为: §f" + config.llmModel());
         if (llmClient.isAutoModel()) {
             sender.sendMessage("§7auto 模式：每次请求前探测后端当前加载的模型（30 秒缓存），"
@@ -1055,6 +1285,7 @@ public final class McaiPlugin extends JavaPlugin {
         reloadConfig();
         config = PluginConfig.load(getConfig());
         llmClient = new LLMClient(config);
+        rebuildBehaviorModelClient();
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
 
         sender.sendMessage("§a✓ 已切换到 " + (local ? "§e本机" : "§b云端") + " §f" + config.llmModel());
@@ -1153,4 +1384,20 @@ public final class McaiPlugin extends JavaPlugin {
     public com.howard.mcai.security.PermissionManager getPermissionManager() { return permissionManager; }
     public com.howard.mcai.security.WorldInteractionService getWorldInteraction() { return worldInteraction; }
     public CentralPlanner getPlanner() { return planner; }
+    public GameStateProvider getGameStateProvider() { return gameStateProvider; }
+    public ToolRegistry getToolRegistry() { return toolRegistry; }
+    public ToolPolicyService getToolPolicyService() { return toolPolicyService; }
+    public NpcTaskManager getNpcTaskManager() { return npcTaskManager; }
+    public ToolDispatcher getToolDispatcher() { return toolDispatcher; }
+    public LlmToolAdapter getLlmToolAdapter() { return llmToolAdapter; }
+    public BehaviorModelClient getBehaviorModelClient() { return behaviorModelClient; }
+
+    /**
+     * 配置变更后重建行为模型客户端（/ai reload、/ai llm 切换后端时调用）。
+     * 注册表不变，只换后端参数；解析器也跟着新 settings 走。
+     */
+    public void rebuildBehaviorModelClient() {
+        if (toolRegistry == null) return;
+        behaviorModelClient = new BehaviorModelClient(config.behaviorSettings(), toolRegistry);
+    }
 }

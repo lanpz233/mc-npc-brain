@@ -14,7 +14,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.inventory.ItemStack;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -25,7 +27,8 @@ import java.util.UUID;
  *   <li><b>掉落库存</b>：独立库存按堆叠拆散落在死亡点，能捡 —— 不是凭空消失</li>
  *   <li><b>亲友反应</b>：配偶/子女/兄弟姐妹/父母记一条公开 facts"XXX 没了"；
  *       16 格内在场的亲友冒悲伤气泡</li>
- *   <li><b>记仇</b>：凶手是玩家 → 所有亲友对该玩家好感暴跌、恐惧上升，
+ *   <li><b>全村知情 + 记仇</b>：凶手是玩家 → 亲友无论远近都记恨，
+ *       32 格内的其他村民也算当场亲眼看见；知情者对该玩家好感大幅暴跌、恐惧上升，
  *       并记一条该玩家可见的"杀了XXX"事实（对峙/报复的引子）</li>
  *   <li><b>清气泡</b>：死者的头顶气泡立即清理，不等自然过期</li>
  * </ul>
@@ -35,14 +38,20 @@ import java.util.UUID;
  */
 public final class VillagerDeathListener implements Listener {
 
-    /** 亲友目击半径（格）—— 在这个范围内才冒悲伤气泡，太远的只记事实 */
+    /** 亲友反应的悲伤气泡半径（格）—— 在这个范围内才冒悲伤气泡，太远的只记事实 */
     private static final double GRIEF_RADIUS = 16.0;
 
-    /** 亲人被杀，好感惩罚（一次记仇记到底，得靠长期行善慢慢刷回来） */
-    private static final double KILLER_FAVOR_HIT = -30.0;
+    /**
+     * 目击半径（格）—— 死在这个范围内、又不是亲友的村民，也会当场知情并忌惮凶手。
+     * 村里当街杀了人，旁边的住户是"亲眼看见"，不是听八卦 —— 所以半径内一律按知情处理。
+     */
+    private static final double WITNESS_RADIUS = 32.0;
 
-    /** 亲人被杀，恐惧上升 */
-    private static final int KILLER_FEAR_HIT = 25;
+    /** 凶手是玩家时，知情者对该玩家的好感打击（大幅暴跌，得靠长期行善慢慢刷回来） */
+    private static final double KILL_REACTION_FAVOR = -40.0;
+
+    /** 凶手是玩家时，知情者的恐惧上升 */
+    private static final int KILL_REACTION_FEAR = 25;
 
     private final McaiPlugin plugin;
     private final Map<UUID, VillagerState> villagers;
@@ -66,6 +75,8 @@ public final class VillagerDeathListener implements Listener {
 
         String deadName = Smalltalk.nameOf(vs);
         Player killer = v.getKiller();
+        UUID killerId = killer == null ? null : killer.getUniqueId();
+        String killerName = killer == null ? null : killer.getName();
         Location deathLoc = v.getLocation();
 
         // 1. 库存掉出来（能捡）
@@ -74,37 +85,55 @@ public final class VillagerDeathListener implements Listener {
         // 2. 头顶气泡立即清
         bubbleManager.clearFor(v.getUniqueId());
 
-        // 3. 亲友反应
-        int mourners = 0;
+        // 3. 先认出死者的亲友（配偶/子女/兄弟姐妹/父母）—— 亲疏不同，处理也不同
+        Set<UUID> kinIds = new HashSet<>();
         for (VillagerState.Relationship rel : vs.relationships()) {
-            UUID kinId;
             try {
-                kinId = UUID.fromString(rel.targetUuid());
-            } catch (Exception e) {
-                continue;  // 脏数据跳过
+                kinIds.add(UUID.fromString(rel.targetUuid()));
+            } catch (Exception ignored) {
+                // 脏数据跳过，不影响其它亲友
             }
-            VillagerState kin = villagers.get(kinId);
-            if (kin == null || !kin.entity().isValid() || kin.entity().isDead()) continue;
+        }
+
+        // 4. 全村知情：亲友无论在哪儿都会知道（家人的事瞒不住）；
+        //    其余村民只要在目击半径内，也算当场亲眼看见 —— 于是同样忌惮凶手。
+        //    为什么不做成"只有亲友才反应"：村里当街杀人，旁边的住户一样会害怕、会记恨。
+        int kinCount = 0;
+        int witnessCount = 0;
+        for (VillagerState other : villagers.values()) {
+            if (other == null) continue;
+            Villager oe = other.entity();
+            if (oe == null || !oe.isValid() || oe.isDead()) continue;
+
+            UUID otherId = other.getUniqueId();
+            boolean kin = kinIds.contains(otherId);
+            boolean near = oe.getWorld().equals(deathLoc.getWorld())
+                    && oe.getLocation().distance(deathLoc) <= WITNESS_RADIUS;
+            if (!kin && !near) continue;   // 既不是亲友、又没看见 → 不参与
 
             // 公开事实：死人是全村都会知道的事，不设 owner
-            kin.addFact(deadName + "没了", null);
-            if (killer != null) {
-                kin.emotion().addFavor(killer.getUniqueId(), KILLER_FAVOR_HIT);
-                kin.emotion().addFear(KILLER_FEAR_HIT);
-                kin.addFact("旅者 " + killer.getName() + " 杀了" + deadName, killer.getUniqueId());
+            if (kin) other.addFact(deadName + "没了", null);
+
+            if (killerId != null) {
+                // 凶手是玩家 → 知情者一律忌惮：好感大幅暴跌 + 恐惧上升
+                other.emotion().addFavor(killerId, KILL_REACTION_FAVOR);
+                other.emotion().addFear(KILL_REACTION_FEAR);
+                other.addFact("旅者 " + killerName + " 杀了" + deadName, killerId);
             }
+
             // 在场的亲友当场悲伤（动作式气泡，不编台词）
-            if (kin.entity().getWorld().equals(deathLoc.getWorld())
-                    && kin.entity().getLocation().distance(deathLoc) <= GRIEF_RADIUS) {
-                bubbleManager.showDialog(kin.entity(), Smalltalk.nameOf(kin), "（跪在地上，抱住头）");
+            if (kin && oe.getWorld().equals(deathLoc.getWorld())
+                    && oe.getLocation().distance(deathLoc) <= GRIEF_RADIUS) {
+                bubbleManager.showDialog(oe, Smalltalk.nameOf(other), "（跪在地上，抱住头）");
             }
-            memoryStore.markDirty(kinId);
-            mourners++;
+            memoryStore.markDirty(otherId);
+            if (kin) kinCount++;
+            else witnessCount++;
         }
 
         plugin.getLogger().info("§c[MC-AI] 村民死亡: " + deadName
-                + "（亲友 " + mourners + " 人知晓，库存已掉落）"
-                + (killer != null ? " 凶手=" + killer.getName() + "（亲友记仇）" : ""));
+                + "（亲友 " + kinCount + " 人 / 目击 " + witnessCount + " 人知情，库存已掉落）"
+                + (killer != null ? " 凶手=" + killer.getName() + "（知情者记仇）" : ""));
     }
 
     /**

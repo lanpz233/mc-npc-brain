@@ -147,13 +147,79 @@ public final class WorldInteractionService {
         if (!leftover.isEmpty()) {                  // 玩家背包塞不下 → 溢出部分掉在脚下（与 giveItem 一致）
             player.getWorld().dropItemNaturally(player.getLocation(), leftover.values().iterator().next());
         }
-        // 清掉这次"磨到松口"的一次性放行 —— 已经被用掉了，留着会让后面一次无关的 give_item 混过门槛
-        vs.consumeMercy(player.getUniqueId(), mat);
         vs.markAutoGiven(mat);
         plugin.getMemoryStore().markDirty(vs.getUniqueId());
         plugin.getLogger().info("§b[MC-AI] 索要交付(代码层): " + npcName + " → " + player.getName()
                 + " " + mat.name() + " x" + give + "（出库存）");
         return null;
+    }
+
+    // ===== 右键交换：玩家主手物品 ↔ NPC 库存物品（模型同意后才执行） =====
+
+    /**
+     * 交换结果。
+     *
+     * @param success true = 双方物品都已实际转移
+     * @param error   非 null 才需要展示给玩家（没有待确认交换属于静默忽略，不打扰玩家）
+     */
+    public record SwapResult(boolean success, String error) {}
+
+    /**
+     * 执行一笔已登记的交换（主线程）。
+     * <p>
+     * 谁值不值得由模型判断：模型调用 {@code accept_swap} 才走到这里。
+     * 物品与数量都以点击时登记的快照为准，执行前重新校验玩家主手 ——
+     * 玩家在等待模型回复期间换了手持物品就取消，避免拿错东西。
+     * <p>
+     * 一次性完成四步：扣玩家主手 → 扣 NPC 库存 → NPC 物品进玩家背包 → 玩家物品进 NPC 库存。
+     * 任一步校验失败都在转移前返回，不会出现"只扣了一边"的半执行。
+     */
+    public SwapResult swapWithPlayer(VillagerState vs, Player player) {
+        if (vs == null || player == null) return new SwapResult(false, null);
+        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
+        VillagerState.PendingSwap swap = vs.consumePendingSwap(player.getUniqueId());
+        if (swap == null) {
+            plugin.getLogger().info("§7[MC-AI] accept_swap 忽略: 没有待确认的交换");
+            return new SwapResult(false, null);
+        }
+        var inv = player.getInventory();
+        ItemStack hand = inv.getItemInMainHand();
+        if (hand == null || hand.getType().isAir()) {
+            return new SwapResult(false, "§e你手上已经没有东西了，交换取消");
+        }
+        if (hand.getType() != swap.offerMat() || hand.getAmount() < swap.offerCount()) {
+            return new SwapResult(false, "§e你主手的物品变了（需要 "
+                    + com.howard.mcai.ai.PromptBuilder.materialToZh(swap.offerMat())
+                    + " ×" + swap.offerCount() + "），交换取消");
+        }
+        if (vs.stockOf(swap.npcMat()) < swap.npcCount()) {
+            return new SwapResult(false, "§e" + npcName + "的库存里已经没有 "
+                    + com.howard.mcai.ai.PromptBuilder.materialToZh(swap.npcMat()) + " 了");
+        }
+
+        // 先扣玩家主手（同材质才走到这里，不会拿错）
+        int remain = hand.getAmount() - swap.offerCount();
+        if (remain > 0) {
+            ItemStack left = hand.clone();
+            left.setAmount(remain);
+            inv.setItemInMainHand(left);
+        } else {
+            inv.setItemInMainHand(null);
+        }
+        // 再扣 NPC 库存并发货
+        vs.removeFromInventory(swap.npcMat(), swap.npcCount());
+        var leftover = inv.addItem(new ItemStack(swap.npcMat(), swap.npcCount()));
+        if (!leftover.isEmpty()) {
+            player.getWorld().dropItemNaturally(player.getLocation(), leftover.values().iterator().next());
+        }
+        // 玩家给出的东西进 NPC 库存 —— 交换不是单向送礼
+        vs.addToInventory(swap.offerMat(), swap.offerCount());
+        plugin.getMemoryStore().markDirty(vs.getUniqueId());
+
+        plugin.getLogger().info("§b[MC-AI] 交换成功: " + player.getName() + " 的 "
+                + swap.offerMat().name() + " x" + swap.offerCount() + " ↔ " + npcName + " 的 "
+                + swap.npcMat().name() + " x" + swap.npcCount());
+        return new SwapResult(true, null);
     }
 
     // ===== give_item：库存给玩家东西（送礼看库存 —— 平民/亲信只出库存；神使可刷） =====
@@ -173,15 +239,18 @@ public final class WorldInteractionService {
         boolean envoy = rank == NpcRank.ENVOY;
         int stock = vs.stockOf(mat);
 
-        // 关系门槛（按玩家独立）—— 好感不够就婉拒，"索要物品"与 GUI 索要用同一门槛。
+        // 概率制（按玩家独立）—— 好感越高越可能给，不再卡"到没到门槛"（见 EmotionState.giveChance）。
         // 神使（自己人/被授予权限的 NPC）不受此限；给出的是 NPC 自己的库存，不刷物品。
-        // 例外：玩家把 NPC 磨到没耐心时 GUI 会 grantMercy —— 那一笔放行（一次性），台词与结果一致。
-        if (!envoy) {
-            double need = plugin.getPluginConfig().requestItemFavor();
+        // 有 pending item request（GUI 左键/聊天讨要）时跳过这里的掷骰：
+        // 那次索要已经在发起时算过一次"态度"，模型接受（调用 give_item）即视为最终同意，
+        // 否则会出现"模型答应了、这里又掷骰没中"的自相矛盾。
+        if (!envoy && pinned <= 0) {
             double fav = vs.emotion().favor(player.getUniqueId());
-            if (fav < need && !vs.consumeMercy(player.getUniqueId(), mat)) {
-                plugin.getLogger().info("§c[MC-AI] give_item 拒绝: " + npcName + " 对 " + player.getName()
-                        + " 好感 " + String.format("%.0f", fav) + " < 门槛 " + String.format("%.0f", need));
+            double chance = vs.emotion().giveChance(player.getUniqueId());
+            if (java.util.concurrent.ThreadLocalRandom.current().nextDouble() >= chance) {
+                plugin.getLogger().info("§c[MC-AI] give_item 婉拒: " + npcName + " 对 " + player.getName()
+                        + " 好感 " + String.format("%.0f", fav)
+                        + "，命中概率 " + String.format("%.0f", chance * 100) + "% → 掷骰未中");
                 return "§e" + npcName + "跟你还没那么熟，不好白给你东西";
             }
         }

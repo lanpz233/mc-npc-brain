@@ -37,7 +37,9 @@ public final class BehaviorRegistry {
             // 注意：没有 take_item —— 从玩家身上拿东西必须走"玩家亲口确认"的两步流程
             // （CentralPlanner.annotateGift → resolvePendingGift），不给模型直接扣货的口子
             "give_item", "break_block", "place_block",
-            "teleport_to", "teleport", "equip"
+            "teleport_to", "teleport", "equip",
+            // GUI 右键交换的"同意"信号（参数由代码层钉死，模型只表态）
+            "accept_swap"
     );
 
     /** 自主行动（需求驱动）允许的工具面 —— 收窄防误用：自主行动不该开店/拆家/学习 */
@@ -175,6 +177,17 @@ public final class BehaviorRegistry {
                         "message", Map.of("type", "string", "description", "送东西时说的中文台词")
                 ),
                 List.of("item")));
+
+        // accept_swap —— 同意玩家在背包界面提出的"手持物品换你 1 个物品"
+        // 参数由代码层钉死（物品和数量都在点击时登记），模型只负责表态与台词，
+        // 避免模型自行编造交换物/数量造成双方物品对不上。
+        tools.add(func("accept_swap",
+                "同意玩家在背包界面提出的交换：他用手里的物品换你的 1 个物品。"
+                        + "只有系统提示存在待确认交换时才可调用；系统会一次性完成双方物品转移。",
+                Map.of(
+                        "message", Map.of("type", "string", "description", "同意交换时说的中文台词")
+                ),
+                List.of()));
 
         // break_block —— 职业白名单 + 领地保护（拆玩家的房子 = 拆家，必被拒）
         tools.add(func("break_block",

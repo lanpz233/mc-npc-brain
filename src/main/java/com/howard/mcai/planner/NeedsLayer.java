@@ -1,5 +1,6 @@
 package com.howard.mcai.planner;
 
+import com.google.gson.JsonObject;
 import com.howard.mcai.McaiPlugin;
 import com.howard.mcai.ai.BehaviorRegistry;
 import com.howard.mcai.ai.LLMResponse;
@@ -8,6 +9,8 @@ import com.howard.mcai.ai.Smalltalk;
 import com.howard.mcai.bubble.BubbleManager;
 import com.howard.mcai.mob.NeedsState;
 import com.howard.mcai.mob.VillagerState;
+import com.howard.mcai.tool.GameStateProvider;
+import com.howard.mcai.tool.ToolResult;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -297,6 +300,22 @@ public final class NeedsLayer extends TickLayer {
      * 需求驱动的自主行动不该开店/拆家。
      */
     private void triggerAutonomyLLM(VillagerState vs, String dominant) {
+        triggerAutonomyLLM(vs, dominant, true);
+    }
+
+    /**
+     * @param allowBehaviorModel true = 允许先尝试行为模型；失败回退时传 false，避免递归重试
+     */
+    private void triggerAutonomyLLM(VillagerState vs, String dominant, boolean allowBehaviorModel) {
+        // 双模型：开启后由 MiniCPM 只负责"下一步动作"，Qwen 不再参与自主行动决策。
+        // 行为模型不可用/状态读不到时继续走下面的对话模型路径，保证单模型部署不受影响。
+        if (allowBehaviorModel
+                && plugin.getPluginConfig().llmBehaviorAutonomyEnabled()
+                && plugin.getBehaviorModelClient() != null
+                && triggerAutonomyByBehaviorModel(vs, dominant)) {
+            return;
+        }
+
         NeedsState needs = vs.needs();
         StringBuilder needsJson = new StringBuilder("{");
         var snap = needs.snapshot();
@@ -341,6 +360,71 @@ public final class NeedsLayer extends TickLayer {
                     plugin.getLogger().warning("自主行动 LLM 失败: " + ex.getMessage());
                     return null;
                 });
+    }
+
+    /**
+     * 行为模型自主行动：状态在主线程采集，推理异步，结果回主线程走 Dispatcher。
+     *
+     * @return false = 状态读不到，调用方应回退对话模型路径
+     */
+    private boolean triggerAutonomyByBehaviorModel(VillagerState vs, String dominant) {
+        GameStateProvider provider = plugin.getGameStateProvider();
+        if (provider == null) return false;
+
+        JsonObject state = provider.npcStatus(vs.getUniqueId(), null);
+        if (state == null) return false;
+        state.add("nearby_entities", provider.nearbyEntities(vs.getUniqueId(), 16, 32));
+
+        plugin.getLogger().info("§b[MC-AI] 需求驱动(行为模型): " + Smalltalk.nameOf(vs)
+                + " " + NeedsState.zhName(dominant) + "=" + (int) vs.needs().get(dominant));
+
+        plugin.getBehaviorModelClient()
+                .decide(vs.getUniqueId(), null, "needs", state, behaviorHint(dominant))
+                .thenAccept(outcome -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!outcome.ok()) {
+                        // 解析失败不静默吞掉：回退对话模型，保持自主行动仍有产出
+                        plugin.getLogger().warning("自主行动行为模型输出无法解析，回退对话模型: "
+                                + outcome.error());
+                        triggerAutonomyLLM(vs, dominant, false);
+                        return;
+                    }
+                    if (outcome.idle()) {
+                        plugin.getLogger().info("§b[MC-AI] 自主行动(行为模型) idle: "
+                                + Smalltalk.nameOf(vs));
+                        return;
+                    }
+                    ToolResult result = plugin.getToolDispatcher().dispatchSync(outcome.request());
+                    plugin.getLogger().info("§b[MC-AI] 自主行动(行为模型) " + Smalltalk.nameOf(vs)
+                            + " → " + outcome.request().tool() + " " + result.status()
+                            + (result.success() ? "" : " " + result.errorCode()
+                            + ": " + result.errorMessage()));
+                    if (!result.success()) return;
+                    vs.needs().satisfy(dominant, NeedsState.SATISFY_ON_ACTION);
+                    plugin.getMemoryStore().markDirty(vs.getUniqueId());
+                }))
+                .exceptionally(ex -> {
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        plugin.getLogger().warning("自主行动行为模型失败，回退对话模型: " + ex.getMessage());
+                        triggerAutonomyLLM(vs, dominant, false);
+                    });
+                    return null;
+                });
+        return true;
+    }
+
+    /**
+     * 行为模型的 system prompt 是英文，提示也用英文写，避免 1B 模型在混合语言下跑偏。
+     * 只描述意图，具体工具与参数由行为模型自己从注册表里选。
+     */
+    private static String behaviorHint(String dominant) {
+        return switch (dominant) {
+            case NeedsState.HUNGER -> "The NPC is hungry. Move toward farmland or a shop, or idle.";
+            case NeedsState.ENERGY -> "The NPC is exhausted. Move toward home to sleep, or idle.";
+            case NeedsState.BOREDOM -> "The NPC is bored. Move somewhere else to look around, or idle.";
+            case NeedsState.CURIOSITY -> "The NPC is curious. Move closer to something interesting, or idle.";
+            case NeedsState.SOCIAL -> "The NPC wants company. Move toward the nearest player or villager, or idle.";
+            default -> "Pick one safe action for the NPC, or idle.";
+        };
     }
 
     /**

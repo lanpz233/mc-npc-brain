@@ -4,6 +4,7 @@ import com.howard.mcai.McaiPlugin;
 import com.howard.mcai.ai.BehaviorRegistry;
 import com.howard.mcai.ai.LLMClient;
 import com.howard.mcai.ai.LLMResponse;
+import com.howard.mcai.ai.LlmToolAdapter;
 import com.howard.mcai.ai.PromptBuilder;
 import com.howard.mcai.ai.ToolCall;
 import com.howard.mcai.ai.TradeRegistry;
@@ -11,6 +12,9 @@ import com.howard.mcai.bubble.BubbleManager;
 import com.howard.mcai.mob.MobState;
 import com.howard.mcai.mob.VillagerProfession;
 import com.howard.mcai.mob.VillagerState;
+import com.howard.mcai.tool.ToolContext.CallerType;
+import com.howard.mcai.tool.ToolRequest;
+import com.howard.mcai.tool.ToolResult;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -177,6 +181,10 @@ public final class CentralPlanner extends BukkitRunnable {
         for (TickLayer layer : layers) {
             layer.heartbeat(this);
         }
+        // 持续行动任务：推进、超时、清理已完成结果（统一在主线程心跳里跑）
+        if (plugin.getNpcTaskManager() != null) {
+            plugin.getNpcTaskManager().tick();
+        }
     }
 
     /**
@@ -188,6 +196,15 @@ public final class CentralPlanner extends BukkitRunnable {
      * 积压消息等当前响应处理完后再入历史 + 续调，顺序就是干净的 [user1, assistant, user2]。
      */
     public void onPlayerMessage(VillagerState vState, Player player, String message) {
+        onPlayerMessage(vState, player, message, false);
+    }
+
+    /**
+     * @param systemNote true = GUI 生成的系统说明，不是玩家亲口说的话。
+     *                   这种消息必须跳过送礼/讨要/砍价/教学等句式解析 ——
+     *                   说明文字里会引用"给你""拿去"作为示例，误当玩家发言会登记出莫名其妙的送礼请求。
+     */
+    public void onPlayerMessage(VillagerState vState, Player player, String message, boolean systemNote) {
         vState.onPlayerMessage();  // 重置对话超时
         // 见过这位玩家（首次见面判定改用 UUID 表，替代旧的字串匹配）
         vState.recordMeeting(player.getUniqueId(), player.getName());
@@ -197,24 +214,29 @@ public final class CentralPlanner extends BukkitRunnable {
             vState.emotion().addFavor(player.getUniqueId(), 1.0);
             plugin.getMemoryStore().markDirty(vState.getUniqueId());
         }
-        // 砍价关键词拦截 —— 在 LLM 之前执行，代码层直接改价。
-        // 拦截成功会返回附加了"成交说明"的消息，让 LLM 明确知道交易已按新价达成，
-        // 否则它嘴上仍报旧价、甚至调 discount 把砍好的价改回去
-        String effectiveMessage = interceptBargain(vState, player, message);
-        // 砍价已命中 → 后面不再按"讨东西"处理，避免"给我3个面包，1绿宝石"这种交易话被当成索要
-        boolean bargained = !effectiveMessage.equals(message);
-        // 教学意图检测 —— 玩家在"教"NPC 东西时，按好感/熟悉度/开放度判定这次信不信，
-        // 把立场注入消息，让 NPC 台词语气（好奇接受 vs 半信半疑）和真实存储结果一致
-        effectiveMessage = annotateTeaching(vState, player, effectiveMessage);
-        // 上一轮"送礼待确认"的收口：只有玩家这一句明确应了，才真的把东西收下（见 annotateGift）
-        boolean hadPendingGift = vState.pendingGift(player.getUniqueId()) != null;
-        effectiveMessage = resolvePendingGift(vState, player, message, effectiveMessage);
-        // 玩家递东西给 NPC —— 只登记、不扣货：命中送礼句式先请 NPC 问一句"真要给俺？"，
-        // 等玩家亲口确认了才收。旧版直接扣货会闯祸：换物提议被砍一半执行 = 单方面没收玩家装备。
-        // 刚处理完一笔待确认送礼的那一句不再登记新的一笔（"拿去"是答应，不是新提议）
-        if (!hadPendingGift) effectiveMessage = annotateGift(vState, player, message, effectiveMessage);
-        // 聊天里向 NPC 讨东西 —— 与 F 键 GUI 索要共用同一份耐心：好感不够也能靠反复磨让他松口
-        if (!bargained) effectiveMessage = annotateBeg(vState, player, message, effectiveMessage);
+        String effectiveMessage = message;
+        if (!systemNote) {
+            // 嘴上冒犯/威胁 → 代码层直接改好感/恐惧（不能指望模型"自觉生气"）
+            applyVerbalTemper(vState, player, message);
+            // 砍价关键词拦截 —— 在 LLM 之前执行，代码层直接改价。
+            // 拦截成功会返回附加了"成交说明"的消息，让 LLM 明确知道交易已按新价达成，
+            // 否则它嘴上仍报旧价、甚至调 discount 把砍好的价改回去
+            effectiveMessage = interceptBargain(vState, player, message);
+            // 砍价已命中 → 后面不再按"讨东西"处理，避免"给我3个面包，1绿宝石"这种交易话被当成索要
+            boolean bargained = !effectiveMessage.equals(message);
+            // 教学意图检测 —— 玩家在"教"NPC 东西时，按好感/熟悉度/开放度判定这次信不信，
+            // 把立场注入消息，让 NPC 台词语气（好奇接受 vs 半信半疑）和真实存储结果一致
+            effectiveMessage = annotateTeaching(vState, player, effectiveMessage);
+            // 上一轮"送礼待确认"的收口：只有玩家这一句明确应了，才真的把东西收下（见 annotateGift）
+            boolean hadPendingGift = vState.pendingGift(player.getUniqueId()) != null;
+            effectiveMessage = resolvePendingGift(vState, player, message, effectiveMessage);
+            // 玩家递东西给 NPC —— 只登记、不扣货：命中送礼句式先请 NPC 问一句"真要给俺？"，
+            // 等玩家亲口确认了才收。旧版直接扣货会闯祸：换物提议被砍一半执行 = 单方面没收玩家装备。
+            // 刚处理完一笔待确认送礼的那一句不再登记新的一笔（"拿去"是答应，不是新提议）
+            if (!hadPendingGift) effectiveMessage = annotateGift(vState, player, message, effectiveMessage);
+            // 聊天里向 NPC 讨东西 —— 与 F 键 GUI 索要共用同一份耐心：好感不够也能靠反复磨让他松口
+            if (!bargained) effectiveMessage = annotateBeg(vState, player, message, effectiveMessage);
+        }
         if (vState.llmBusy()) {
             vState.enqueuePendingMessage(effectiveMessage);
             sendDebug(player, "§e[MC-AI] LLM 忙，消息已积压（当前回复后处理）");
@@ -222,6 +244,61 @@ public final class CentralPlanner extends BukkitRunnable {
         }
         vState.addChatEntry("user", effectiveMessage);
         triggerLLM(vState, player);
+    }
+
+    // ===== 嘴上冒犯 / 威胁（代码层情绪反馈） =====
+
+    /**
+     * 冒犯/无礼的说法 —— 玩家骂人、贬低 NPC 时好感下降。
+     * <p>
+     * 只用明确的人身攻击词，不收"蠢/傻"这类单字（"蠢蠢欲动""傻得可爱"会误伤），
+     * 宁少勿滥：夸一个人不该被罚，骂一个人不该被漏。
+     */
+    private static final Pattern OFFEND_PATTERN = Pattern.compile(
+            "蠢货|蠢驴|蠢死了|蠢得|笨蛋|白痴|弱智|废物|没用的东西|没用的家伙|讨厌你|"
+                    + "滚开|滚蛋|滚远点|闭嘴|住口|恶心|丑八怪|臭东西|去死");
+
+    /**
+     * 威胁 —— 玩家放狠话时 NPC 恐惧上升。
+     * <p>
+     * 动词尽量要求紧跟"你"这类指向，避免"我要弄死僵尸""杀死这怪物"这种冲着怪物说的狠话
+     * 被误判成吓唬村民；"屠村/杀光/灭村"这种冲着整座村子来的说法另外单独收录。
+     */
+    private static final Pattern THREAT_PATTERN = Pattern.compile(
+            "杀了你|砍死你|砍了你|打死你|弄死你|宰了你|灭了你|揍你|烧了你|拆了你|拆了你家|"
+                    + "打断你的腿|抢了你的|杀你全家|屠村|杀光|灭村|你等着|给我等着|让你好看|报复你");
+
+    /** 一句冒犯话扣的好感（一次性，不做累加惩罚 —— 骂完这口气也就过去了） */
+    private static final double OFFEND_FAVOR_HIT = -8.0;
+
+    /** 被威胁时恐惧上升的幅度 —— 玩家放狠话，NPC 会真的怕 */
+    private static final int THREAT_FEAR_HIT = 20;
+
+    /**
+     * 按玩家原话判定"这话有没有冒犯/威胁到这只 NPC"，并当场落到情绪状态上。
+     * <p>
+     * 为什么放代码层：模型多半会为了"脾气好"而当作没被冒犯，情绪反馈就不真实了。
+     * 这里先按关键词改好感/恐惧，再让模型基于新的情绪状态开口说话，语气和数值前后一致。
+     */
+    private void applyVerbalTemper(VillagerState vState, Player player, String message) {
+        boolean offended = OFFEND_PATTERN.matcher(message).find();
+        boolean threatened = THREAT_PATTERN.matcher(message).find();
+        if (!offended && !threatened) return;
+
+        UUID pid = player.getUniqueId();
+        if (offended) {
+            // 被冒犯 → 好感下降（不写事实：一句气话不值得记一辈子，让日子慢慢冲淡）
+            vState.emotion().addFavor(pid, OFFEND_FAVOR_HIT);
+        }
+        if (threatened) {
+            vState.emotion().addFear(THREAT_FEAR_HIT);
+            // 挨威胁是不能忘的事 —— 记一条只对该玩家可见的事实（日后对峙/记恨的依据）
+            vState.addFact("旅者 " + player.getName() + " 威胁过我", pid);
+        }
+        plugin.getMemoryStore().markDirty(vState.getUniqueId());
+        sendDebug(player, "§b[MC-AI] 言行情绪:"
+                + (offended ? " 冒犯 好感" + String.format("%.0f", OFFEND_FAVOR_HIT) : "")
+                + (threatened ? " 威胁 恐惧+" + THREAT_FEAR_HIT : ""));
     }
 
     // ===== 教学/学习机制 =====
@@ -461,10 +538,32 @@ public final class CentralPlanner extends BukkitRunnable {
     private static final Pattern BEG_COUNT_PATTERN = Pattern.compile("(\\d+)\\s*(?:个|块|片|瓶|把|张|根|串|条)");
 
     /**
-     * 聊天里讨东西 —— <b>与 GUI 索要同一套规则</b>：好感够就直接给；不够就磨耐心，磨到没耐心才松口。
+     * 台词里"明确答应把东西给出去"的说法 —— 用于把口头同意落成真实交付。
      * <p>
-     * 为什么要代码层判：{@code give_item} 的好感门槛是硬闸，模型自己"心软答应"也没用 ——
-     * 必须由这里判定"这次到底该给还是该拒"，再把它作为事实注入消息，台词和结果才不会互相打脸。
+     * 前置否定 lookbehind 是为了避开"我给你说过""我告诉你"这类不含给予含义的句子；
+     * 只收带给予含义的固定说法，宁可漏判（下一轮再说一次即可），不可误判白送。
+     */
+    private static final Pattern GIVE_CONSENT_PATTERN = Pattern.compile(
+            "(?<!说)(?<!告诉)(?<!讲)(?<!教)给你(?:吧|了|一个|个|这|那|点|些)?"
+                    + "|拿去吧|拿去|送你了|送给你|拿着吧|拿着|收下吧|收下|归你了");
+
+    /** 婉拒/否定说法 —— 命中就不算同意，避免"不给你"被当成"给你" */
+    private static final Pattern GIVE_REFUSAL_PATTERN = Pattern.compile(
+            "不给你|不给|没给你|没给|没拿|别想|想得美|下回|下次|不能给|不送|自己留着");
+
+    private static boolean looksLikeGivingConsent(String text) {
+        if (text == null || text.isBlank()) return false;
+        if (GIVE_REFUSAL_PATTERN.matcher(text).find()) return false;
+        return GIVE_CONSENT_PATTERN.matcher(text).find();
+    }
+
+    /**
+     * 聊天里讨东西 —— <b>与 GUI 索要同一套规则</b>：好感只决定 NPC 的"态度参考"，
+     * 交付等模型表态（调用 give_item 或台词明确答应）后才由代码层执行。
+     * <p>
+     * 为什么不再代码层直接交付：点击/开口的瞬间就把东西塞给玩家，会出现
+     * "模型嘴上婉拒、东西却已经到手"或"模型答应、代码层掷骰没中"两种打脸。
+     * 现在把表态权交给模型，代码层只负责把数量钉死并执行真实的给予接口。
      *
      * @param original 玩家原始消息（判句式 + 找物品）
      * @param base     已附加其它说明的消息（本方法在末尾追加索要说明）
@@ -479,55 +578,36 @@ public final class CentralPlanner extends BukkitRunnable {
         if (stock <= 0) return base;
         int want = Math.min(parseBegCount(original, stock), stock);
 
-        double need = plugin.getPluginConfig().requestItemFavor();
         double fav = vState.emotion().favor(player.getUniqueId());
-        boolean closeEnough = fav >= need;
-        // 回收窗：这件东西本来就是这位玩家刚送出去的（3 分钟内），要回去不该看好感 ——
-        // 直接还给他，一次性生效。扣着玩家自己的东西不给才是耍无赖。
+        // 态度参考：好感越高越愿意给（EmotionState.giveChance），但不再由代码层直接交付。
+        // 真正的交付等模型表态 —— 它调 give_item 或台词明确答应给，才执行给予接口。
+        double chance = vState.emotion().giveChance(player.getUniqueId());
+        // 回收窗：这件东西本来就是这位玩家刚送出去的（3 分钟内），态度上直接愿意归还
         boolean reclaim = vState.consumeReclaim(player.getUniqueId(), mat);
-        boolean mercy = false;
-        if (!closeEnough && !reclaim) {
-            mercy = vState.grindPatience(player.getUniqueId());
-            if (mercy) vState.grantMercy(player.getUniqueId(), mat);
-        }
-        boolean allow = closeEnough || mercy || reclaim;
+        boolean willing = reclaim
+                || java.util.concurrent.ThreadLocalRandom.current().nextDouble() < chance;
         // 钉死数量：GUI 那一套复用（模型把 count 写成一整叠也不算数）
         vState.setItemRequest(player.getUniqueId(), mat, want);
 
-        // === 代码层当场交付 ===
-        // 不能指望模型真的去调 give_item：实测它常常只在台词里写 [动作:give_item 面包] 当纯文本，
-        // 那一行会被 sanitizeDialogue 剥掉、工具根本没被调用 —— 于是它嘴上说"给你 1 个"、
-        // 玩家背包里却什么都没有（"AI 回复和实际操作不一致"就是这么来的）。
-        // 所以给不给由这里一次性拍板并当场出货，再把"已经给过了"作为事实注入回话要求。
-        String failReason = null;
-        if (allow) {
-            failReason = plugin.getWorldInteraction().handOverFromStock(vState, player, mat, want);
-            if (failReason != null) allow = false;      // 库存刚被别处清空 → 退回按婉拒处理
-        }
-
         String zh = com.howard.mcai.ai.PromptBuilder.materialToZh(mat);
-        String relation = reclaim ? "这件东西本来就是他的，你刚收下不久"
-                : (closeEnough ? "已经够熟" : (mercy ? "本来不够熟，但被他磨得没了耐心" : "还很生疏"));
+        String attitude = reclaim ? "这件东西本来就是他刚送你的，你愿意还给他"
+                : (willing ? "关系不错，你愿意给" : "关系还不到位，你不太想给");
         plugin.getLogger().info("§b[MC-AI] 聊天讨要: " + player.getName() + " → "
                 + com.howard.mcai.ai.Smalltalk.nameOf(vState) + " " + mat.name() + " x" + want
-                + " 好感=" + String.format("%.0f", fav) + " 门槛=" + String.format("%.0f", need)
-                + " → " + (allow
-                        ? (reclaim ? "物归原主，还（代码层已交付）"
-                                   : (mercy ? "磨到松口，给（代码层已交付）" : "够熟，给（代码层已交付）"))
-                        : "婉拒"));
-        sendDebug(player, "§b[MC-AI] 讨要判定: " + (allow ? "给" : "拒") + (mercy ? "（磨到松口）" : ""));
-        if (failReason != null) player.sendMessage(failReason);
+                + " 好感=" + String.format("%.0f", fav)
+                + " 命中概率=" + String.format("%.0f", chance * 100) + "%"
+                + " 态度=" + (reclaim ? "物归原主" : (willing ? "愿意" : "不太愿意"))
+                + " → 等模型表态后交付");
+        sendDebug(player, "§b[MC-AI] 讨要态度: " + (willing ? "愿意" : "不太愿意"));
 
-        return base + "\n[Item request note: the player is pestering you for " + want + "×" + zh
-                + " (" + mat.name() + ") out of your own stock. Your relationship with them: " + relation + ". "
-                + (allow
-                        ? "You have ALREADY handed them " + want + " " + zh + " out of your own bag just now — "
-                          + "it is in their inventory as you speak. Say ONE short Chinese line acknowledging this, "
-                          + "and DO NOT call give_item (there is nothing left to hand over)."
-                        : "Politely turn them down in one short Chinese line, and do NOT give them anything. "
-                          + "You must NOT promise anything in your line — no \"给你\"/\"拿着\"/\"下回给你\" wording, "
-                          + "because you really are giving nothing.")
-                + " You must actually SAY the line — not only call tools.]";
+        return base + "\n[Item request note: the player is asking for " + want + "×" + zh
+                + " (" + mat.name() + ") out of your own stock. Your current attitude: " + attitude + ". "
+                + "If you agree to give it, you MUST call `give_item` with item=\"" + zh + "\" and count=" + want
+                + " — the game hands it over for real. "
+                + "If your Chinese line explicitly agrees to give (for example \"给你\"/\"拿去\"/\"送你了\"/\"拿着\"), "
+                + "the game will also execute the handover based on that agreement. "
+                + "If you refuse, say so in one short Chinese line and do NOT promise anything. "
+                + "You must actually SAY the line — not only call tools.]";
     }
 
     /**
@@ -767,7 +847,7 @@ public final class CentralPlanner extends BukkitRunnable {
         dumpMessages(vState, messages);
 
         // 动态获取 LLMClient —— /ai reload 换后端（llama-server ↔ Ollama）无需重启服务器
-        plugin.getLlmClient().chat(messages, BehaviorRegistry.toolSchemas())
+        plugin.getLlmClient().chat(messages, dialogToolSchemas())
                 .thenAccept(response -> {
                     try {
                         String tool = response.hasToolCall() ? response.firstToolCall().name() : "无";
@@ -899,7 +979,7 @@ public final class CentralPlanner extends BukkitRunnable {
                 break;
             }
         }
-        plugin.getLlmClient().chat(messages, BehaviorRegistry.toolSchemas())
+        plugin.getLlmClient().chat(messages, dialogToolSchemas())
                 .thenAccept(retryResp -> {
                     String tool2 = retryResp.hasToolCall() ? retryResp.firstToolCall().name() : "无";
                     int contentLen2 = retryResp.content() != null ? retryResp.content().length() : 0;
@@ -982,13 +1062,57 @@ public final class CentralPlanner extends BukkitRunnable {
         ToolCall toolCall = null;
         if (response.hasToolCall()) {
             toolCall = response.firstToolCall();
-            if (!BehaviorRegistry.isValidTool(toolCall.name())) {
+            // 旧工具集（BehaviorRegistry 白名单）与统一注册表都接受：
+            // 新增工具只注册即可被对话模型调用，不必再改这里
+            boolean legacy = BehaviorRegistry.isValidTool(toolCall.name());
+            boolean unified = isUnifiedTool(toolCall.name());
+            if (!legacy && !unified) {
                 plugin.getLogger().warning("LLM 返回了未注册的 tool: " + toolCall.name()
                         + " → fallback 显示 content");
                 toolCall = null;
             }
         }
         executeDecision(vState, toolCall, nearPlayer, response);
+    }
+
+    /** 名字是否命中统一工具注册表（规范名 npc.move_to 与 wire 名 npc_move_to 都算） */
+    private boolean isUnifiedTool(String name) {
+        LlmToolAdapter adapter = plugin.getLlmToolAdapter();
+        return adapter != null && adapter.isRegisteredTool(name);
+    }
+
+    /**
+     * 对话模型可见工具集 = 旧对话工具 + 统一注册表中的只读查询工具。
+     * 只加查询不加行动：移动/改世界仍走旧白名单或行为模型，避免绕过对话站立约束。
+     */
+    private List<Map<String, Object>> dialogToolSchemas() {
+        List<Map<String, Object>> schemas = new ArrayList<>(BehaviorRegistry.toolSchemas());
+        LlmToolAdapter adapter = plugin.getLlmToolAdapter();
+        if (adapter != null) {
+            schemas.addAll(adapter.dialogSchemas());
+        }
+        return schemas;
+    }
+
+    /**
+     * 把对话模型的统一工具调用交给 Dispatcher（主线程）。
+     * <p>
+     * 参数校验、权限、幂等、任务创建全部在 Dispatcher 内完成，这里只负责提供可信上下文，
+     * 模型输出中的任何字段都不会变成 callerType。
+     */
+    private ToolResult dispatchUnifiedTool(VillagerState vState, ToolCall toolCall, Player nearPlayer) {
+        LlmToolAdapter adapter = plugin.getLlmToolAdapter();
+        if (adapter == null || plugin.getToolDispatcher() == null) return null;
+
+        String callerId = nearPlayer != null ? nearPlayer.getName() : "dialog";
+        ToolRequest request = adapter.toRequest(toolCall, CallerType.DIALOG_MODEL, callerId,
+                vState.getUniqueId(), nearPlayer == null ? null : nearPlayer.getUniqueId());
+        if (request == null) return null;
+
+        ToolResult result = plugin.getToolDispatcher().dispatchSync(request);
+        plugin.getLogger().info("§b[MC-AI] 统一工具 " + request.tool() + " → " + result.status()
+                + (result.success() ? "" : " " + result.errorCode() + ": " + result.errorMessage()));
+        return result;
     }
 
     /**
@@ -1286,6 +1410,13 @@ public final class CentralPlanner extends BukkitRunnable {
                     gatedReject = plugin.getWorldInteraction().execute(vState, toolCall, nearPlayer);
                     reallyGave = (gatedReject == null);   // execute 返回 null 才代表真出货了
                 }
+                case "accept_swap" -> {
+                    // 玩家在背包界面右键发起的交换：模型同意才真正转移双方物品。
+                    // 参数（双方物品/数量）在点击时已由代码层登记，模型只负责"值不值得"的表态。
+                    var swap = plugin.getWorldInteraction().swapWithPlayer(vState, nearPlayer);
+                    reallyGave = swap.success();
+                    gatedReject = swap.error();
+                }
                 case "learn" -> reallyLearned = handleLearn(vState, toolCall, nearPlayer);
                 default -> { /* 其余工具没有"会被静默拒绝"的门槛，仍走第三步正常执行 */ }
             }
@@ -1295,6 +1426,25 @@ public final class CentralPlanner extends BukkitRunnable {
                     nearPlayer.sendMessage(gatedReject);
                 }
                 Bukkit.getConsoleSender().sendMessage(gatedReject);
+            }
+        }
+
+        // === 索要交付：模型台词明确答应给 → 执行给予接口 ===
+        // 索要发起时不再当场出货（见 GUI requestItem / annotateBeg），交付交给模型表态：
+        // 模型调了 give_item 上面已经真给了；没调但台词明确答应（"给你/拿去/送你了/拿着"），
+        // 在这里替它把东西真正交出去，避免"嘴上答应、背包里却没有"。
+        if (!reallyGave && nearPlayer != null && looksLikeGivingConsent(dialogue)) {
+            var request = vState.peekItemRequest(nearPlayer.getUniqueId());
+            if (request != null) {
+                String fail = plugin.getWorldInteraction()
+                        .handOverFromStock(vState, nearPlayer, request.mat(), request.count());
+                if (fail == null) {
+                    reallyGave = true;
+                    vState.clearItemRequest(nearPlayer.getUniqueId());
+                } else {
+                    if (nearPlayer.isOnline()) nearPlayer.sendMessage(fail);
+                    Bukkit.getConsoleSender().sendMessage(fail);
+                }
             }
         }
 
@@ -1323,7 +1473,14 @@ public final class CentralPlanner extends BukkitRunnable {
         }
 
         // === 第三步：执行行为 ===
-        if (toolCall != null) {
+        // 统一注册表工具的真实结果（null = 本轮不是统一工具）—— 用于历史摘要如实标注成败
+        ToolResult unifiedResult = null;
+        if (toolCall != null && isUnifiedTool(toolCall.name())) {
+            // 新工具一律走 ToolDispatcher：参数校验、权限、幂等、任务生命周期都在里面。
+            // 即使被拒/失败也要照常说话 —— 模型选了工具不等于台词可以吞掉。
+            unifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
+            speak(vState, nearPlayer, dialogue);
+        } else if (toolCall != null) {
             // 对话中"腿被锁住" —— 移动类动作一律不执行（"站立不动 + 持续直视玩家"是项目硬约束）。
             // 显式记一笔，绝不静默跳过：模型难免会承诺"我这就过去"，日志留下证据便于排查；
             // 台词里的这类承诺已由上面的 stripUnbackedPromises 挡在气泡之外。
@@ -1538,6 +1695,10 @@ public final class CentralPlanner extends BukkitRunnable {
                     // 这里绝不能再调一次 execute —— 否则同一件东西会被送出两份
                     speak(vState, nearPlayer, dialogue);
                 }
+                case "accept_swap" -> {
+                    // 交换也已在"第二步半"执行完（双方物品一次性转移），这里只说话
+                    speak(vState, nearPlayer, dialogue);
+                }
                 case "break_block", "place_block",
                      "teleport_to", "teleport", "equip" -> {
                     // SPEC 2.14 世界交互 —— 统一走 WorldInteractionService：
@@ -1566,6 +1727,12 @@ public final class CentralPlanner extends BukkitRunnable {
             speak(vState, nearPlayer, dialogue);
         }
 
+        // 本轮结束：模型既没给也没换 → 作废待处理请求，避免旧请求被下一轮无关的话触发
+        if (nearPlayer != null) {
+            vState.clearItemRequest(nearPlayer.getUniqueId());
+            vState.clearPendingSwap(nearPlayer.getUniqueId());
+        }
+
         // === 第四步：无论如何追加 assistant（Jinja 交替硬约束） ===
         // 历史行附带 [动作:摘要] —— 旧版只存台词，模型回读时"不知道自己上一步做了什么"，
         // 会重复动作或忘记刚给过东西。摘要 ≤20 字，只记工具名 + 关键参数，不含台词（台词已在正文）。
@@ -1574,6 +1741,7 @@ public final class CentralPlanner extends BukkitRunnable {
         // 否则模型回读历史时会以为自己真给过了，下一轮继续重复"给你"这类没兑现的承诺。
         boolean actionFailed = toolCall != null
                 && (gatedReject != null
+                    || (unifiedResult != null && !unifiedResult.success())
                     || (vState.interactingPlayer() != null && MOVEMENT_TOOLS.contains(toolCall.name())));
         String historyLine = (toolCall == null)
                 ? dialogue
@@ -1742,13 +1910,13 @@ public final class CentralPlanner extends BukkitRunnable {
     /**
      * 让生物朝目标方向走几步（Paper 1.21.1 没有 pathfind() API）。
      * 用 setVelocity 给一个水平方向的速度向量，Y 分量给个小正数防止卡地面。
-     * 包内可见：PresentationLayer 的动物靠近逻辑复用。
+     * 包内可见：PresentationLayer 的动物靠近逻辑复用；工具层（npc.move_to）也需要复用同一套移动方式。
      *
      * @param entity 要移动的实体
      * @param target 目标位置
      * @param speed  速度倍率（1.0 = 正常走路，2.0 = 跑）
      */
-    static void moveEntityTowards(org.bukkit.entity.LivingEntity entity, org.bukkit.Location target, double speed) {
+    public static void moveEntityTowards(org.bukkit.entity.LivingEntity entity, org.bukkit.Location target, double speed) {
         org.bukkit.Location from = entity.getLocation();
         double dx = target.getX() - from.getX();
         double dz = target.getZ() - from.getZ();

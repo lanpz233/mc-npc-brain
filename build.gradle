@@ -8,7 +8,7 @@ plugins {
 }
 
 group = 'com.howard'
-version = '0.1.0'
+version = '0.1.2'
 
 repositories {
     mavenCentral()
@@ -22,6 +22,16 @@ dependencies {
 
     // Gson — shade 进 fat jar，避免插件间版本冲突
     implementation 'com.google.code.gson:gson:2.11.0'
+
+    // 工具框架单元测试（不依赖 Bukkit，实体相关验证走线上服务器）
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    // Gradle 9 不再自动提供 launcher，必须显式声明
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }
 
 java {

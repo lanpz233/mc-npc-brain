@@ -87,6 +87,18 @@ public final class EmotionState {
         return v != null ? v : STRANGER_FAVOR;
     }
 
+    /**
+     * 索要物品的命中概率 —— <b>好感越高，越容易要到</b>，不再是"达到门槛就必给"的硬闸。
+     * <p>
+     * 曲线：好感 0 → 10%（陌生人也留一线可能），好感 50 → 约 52%，好感 100 → 95%；
+     * 负好感被压到接近 0。调用方掷一次骰子决定这次"给还是婉拒"，
+     * 再把结论作为事实注入台词，保证 NPC 说的和玩家实际拿到的完全一致。
+     */
+    public double giveChance(UUID playerUuid) {
+        double p = 0.10 + (favor(playerUuid) / 100.0) * 0.85;
+        return clamp(p, 0.0, 0.95);
+    }
+
     /** 累加某玩家的好感（clamp 到 -100~100）；playerUuid 为 null 时改 legacyFavor */
     public synchronized void addFavor(UUID playerUuid, double delta) {
         if (playerUuid == null) {

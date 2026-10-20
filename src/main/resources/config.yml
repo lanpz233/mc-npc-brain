@@ -20,19 +20,31 @@
 #
 # 想让 NPC 有反应又不想自己启模型 → 把 url/api-key/model 换成上面任一云端值即可。
 llm:
-  url: 'http://localhost:8080/v1/chat/completions'
-  api-key: 'mcai'             # 留空 = 不发 Authorization 头（本机 llama-server / 内网代理常用）
+  # 对话模型：负责 NPC 台词、人格表达、玩家意图理解（Qwen 9B）
+  url: 'http://127.0.0.1:11434/v1/chat/completions'
+  api-key: ''                 # 留空 = 不发 Authorization 头（本机 Ollama 不需要）
   # 模型名。填 'auto'（或留空）= 插件在运行时自动探测后端"当前在用的模型"：
   #   ① Ollama /api/ps（当前加载在显存的，就是你在 Ollama 里选的）→ ② /api/tags → ③ /v1/models
   #   30 秒缓存；模型被换掉/删掉时自动重探并重试一次 —— 在 Ollama 里换模型后不用改这里。
-  # 想固定用某个模型就直接写名字（如 deepseek-chat / qwen3.5-9b-uncensored-mc）。
+  # 想固定用某个模型就直接写名字（如 deepseek-chat / Qwen3.5-9B-Uncensored-Q4_K_M:latest）。
   # 游戏内改：/ai llm model <模型名|auto>，或 /ai llm list 看后端有哪些模型
-  model: 'qwen3.5-9b'
+  model: 'Qwen3.5-9B-Uncensored-Q4_K_M:latest'
   connect-timeout-ms: 5000
   read-timeout-ms: 30000      # 云端 API 建议 60000（排队+长回复可能超 30 秒）
   max-tokens: 1024
   reasoning-effort: ''        # 关思考填 'none'（Qwen3.5/Ollama）；云端不支持的留空
   keep-alive: '60m'           # Ollama 专用（模型驻留时长）；只在 url 指向本机时才发送，云端自动跳过
+
+  # 行为模型：只负责"下一步做什么"，不负责说话（MiniCPM-1B）
+  # 留空 url/api-key = 复用上面对话模型的地址与密钥；model 必须显式写死，不能用 auto
+  #（auto 会探测到对话模型，行为模型就失去意义了）
+  behavior:
+    url: 'http://127.0.0.1:11434'
+    api-key: ''
+    model: 'minicpm-act:latest'
+    max-tokens: 256
+    # 是否让需求驱动的自主行动改由行为模型决策；false = 仍用对话模型（旧路径）
+    autonomy-enabled: false
 
 tick:
   interval-ticks: 60          # 表现层频率：3 秒（Paper 服 20 tps）
@@ -71,7 +83,7 @@ permissions:
   confidant-favor: 60           # 与玩家 favor ≥ 该值自动成为亲信（可进其领地、用工作台箱子）
   territory-radius: 24          # 玩家领地半径（以床重生点为圆心），平民不得在内破坏方块
   teleport-confirm-timeout-seconds: 30  # 神使传送玩家的聊天确认"好"的有效期
-  request-item-favor: 40        # 「可以跟 NPC 索要物品」的好感门槛（按玩家独立）：不够则婉拒
+  # 索要物品不再有"好感门槛"：好感越高，NPC 越可能答应给你东西（概率在 EmotionState.giveChance 里算）
 
 # 调试开关
 debug:

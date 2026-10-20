@@ -28,7 +28,7 @@ public final class VillagerInventoryListener implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         // 只处理"点在上半部分真货格"的索要；玩家自己背包格的点击只是被拦下
         if (event.getClickedInventory() != top) return;
-        // 左键 = 只要 1 个，右键 = 要这一整组（格子显示的库存数）
+        // 左键 = 索要 1 个；右键 = 用玩家主手物品与这一格交换（AI 决定值不值得换）
         gui.handleClick(player, event.getSlot(), event.isRightClick());
     }
 

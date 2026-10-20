@@ -349,7 +349,9 @@ public final class VillagerState {
         this.profession = VillagerProfession.fromMinecraftProfession(entity.getProfession());
         this.emotion = new EmotionState();
         this.openness = 25 + (int) (Math.random() * 71);  // 25~95，人人不同
-        this.personalityTagIds = com.howard.mcai.ai.PersonalityTagLibrary.drawTagIds();
+        // v2：傻子村民走 nitwit 隔离池（不抽精明/浪漫类标签），普通村民走全量池
+        this.personalityTagIds = com.howard.mcai.ai.PersonalityTagLibrary.drawTagIds(
+                this.profession == VillagerProfession.NITWIT);
         this.gender = inferGenderOrDefault(entity);  // 优先按名字定性别，判不出才随机
         seedProfessionInventory();
         this.inventorySeeded = true;
@@ -360,7 +362,9 @@ public final class VillagerState {
         this.profession = profession != null ? profession : VillagerProfession.fromMinecraftProfession(entity.getProfession());
         this.emotion = new EmotionState();
         this.openness = 25 + (int) (Math.random() * 71);
-        this.personalityTagIds = com.howard.mcai.ai.PersonalityTagLibrary.drawTagIds();
+        // v2：同上，傻子村民走 nitwit 隔离池
+        this.personalityTagIds = com.howard.mcai.ai.PersonalityTagLibrary.drawTagIds(
+                this.profession == VillagerProfession.NITWIT);
         this.gender = inferGenderOrDefault(entity);
         seedProfessionInventory();
         this.inventorySeeded = true;
@@ -1168,90 +1172,17 @@ public final class VillagerState {
         return t != null && System.currentTimeMillis() - t < AUTO_GIVE_GUARD_MS;
     }
 
-    // ===== 索要物品：耐心（磨）+ 数量钉死 + 松口放行 =====
-
-    /** 耐心值的随机区间 —— 玩家可以靠反复索要把 NPC 磨到没耐心，但每人的耐心不一样 */
-    private static final int PATIENCE_MIN = 3;
-    private static final int PATIENCE_MAX = 7;
-    /** 磨耐心的节流：5 秒内重复索要不消耗耐心，防止狂点刷爆 */
-    private static final long PATIENCE_SPAM_GUARD_MS = 5_000L;
-
-    /** 每个玩家各自的剩余耐心（key=玩家 UUID）。只在内存里 —— 重启后重新随机即可，不需要持久化 */
-    private final Map<java.util.UUID, Integer> patienceByPlayer = new java.util.HashMap<>();
-    /** 上次磨耐心的时刻（key=玩家 UUID），用于节流 */
-    private final Map<java.util.UUID, Long> lastPatienceGrindAtMs = new java.util.HashMap<>();
-
-    /** 松口放行的有效期 —— 只覆盖"这次对话"的窗口，过期作废 */
-    private static final long MERCY_WINDOW_MS = 30_000L;
-    /** 已被磨松口的玩家 → 放行的物品 + 时刻（key=玩家 UUID） */
-    private final Map<java.util.UUID, Object[]> mercyByPlayer = new java.util.HashMap<>();
-
-    /**
-     * 磨一次耐心 —— 好感不够却反复索要时调用。
-     * <p>
-     * 规则：耐心每次 -1（5 秒内重复索要不算，防狂点），归零则这次松口答应，
-     * 并立刻重置成一个新的随机耐心（下次还得重新磨）。
-     *
-     * @return true = 耐心耗尽，这次该给东西（放行）；false = 还在磨，继续婉拒
-     */
-    public synchronized boolean grindPatience(java.util.UUID playerUuid) {
-        if (playerUuid == null) return false;
-        long now = System.currentTimeMillis();
-        Long last = lastPatienceGrindAtMs.get(playerUuid);
-        if (last != null && now - last < PATIENCE_SPAM_GUARD_MS) return false;  // 间隔太短，不算磨
-        lastPatienceGrindAtMs.put(playerUuid, now);
-
-        int left = patienceByPlayer.getOrDefault(playerUuid, rollPatience());
-        left--;
-        if (left <= 0) {
-            patienceByPlayer.put(playerUuid, rollPatience());   // 松口之后重新攒耐心
-            return true;
-        }
-        patienceByPlayer.put(playerUuid, left);
-        return false;
-    }
-
-    /** 掷一次随机耐心（闭区间 [PATIENCE_MIN, PATIENCE_MAX]） */
-    private static int rollPatience() {
-        return java.util.concurrent.ThreadLocalRandom.current().nextInt(PATIENCE_MIN, PATIENCE_MAX + 1);
-    }
-
-    /** 剩余耐心（-1 = 还没开始磨，尚未掷骰）。仅供调试/状态面板展示 */
-    public synchronized int patienceLeft(java.util.UUID playerUuid) {
-        if (playerUuid == null) return -1;
-        Integer v = patienceByPlayer.get(playerUuid);
-        return v == null ? -1 : v;
-    }
-
-    /** 记录"这次松口放行"——{@code give_item} 的代码层好感门槛要据此放行一次 */
-    public synchronized void grantMercy(java.util.UUID playerUuid, org.bukkit.Material mat) {
-        if (playerUuid == null || mat == null) return;
-        mercyByPlayer.put(playerUuid, new Object[]{mat, System.currentTimeMillis()});
-    }
-
-    /**
-     * 消耗一次"松口放行"——仅当玩家与物品都对得上且在有效期内（一次性，用完即清）。
-     *
-     * @return true = 这次应当放行（好感门槛跳过）
-     */
-    public synchronized boolean consumeMercy(java.util.UUID playerUuid, org.bukkit.Material mat) {
-        if (playerUuid == null || mat == null) return false;
-        Object[] entry = mercyByPlayer.get(playerUuid);
-        if (entry == null) return false;
-        long at = (Long) entry[1];
-        if (System.currentTimeMillis() - at > MERCY_WINDOW_MS || entry[0] != mat) {
-            mercyByPlayer.remove(playerUuid);
-            return false;
-        }
-        mercyByPlayer.remove(playerUuid);
-        return true;
-    }
-
     /** GUI 索要请求：玩家点某格要 N 个（代码层钉死数量，防模型自由发挥把"要 1 个"变成"给一整叠"） */
     public record ItemRequest(org.bukkit.Material mat, int count, long atMs) {}
 
-    /** 索要数量只在这次对话内有效 —— 窗口收紧到 15 秒，避免旧请求污染后来的正常交易 */
-    private static final long ITEM_REQUEST_WINDOW_MS = 15_000L;
+    /**
+     * 索要请求的有效窗口。
+     * <p>
+     * 交付时机已从"点击当下立即给"改为"等模型回复后再按它的表态给"，
+     * 所以窗口必须覆盖一次完整 LLM 调用（含冷启动加载模型），不能再按 15 秒卡死，
+     * 否则慢响应时请求先过期，模型明明答应了却交不出货。
+     */
+    private static final long ITEM_REQUEST_WINDOW_MS = 180_000L;
 
     /** 待处理的索要请求（key=玩家 UUID） */
     private final Map<java.util.UUID, ItemRequest> itemRequests = new java.util.HashMap<>();
@@ -1264,7 +1195,7 @@ public final class VillagerState {
 
     /**
      * 取并清除该玩家对该物品的待处理索要数量（一次性）。
-     * 过期（超过 15 秒，说明那次索要早已结束）或物品对不上 → -1（不覆盖模型给的 count）。
+     * 过期（超过 {@link #ITEM_REQUEST_WINDOW_MS}，说明那次索要早已结束）或物品对不上 → -1（不覆盖模型给的 count）。
      */
     public synchronized int consumeItemRequest(java.util.UUID playerUuid, org.bukkit.Material mat) {
         if (playerUuid == null || mat == null) return -1;
@@ -1273,6 +1204,67 @@ public final class VillagerState {
         itemRequests.remove(playerUuid);
         if (System.currentTimeMillis() - r.atMs() > ITEM_REQUEST_WINDOW_MS) return -1;
         return r.count();
+    }
+
+    /** 只读查看待处理索要（不消费）—— 模型没调 give_item 时，用它判断台词里的"给你"能不能兑现 */
+    public synchronized ItemRequest peekItemRequest(java.util.UUID playerUuid) {
+        if (playerUuid == null) return null;
+        ItemRequest r = itemRequests.get(playerUuid);
+        if (r == null) return null;
+        if (System.currentTimeMillis() - r.atMs() > ITEM_REQUEST_WINDOW_MS) {
+            itemRequests.remove(playerUuid);
+            return null;
+        }
+        return r;
+    }
+
+    /** 本轮回复处理完仍未交付 → 清掉，避免旧索要污染后续对话 */
+    public synchronized void clearItemRequest(java.util.UUID playerUuid) {
+        if (playerUuid != null) itemRequests.remove(playerUuid);
+    }
+
+    // ===== GUI 右键交换（玩家手持物品 ↔ NPC 点击格物品）=====
+
+    /**
+     * 待确认的交换 —— 只登记，不转移任何物品。
+     * <p>
+     * 谁值不值由 NPC 的模型判断：模型调用 {@code accept_swap} 才由代码层同时执行
+     * "扣玩家手持 + 扣 NPC 库存 + 给玩家 NPC 物品 + 把玩家物品收进 NPC 库存"，
+     * 模型拒绝就什么都不发生。这样台词说"换吧"和实际交换不会脱节。
+     *
+     * @param npcMat     NPC 被点击格子的物品
+     * @param npcCount   NPC 给出数量（当前固定 1）
+     * @param offerMat   玩家主手物品材质
+     * @param offerCount 玩家主手这一组的数量（整组作为交换物）
+     */
+    public record PendingSwap(org.bukkit.Material npcMat, int npcCount,
+                              org.bukkit.Material offerMat, int offerCount, long atMs) {}
+
+    /** 交换确认窗口：同样要覆盖一次模型调用 */
+    private static final long SWAP_REQUEST_WINDOW_MS = 180_000L;
+
+    private final Map<java.util.UUID, PendingSwap> pendingSwaps = new java.util.HashMap<>();
+
+    /** 登记一笔待模型表态的交换（覆盖同一玩家的旧请求） */
+    public synchronized void setPendingSwap(java.util.UUID playerUuid, org.bukkit.Material npcMat, int npcCount,
+                                            org.bukkit.Material offerMat, int offerCount) {
+        if (playerUuid == null || npcMat == null || offerMat == null || npcCount <= 0 || offerCount <= 0) return;
+        pendingSwaps.put(playerUuid, new PendingSwap(npcMat, npcCount, offerMat, offerCount,
+                System.currentTimeMillis()));
+    }
+
+    /** 取并清除交换请求（一次性）；没有或已过期 → null */
+    public synchronized PendingSwap consumePendingSwap(java.util.UUID playerUuid) {
+        if (playerUuid == null) return null;
+        PendingSwap s = pendingSwaps.remove(playerUuid);
+        if (s == null) return null;
+        if (System.currentTimeMillis() - s.atMs() > SWAP_REQUEST_WINDOW_MS) return null;
+        return s;
+    }
+
+    /** 本轮没同意交换 → 直接作废，避免下一轮被一句无关的"换"触发 */
+    public synchronized void clearPendingSwap(java.util.UUID playerUuid) {
+        if (playerUuid != null) pendingSwaps.remove(playerUuid);
     }
 
     // ===== 玩家送礼（必须玩家亲口确认，代码层绝不擅自没收）=====

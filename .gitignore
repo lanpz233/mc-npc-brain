@@ -2,8 +2,9 @@
 .gradle/
 build/
 out/
-# Compiled jars
+# Compiled jars（但保留 Gradle wrapper 的 jar，用户靠它打包）
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 # IDE
 .idea/
 *.iml

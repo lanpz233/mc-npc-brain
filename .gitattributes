@@ -1,0 +1,5 @@
+* text=auto
+# Gradle 启动脚本：Linux/macOS 必须是 LF，否则报 "bad interpreter: /bin/sh^M"
+gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
