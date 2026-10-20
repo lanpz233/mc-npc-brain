@@ -905,6 +905,22 @@ public final class LLMClient {
             cleaned = cleaned.trim();
         }
 
+        // 4. 剥掉 Markdown / YAML 风格的伪工具调用 —— Qwen 系列会写：
+        //    **action**: "say", *content*
+        //    这是在模仿 tool_call 格式，不是台词。从标签起到结尾整段删掉：
+        //    这段文本本身没有任何台词价值，留着只会让玩家看到代码。
+        cleaned = cleaned.replaceAll(
+                "(?is)\\*{0,2}(?:action|tool|name|function|动作|工具)\\*{0,2}\\s*[:：]\\s*[\"']?[A-Za-z_][A-Za-z0-9_.]*[\"']?.*$",
+                "").trim();
+
+        // 5. <action>say</action> 这类自造 XML 也一并剥掉
+        cleaned = cleaned.replaceAll("(?is)<(?:action|act|tool)>.*?</(?:action|act|tool)>", "").trim();
+
+        // 6. 代码围栏里的内容一律不是台词 —— 模型爱把 JSON/调用包进 ```json ... ```
+        //    先配对删除闭合围栏，再删落单的未闭合围栏到结尾（模型经常写到一半被截断）
+        cleaned = cleaned.replaceAll("(?s)```[\\s\\S]*?```", "").trim();
+        cleaned = cleaned.replaceAll("(?s)```.*$", "").trim();
+
         return cleaned.trim();
     }
 

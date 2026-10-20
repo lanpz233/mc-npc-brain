@@ -1248,7 +1248,10 @@ public final class CentralPlanner extends BukkitRunnable {
      * executeDecision 与 NeedsLayer（自主行动）共用，保证所有对外台词同一套过滤规则。
      */
     static String sanitizeDialogue(String dialogue, VillagerProfession profession) {
-        // 先剥离 [动作:<摘要>] 标记 —— assistant 历史行附带，防模型回读进台词、或在气泡里泄漏
+        // 先统一走 LLMClient 的剥离逻辑 —— 覆盖 [动作:…] / tool_call XML / 裸 JSON /
+        // Python 调用 / **action**: "say" 这类伪工具调用，防任何调用语法漏进气泡和聊天框。
+        if (dialogue != null) dialogue = LLMClient.stripToolCalls(dialogue);
+        // 再兜一层 [动作:<摘要>]（stripToolCalls 已剥，这里保留是为了下面对 null 的处理顺序不变）
         if (dialogue != null) dialogue = dialogue.replaceAll("\\[动作:[^\\]]*\\]", "");
         String cleaned = filterWorldLore(dialogue, profession);
         if (cleaned == null || cleaned.isBlank()) return cleaned;

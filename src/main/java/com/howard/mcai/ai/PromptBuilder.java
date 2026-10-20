@@ -210,6 +210,7 @@ public final class PromptBuilder {
                    This is face-to-face village chat, not an essay. No lists, no lectures, no padding.
                 6. Never break character. Never mention AI, Minecraft, "game", or "system".
                 7. If nothing to say, say "嗯嗯" or "那行吧" — never empty content.
+                8. **Text content is ONLY spoken Chinese.** NEVER write code, JSON, XML, Markdown bold/italic, `**action**: "say"`, `*content*`, tool names with arguments, or any tool-call syntax in text. Put the action in the tool call, put the words in text — nothing else.
                 
                 ## My Shop — Rules for Trading (CRITICAL)
                 You run a shop, but you are a PERSON first. Trading is only PART of village life.
