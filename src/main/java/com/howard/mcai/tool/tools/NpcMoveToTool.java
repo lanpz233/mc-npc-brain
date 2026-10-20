@@ -3,7 +3,6 @@ package com.howard.mcai.tool.tools;
 import com.google.gson.JsonObject;
 import com.howard.mcai.McaiPlugin;
 import com.howard.mcai.mob.VillagerState;
-import com.howard.mcai.planner.CentralPlanner;
 import com.howard.mcai.tool.NpcTask;
 import com.howard.mcai.tool.NpcTaskAction;
 import com.howard.mcai.tool.NpcTool;
@@ -11,9 +10,11 @@ import com.howard.mcai.tool.ToolArgs;
 import com.howard.mcai.tool.ToolContext;
 import com.howard.mcai.tool.ToolResult;
 import com.howard.mcai.tool.ToolSchema;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Villager;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
 /**
@@ -40,6 +41,18 @@ public final class NpcMoveToTool implements NpcTool {
     private static final long STUCK_WINDOW_MS = 8_000L;
     /** 判定"有进展"的最小水平位移（格）。 */
     private static final double STUCK_MIN_MOVE = 0.5;
+
+    /**
+     * speed=1.0 对应的实际速度（格/秒）。
+     * <p>
+     * 村民普通步行大约 2 格/秒。速度必须换算成"每个 tick 施加的水平速度"（除以 20），
+     * 而不是每 tick 直接塞一个 0.8 —— 后者等于 16 格/秒，实测就是"飞出去再被摩擦拽住"的抽搐感。
+     */
+    private static final double BASE_SPEED_BLOCKS_PER_SECOND = 2.0;
+    /** 默认速度倍率，约等于村民正常走路 */
+    private static final double DEFAULT_SPEED_MULTIPLIER = 0.8;
+    /** 逐 tick 推进时，到这个距离就停止施加速度（避免在目标点附近来回滑动） */
+    private static final double HALF_ARRIVE_DISTANCE = 0.6;
 
     private final McaiPlugin plugin;
 
@@ -83,7 +96,7 @@ public final class NpcMoveToTool implements NpcTool {
                 .param("x", ToolSchema.Param.number("目标 X 坐标").min(-30_000_000).max(30_000_000), true)
                 .param("y", ToolSchema.Param.number("目标 Y 坐标").min(-256).max(512), true)
                 .param("z", ToolSchema.Param.number("目标 Z 坐标").min(-30_000_000).max(30_000_000), true)
-                .param("speed", ToolSchema.Param.number("移动速度倍率，默认 0.8").min(0.1).max(2.0))
+                .param("speed", ToolSchema.Param.number("移动速度倍率：1.0 ≈ 村民正常步行（约 2 格/秒），默认 0.8").min(0.1).max(2.0))
                 .build();
     }
 
@@ -102,6 +115,8 @@ public final class NpcMoveToTool implements NpcTool {
     private static final class MoveAction implements NpcTaskAction {
 
         private final McaiPlugin plugin;
+        /** 逐 tick 推进移动的调度器；任务结束时必须取消，否则会留下"幽灵推力" */
+        private BukkitTask movementTask;
 
         private MoveAction(McaiPlugin plugin) {
             this.plugin = plugin;
@@ -135,7 +150,54 @@ public final class NpcMoveToTool implements NpcTool {
             }
             if (horizontal <= ARRIVE_DISTANCE) {
                 task.complete(System.currentTimeMillis(), result(task, villager));
+                return;
             }
+
+            // 冻结原版 AI：村民的随机漫步、看向玩家等目标每个 tick 都会改写 velocity，
+            // 和本任务的推力叠加后就是"原地抽搐 + 速度忽快忽慢"的直接原因。
+            // 顺手清掉水平动量，避免把任务开始前残余的行走速度带进来。
+            villager.setAI(false);
+            villager.setVelocity(new Vector(0, villager.getVelocity().getY(), 0));
+            startMovement(villager, task, state, arguments);
+        }
+
+        /**
+         * 逐 tick 施加速度。
+         * <p>
+         * 原来每秒才推一次（CentralPlanner 心跳），速度会在两次推力之间被摩擦衰减，
+         * 看起来像一顿一顿地抽搐；这里改成每 tick 给一次恒定水平速度，摩擦不再影响节奏。
+         */
+        private void startMovement(Villager villager, NpcTask task, VillagerState state,
+                                   JsonObject arguments) {
+            Location target = target(villager, arguments);
+            if (target == null) return;
+            double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
+            // 每 tick 速度 = 目标格/秒 ÷ 20；不写垂直分量，保留重力/下落，避免悬空
+            double perTick = speed * BASE_SPEED_BLOCKS_PER_SECOND / 20.0;
+
+            movementTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+                if (!task.isActive() || !villager.isValid() || villager.isDead()) {
+                    cancelMovement();
+                    return;
+                }
+                // 进入对话后 NPC 必须站定：这里先停推，正式取消交给每秒 tick，避免重复状态流转
+                if (state.interactingPlayer() != null) {
+                    halt(villager);
+                    return;
+                }
+                Location from = villager.getLocation();
+                double dx = target.getX() - from.getX();
+                double dz = target.getZ() - from.getZ();
+                double dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist <= HALF_ARRIVE_DISTANCE) {
+                    halt(villager);
+                    return;
+                }
+                Vector velocity = villager.getVelocity();
+                velocity.setX(dx / dist * perTick);
+                velocity.setZ(dz / dist * perTick);
+                villager.setVelocity(velocity);
+            }, 0L, 1L);
         }
 
         @Override
@@ -150,14 +212,14 @@ public final class NpcMoveToTool implements NpcTool {
 
             // 对话状态必须站立不动：任务开始后玩家可能右键进入对话，这里要立即让路
             if (state.interactingPlayer() != null) {
-                stop(villager);
+                stop(state);
                 task.cancel(System.currentTimeMillis(), "NPC 进入对话，移动任务已取消");
                 return;
             }
 
             Location target = target(villager, arguments);
             if (target == null) {
-                stop(villager);
+                stop(state);
                 task.fail(System.currentTimeMillis(), ToolResult.ErrorCode.INVALID_ARGUMENT,
                         "目标坐标超出世界高度范围");
                 return;
@@ -167,7 +229,7 @@ public final class NpcMoveToTool implements NpcTool {
             Location current = villager.getLocation();
             double horizontal = horizontalDistance(current, target);
             if (horizontal <= ARRIVE_DISTANCE) {
-                stop(villager);
+                stop(state);
                 task.complete(nowMs, result(task, villager));
                 return;
             }
@@ -190,7 +252,7 @@ public final class NpcMoveToTool implements NpcTool {
                 lastZ = current.getZ();
                 lastProgressMs = nowMs;
             } else if (nowMs - lastProgressMs >= STUCK_WINDOW_MS) {
-                stop(villager);
+                stop(state);
                 task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
                         "移动卡住：" + (STUCK_WINDOW_MS / 1000) + " 秒内位移不足 " + STUCK_MIN_MOVE + " 格");
                 return;
@@ -205,15 +267,12 @@ public final class NpcMoveToTool implements NpcTool {
             progressData.addProperty("last_progress_z", lastZ);
             progressData.addProperty("last_progress_ms", lastProgressMs);
             task.updateData(progressData);
-
-            double speed = ToolArgs.number(arguments, "speed", 0.8);
-            CentralPlanner.moveEntityTowards(villager, target, speed);
+            // 实际的逐 tick 推进由 startMovement 里的调度器负责，这里只做进度/到达/卡住判定
         }
 
         @Override
         public void onCancel(NpcTask task) {
-            VillagerState state = resolve(task);
-            if (state != null) stop(state.entity());
+            stop(resolve(task));
         }
 
         private VillagerState resolve(NpcTask task) {
@@ -251,10 +310,33 @@ public final class NpcMoveToTool implements NpcTool {
             return data;
         }
 
-        private static void stop(Villager villager) {
-            if (villager != null && villager.isValid()) {
-                villager.setVelocity(new Vector(0, 0, 0));
+        private void stop(VillagerState state) {
+            cancelMovement();
+            if (state == null) return;
+            Villager villager = state.entity();
+            if (villager == null || !villager.isValid()) return;
+
+            halt(villager);
+            // 只在非对话状态恢复原版 AI：对话期间 AI 由 startConversation 冻结，
+            // 这里如果无条件 setAI(true)，玩家正聊着村民就会重新乱逛。
+            if (state.interactingPlayer() == null) {
+                villager.setAI(true);
             }
+        }
+
+        private void cancelMovement() {
+            if (movementTask != null) {
+                movementTask.cancel();
+                movementTask = null;
+            }
+        }
+
+        /** 只清水平速度，保留垂直分量：否则走下台阶时会悬空 */
+        private static void halt(Villager villager) {
+            Vector velocity = villager.getVelocity();
+            velocity.setX(0);
+            velocity.setZ(0);
+            villager.setVelocity(velocity);
         }
 
         private static double round(double value) {
