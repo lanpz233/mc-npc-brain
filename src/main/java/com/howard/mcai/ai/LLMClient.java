@@ -89,6 +89,33 @@ public final class LLMClient {
                     + "(?:content|message|text|内容|台词)\\s*[=:：]\\s*[\"']([^\"']*)[\"']\\s*[\\)）]?");
 
     /**
+     * 伪工具调用（非 JSON/非函数调用）的"段落特征"。
+     * <p>
+     * 实测 Qwen 在闲聊里会输出这些变体，现有规则只认 {@code action: say} 这种
+     * 标签后直接跟字母的写法，反引号和方括号变体全部漏网：
+     * <ul>
+     *   <li>{@code [tool] `say`} + {@code [content] "…"} —— 方括号头</li>
+     *   <li>{@code Tool: `say`} + {@code Content: "…"} —— 反引号包住工具名</li>
+     *   <li>{@code [Tool Call]} + {@code - **action**: `say`} + {@code - **text**: "…"}</li>
+     *   <li>{@code {"action":"say","content":"…"}} —— 裸 JSON（键不是 name，逃过 TOOL_NAME_IN_JSON）</li>
+     * </ul>
+     * 出现这些特征时，真正要对玩家说的台词只在引号里；整行丢弃会让 NPC 无缘无故沉默，
+     * 所以先取台词、再剥壳（见 {@link #extractPseudoCallSpeech(String)}）。
+     */
+    private static final Pattern PSEUDO_SAY_MARKER = Pattern.compile(
+            "(?is)(?:\\[\\s*(?:tool|tool\\s*call)\\s*\\]"
+                    + "|(?:^|[\\r\\n])\\s*[-*]*\\s*\\**\\s*(?:tool|action)\\s*\\**\\s*[:：=]"
+                    + "|\\{\\s*\"(?:action|tool)\"\\s*:\\s*\"(?:say|speak)\")");
+
+    /** 台词字段名后面的引号内容（content/text/message/内容/台词，兼容中间夹冒号、反引号、** 等外壳） */
+    private static final Pattern SPEECH_FIELD = Pattern.compile(
+            "(?is)(?:content|text|message|speech|台词|内容)[^\\n]{0,24}?[\"“]([^\"“”\\n]{1,200})[\"”]");
+
+    /** 没有字段名时的兜底：任意含中文的引号片段 */
+    private static final Pattern QUOTED_SPEECH = Pattern.compile(
+            "[\"“]([^\"“”\\n]{1,200})[\"”]");
+
+    /**
      * 残余代码特征（最后一道守卫）：中文台词里几乎不会出现的 ASCII 组合。
      * <ul>
      *   <li>大括号、反引号 —— JSON / 代码块尾巴</li>
@@ -892,7 +919,11 @@ public final class LLMClient {
         //    必须最先做 —— 后面的规则会把整段调用语法删掉，台词也会跟着消失。
         cleaned = extractWrappedSpeech(cleaned);
 
-        // 0.1 剥掉内联 [动作:…] 标记 —— 这是我们自己写进对话历史的动作摘要格式，
+        // 0.1 同样先取台词再剥壳：反引号 / 方括号 / 裸 JSON 等伪调用变体，
+        //     台词只存在于 content/text 的引号里，直接走后续剥离会把台词一起删掉。
+        cleaned = extractPseudoCallSpeech(cleaned).trim();
+
+        // 0.2 剥掉内联 [动作:…] 标记 —— 这是我们自己写进对话历史的动作摘要格式，
         //    模型学会了照抄进正文。解析成功的话动作已执行，这里必须剥掉防它漏进气泡/聊天框。
         cleaned = cleaned.replaceAll("\\[动作[:：][^\\]]*\\]", "").trim();
 
@@ -987,6 +1018,42 @@ public final class LLMClient {
         String sample = cleaned.length() > 160 ? cleaned.substring(0, 160) + "…" : cleaned;
         java.util.logging.Logger.getLogger("MC-AI")
                 .warning("疑似代码残留，已整行丢弃: " + sample);
+    }
+
+    /**
+     * 从伪工具调用文本里把"真正要说的话"抽出来。
+     * <p>
+     * 只在命中 {@link #PSEUDO_SAY_MARKER} 时生效 —— 正常中文台词不含这些特征，
+     * 不会被误伤。台词优先取 content/text/message 字段的引号内容（这类字段名是模型
+     * 模仿 tool_call 时必带的），没有字段名时退而取最后一个含中文的引号片段。
+     * 找不到可用台词就原样返回，交给后续剥离 + 残余守卫处理。
+     */
+    private static String extractPseudoCallSpeech(String text) {
+        if (text == null || text.isEmpty()) return text;
+        if (!PSEUDO_SAY_MARKER.matcher(text).find()) return text;
+
+        String speech = null;
+        Matcher fields = SPEECH_FIELD.matcher(text);
+        while (fields.find()) {
+            String candidate = fields.group(1).trim();
+            if (!candidate.isEmpty() && containsHan(candidate)) speech = candidate;
+        }
+        if (speech != null) return speech;
+
+        Matcher quoted = QUOTED_SPEECH.matcher(text);
+        while (quoted.find()) {
+            String candidate = quoted.group(1).trim();
+            if (!candidate.isEmpty() && containsHan(candidate)) speech = candidate;
+        }
+        return speech != null ? speech : text;
+    }
+
+    /** 是否含汉字 —— 用来过滤掉 {@code "say"}、{@code "npc_move_to"} 这类纯 ASCII 引号内容 */
+    private static boolean containsHan(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (Character.UnicodeScript.of(s.charAt(i)) == Character.UnicodeScript.HAN) return true;
+        }
+        return false;
     }
 
     /**

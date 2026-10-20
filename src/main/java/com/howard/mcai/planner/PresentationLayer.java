@@ -95,8 +95,13 @@ public final class PresentationLayer extends TickLayer {
     private static final double AMBIENT_PLAYER_VISIBILITY = 32.0;
     /** 自动聊天参与者之间最远距离（格）—— 用户约束：两个或多个 AI 闲聊距离最远不能超过 3 格，太远就"各聊各的"不真实 */
     private static final double AMBIENT_MAX_PAIR_DISTANCE = 3.0;
-    /** 闲聊最大轮数：每轮 = 起话头 + 接话（4 轮 ≈ 8 句，约 30-40 秒；玩家在场才会续满） */
-    private static final int AMBIENT_MAX_ROUNDS = 4;
+    /**
+     * 闲聊最大轮数：每轮 = 起话头 + 接话。
+     * 2 轮（最多 4 次 LLM 调用/群）足够让玩家看到一来一回，又不至于 30 秒一轮持续跑满本地模型。
+     */
+    private static final int AMBIENT_MAX_ROUNDS = 2;
+    /** 每群听者上限：1 人（结对闲聊），每群调用量固定为 轮数 × 2 */
+    private static final int AMBIENT_MAX_LISTENERS = 1;
 
     /** 闲聊气泡固定显示时长 —— 15 秒，保证玩家从远处跑过来时还能看清内容 */
     private static final long AMBIENT_BUBBLE_TICKS = 300L;
@@ -488,9 +493,10 @@ public final class PresentationLayer extends TickLayer {
             }
             if (others.isEmpty()) continue;
 
-            // 就近优先取听者（最多 2 个，全部满足 ≤3 格约束）—— 两个 NPC 结对来回聊，挨得近的 3 个也能组成小群
+            // 就近优先取听者（默认 1 个，结对来回聊）—— 听者越多，每群 LLM 调用量线性增加
             others.sort(Comparator.comparingDouble(o -> v.getLocation().distance(o.entity().getLocation())));
-            List<VillagerState> listeners = new ArrayList<>(others.subList(0, Math.min(2, others.size())));
+            List<VillagerState> listeners = new ArrayList<>(
+                    others.subList(0, Math.min(AMBIENT_MAX_LISTENERS, others.size())));
 
             // 占位 + 冷却。整群参与者（说话者+全部听者）收进一个 Set 随闲聊链路一路传递：
             // 续轮会轮换 speaker/listeners，首轮的听者会掉出"当轮参数"，若释放只按当轮

@@ -53,6 +53,17 @@ public final class NpcMoveToTool implements NpcTool {
     private static final double DEFAULT_SPEED_MULTIPLIER = 0.8;
     /** 逐 tick 推进时，到这个距离就停止施加速度（避免在目标点附近来回滑动） */
     private static final double HALF_ARRIVE_DISTANCE = 0.6;
+    /**
+     * 受阻自动跳跃的垂直初速 —— 原版跳跃初速 0.42，约能越过 1 格台阶。
+     * <p>
+     * 任务期间 setAI(false) 冻住了原版 AI，同时也失去了原版自动跳跃/跨台阶能力；
+     * 只给水平推力的话，村民会顶在方块边上一动不动，8 秒后必然 MOVE_STUCK。
+     */
+    private static final double JUMP_VELOCITY = 0.42;
+    /** 连续多少 tick 水平位移几乎为 0 才判定为"被挡住"（5 tick ≈ 0.25 秒） */
+    private static final int BLOCKED_TICKS_BEFORE_JUMP = 5;
+    /** 单 tick 水平位移低于该值视为没动（正常 0.8 倍速约 0.08 格/tick） */
+    private static final double BLOCKED_MIN_MOVE_PER_TICK = 0.01;
 
     private final McaiPlugin plugin;
 
@@ -174,6 +185,9 @@ public final class NpcMoveToTool implements NpcTool {
             double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
             // 每 tick 速度 = 目标格/秒 ÷ 20；不写垂直分量，保留重力/下落，避免悬空
             double perTick = speed * BASE_SPEED_BLOCKS_PER_SECOND / 20.0;
+            // 受阻检测的跨 tick 状态：上一 tick 位置 + 连续无位移计数
+            double[] lastPos = {villager.getX(), villager.getZ()};
+            int[] blockedTicks = {0};
 
             movementTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
                 if (!task.isActive() || !villager.isValid() || villager.isDead()) {
@@ -193,6 +207,25 @@ public final class NpcMoveToTool implements NpcTool {
                     halt(villager);
                     return;
                 }
+
+                // 受阻自动跳跃：连续 5 tick 水平几乎没动、且站在地面上 → 补一次原版跳跃。
+                // 阈值取得很小（0.01 格/tick），正常行走约 0.08 格/tick，不会误触发；
+                // 只在 isOnGround 时给，避免在空中反复叠加垂直速度变成"火箭"。
+                if (Math.abs(from.getX() - lastPos[0]) < BLOCKED_MIN_MOVE_PER_TICK
+                        && Math.abs(from.getZ() - lastPos[1]) < BLOCKED_MIN_MOVE_PER_TICK) {
+                    blockedTicks[0]++;
+                    if (blockedTicks[0] >= BLOCKED_TICKS_BEFORE_JUMP && villager.isOnGround()) {
+                        Vector jump = villager.getVelocity();
+                        jump.setY(JUMP_VELOCITY);
+                        villager.setVelocity(jump);
+                        blockedTicks[0] = 0;
+                    }
+                } else {
+                    blockedTicks[0] = 0;
+                }
+                lastPos[0] = from.getX();
+                lastPos[1] = from.getZ();
+
                 Vector velocity = villager.getVelocity();
                 velocity.setX(dx / dist * perTick);
                 velocity.setZ(dz / dist * perTick);

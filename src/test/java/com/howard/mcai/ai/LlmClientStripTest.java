@@ -63,10 +63,50 @@ class LlmClientStripTest {
         assertEquals("好嘞", LLMClient.stripToolCalls("工具：say，content=\"好嘞\""));
     }
 
-    /** 没有外壳的 action/content 文本 */
+    /** 没有外壳的 action/content 文本：content 里的台词要保留，外壳消失 */
     @Test
-    void stripsBareActionKeyValueTail() {
-        assertEquals("", LLMClient.stripToolCalls("action: say, content: \"你好\""));
+    void recoversSpeechFromBareActionKeyValue() {
+        assertEquals("你好", LLMClient.stripToolCalls("action: say, content: \"你好\""));
+    }
+
+    /** 反引号包住工具名的变体（实测：李清芬闲聊）—— 台词在 content 里 */
+    @Test
+    void recoversSpeechFromBacktickToolLabel() {
+        String raw = "（揉肚子）哎哟饿得慌，老高，你铁铺里可有面包啃？\n"
+                + "tool: `say`, content: \"哎哟饿得慌，老高，你铁铺里可有面包啃？\"";
+        assertEquals("哎哟饿得慌，老高，你铁铺里可有面包啃？", LLMClient.stripToolCalls(raw));
+    }
+
+    /** 方括号头的变体（实测：武珍闲聊）—— [tool] / [content] 都是外壳 */
+    @Test
+    void recoversSpeechFromBracketHeader() {
+        String raw = "[tool] `say`\n[content] \"亮堂？咱那是黑曜石亮堂！\"";
+        assertEquals("亮堂？咱那是黑曜石亮堂！", LLMClient.stripToolCalls(raw));
+    }
+
+    /** Markdown 列表 + 反引号的变体（实测：李清芬闲聊） */
+    @Test
+    void recoversSpeechFromMarkdownToolCall() {
+        String raw = "（揉了揉眼睛坐起来）这腥味儿准是苦力怕遭雷劈了！\n"
+                + "[Tool Call]\n- **action**: `say`\n"
+                + "- **text**: \"准是苦力怕遭雷劈了！昨儿个炸了窝，今早都沾味儿咯。\"";
+        assertEquals("准是苦力怕遭雷劈了！昨儿个炸了窝，今早都沾味儿咯。", LLMClient.stripToolCalls(raw));
+    }
+
+    /** 推理状态 + Tool/Content 的变体（实测：武珍闲聊）—— 只保留 Content 台词 */
+    @Test
+    void recoversSpeechFromReasoningPrefix() {
+        String raw = "状态：`current_activity=\"正在睡觉\"`，`self.boredom=89`（无聊值爆表）。\n\n"
+                + "Tool: `say`\nContent: \"哎哟，这床软得让人想不起睁眼……要不咱俩坐起来瞅瞅月亮？\"";
+        assertEquals("哎哟，这床软得让人想不起睁眼……要不咱俩坐起来瞅瞅月亮？",
+                LLMClient.stripToolCalls(raw));
+    }
+
+    /** 裸 JSON 用 action 键（不是 name）的变体（实测：李清芬闲聊） */
+    @Test
+    void recoversSpeechFromBareActionJson() {
+        String raw = "{\n  \"action\": \"say\",\n  \"content\": \"别提了，昨儿刚割的那块就够俺家老李啃的。\"\n}";
+        assertEquals("别提了，昨儿刚割的那块就够俺家老李啃的。", LLMClient.stripToolCalls(raw));
     }
 
     /** 裸 JSON 里 arguments 排在 name 前面也要能剥 */
