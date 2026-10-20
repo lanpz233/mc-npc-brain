@@ -10,11 +10,10 @@ import com.howard.mcai.tool.ToolArgs;
 import com.howard.mcai.tool.ToolContext;
 import com.howard.mcai.tool.ToolResult;
 import com.howard.mcai.tool.ToolSchema;
-import org.bukkit.Bukkit;
+import com.destroystokyo.paper.entity.Pathfinder;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Villager;
-import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
 /**
@@ -29,41 +28,31 @@ public final class NpcMoveToTool implements NpcTool {
     private static final double MAX_DISTANCE = 32.0;
     /** 到达判定半径。 */
     private static final double ARRIVE_DISTANCE = 1.5;
-    /** 允许的目标高度差；NPC 只有水平速度，差太多会永远到不了。 */
+    /** 允许的目标高度差；超过这个高度差，原版寻路也基本走不过去。 */
     private static final double MAX_VERTICAL_DIFF = 3.0;
     /**
      * 卡住判定：连续这么久没有实际位移就判失败。
      * <p>
-     * 村民没有原版寻路，移动靠 setVelocity 推 —— 撞墙/卡树/被栅栏围住时速度会被物理引擎抵消，
-     * 任务会一直"RUNNING"拖到 60 秒超时，期间该 NPC 无法接受新行动（NpcTaskManager 单任务限制）。
-     * 8 秒足够走过 1 格以上，正常绕障碍不该触发。
+     * 改用 Paper 原生寻路后，正常情况会绕墙、上台阶；但目标可能在封闭空间/水里/悬空，
+     * 寻路算不出路径时会原地不动。8 秒足够走 1 格以上，正常绕障碍不该触发。
      */
     private static final long STUCK_WINDOW_MS = 8_000L;
     /** 判定"有进展"的最小水平位移（格）。 */
     private static final double STUCK_MIN_MOVE = 0.5;
 
-    /**
-     * speed=1.0 对应的实际速度（格/秒）。
-     * <p>
-     * 村民普通步行大约 2 格/秒。速度必须换算成"每个 tick 施加的水平速度"（除以 20），
-     * 而不是每 tick 直接塞一个 0.8 —— 后者等于 16 格/秒，实测就是"飞出去再被摩擦拽住"的抽搐感。
-     */
-    private static final double BASE_SPEED_BLOCKS_PER_SECOND = 2.0;
-    /** 默认速度倍率，约等于村民正常走路 */
+    /** 默认寻路速度倍率：1.0 = 原版正常步行，0.8 稍慢一点更自然 */
     private static final double DEFAULT_SPEED_MULTIPLIER = 0.8;
-    /** 逐 tick 推进时，到这个距离就停止施加速度（避免在目标点附近来回滑动） */
-    private static final double HALF_ARRIVE_DISTANCE = 0.6;
     /**
-     * 受阻自动跳跃的垂直初速 —— 原版跳跃初速 0.42，约能越过 1 格台阶。
+     * 重新寻路的间隔（毫秒）。
      * <p>
-     * 任务期间 setAI(false) 冻住了原版 AI，同时也失去了原版自动跳跃/跨台阶能力；
-     * 只给水平推力的话，村民会顶在方块边上一动不动，8 秒后必然 MOVE_STUCK。
+     * Pathfinder 的路径走完、或被动态方块挡掉后会清空；此时隔一段时间重下一次指令，
+     * 让 NPC 能继续绕路，而不是守着一条废弃路径原地罚站。
      */
-    private static final double JUMP_VELOCITY = 0.42;
-    /** 连续多少 tick 水平位移几乎为 0 才判定为"被挡住"（5 tick ≈ 0.25 秒） */
-    private static final int BLOCKED_TICKS_BEFORE_JUMP = 5;
-    /** 单 tick 水平位移低于该值视为没动（正常 0.8 倍速约 0.08 格/tick） */
-    private static final double BLOCKED_MIN_MOVE_PER_TICK = 0.01;
+    private static final long REPATH_INTERVAL_MS = 3_000L;
+    /** 单个任务最多重下一次寻路指令的次数，防止不可达目标无限重算烧 CPU */
+    private static final int MAX_REPATHS = 8;
+    /** 允许 NPC 在任务中偏离目标的额外距离（格）—— 被僵尸赶跑等外部因素，超过就放弃 */
+    private static final double DRIFT_TOLERANCE = 8.0;
 
     private final McaiPlugin plugin;
 
@@ -107,7 +96,7 @@ public final class NpcMoveToTool implements NpcTool {
                 .param("x", ToolSchema.Param.number("目标 X 坐标").min(-30_000_000).max(30_000_000), true)
                 .param("y", ToolSchema.Param.number("目标 Y 坐标").min(-256).max(512), true)
                 .param("z", ToolSchema.Param.number("目标 Z 坐标").min(-30_000_000).max(30_000_000), true)
-                .param("speed", ToolSchema.Param.number("移动速度倍率：1.0 ≈ 村民正常步行（约 2 格/秒），默认 0.8").min(0.1).max(2.0))
+                .param("speed", ToolSchema.Param.number("移动速度倍率：1.0 = 原版正常步行，默认 0.8（稍慢）").min(0.1).max(2.0))
                 .build();
     }
 
@@ -126,8 +115,10 @@ public final class NpcMoveToTool implements NpcTool {
     private static final class MoveAction implements NpcTaskAction {
 
         private final McaiPlugin plugin;
-        /** 逐 tick 推进移动的调度器；任务结束时必须取消，否则会留下"幽灵推力" */
-        private BukkitTask movementTask;
+        /** 上次下发寻路指令的时刻 —— Pathfinder 路径失效后按 {@link #REPATH_INTERVAL_MS} 重下 */
+        private long lastRepathMs;
+        /** 已重下寻路指令的次数 */
+        private int repathCount;
 
         private MoveAction(McaiPlugin plugin) {
             this.plugin = plugin;
@@ -164,73 +155,29 @@ public final class NpcMoveToTool implements NpcTool {
                 return;
             }
 
-            // 冻结原版 AI：村民的随机漫步、看向玩家等目标每个 tick 都会改写 velocity，
-            // 和本任务的推力叠加后就是"原地抽搐 + 速度忽快忽慢"的直接原因。
-            // 顺手清掉水平动量，避免把任务开始前残余的行走速度带进来。
-            villager.setAI(false);
+            // 改用 Paper 原生寻路：必须由原版 AI 驱动，setAI(false) 会让算好的路径也走不动。
+            // 这里恢复 AI 并清掉任务开始前的残余水平动量，避免起步"滑一下"。
+            villager.setAI(true);
+            villager.setTarget(null);
             villager.setVelocity(new Vector(0, villager.getVelocity().getY(), 0));
-            startMovement(villager, task, state, arguments);
+            repathCount = 0;
+            double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
+            startPathing(villager, target, speed);
         }
 
         /**
-         * 逐 tick 施加速度。
+         * 下发一次原生寻路指令。
          * <p>
-         * 原来每秒才推一次（CentralPlanner 心跳），速度会在两次推力之间被摩擦衰减，
-         * 看起来像一顿一顿地抽搐；这里改成每 tick 给一次恒定水平速度，摩擦不再影响节奏。
+         * 不再逐 tick 塞速度 —— 原版导航自己做 A* 寻路、绕墙、上台阶、跨栅栏，
+         * 速度和碰撞交给原版物理，不会出现抽搐、飞出去、顶墙不动的问题。
          */
-        private void startMovement(Villager villager, NpcTask task, VillagerState state,
-                                   JsonObject arguments) {
-            Location target = target(villager, arguments);
-            if (target == null) return;
-            double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
-            // 每 tick 速度 = 目标格/秒 ÷ 20；不写垂直分量，保留重力/下落，避免悬空
-            double perTick = speed * BASE_SPEED_BLOCKS_PER_SECOND / 20.0;
-            // 受阻检测的跨 tick 状态：上一 tick 位置 + 连续无位移计数
-            double[] lastPos = {villager.getX(), villager.getZ()};
-            int[] blockedTicks = {0};
-
-            movementTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-                if (!task.isActive() || !villager.isValid() || villager.isDead()) {
-                    cancelMovement();
-                    return;
-                }
-                // 进入对话后 NPC 必须站定：这里先停推，正式取消交给每秒 tick，避免重复状态流转
-                if (state.interactingPlayer() != null) {
-                    halt(villager);
-                    return;
-                }
-                Location from = villager.getLocation();
-                double dx = target.getX() - from.getX();
-                double dz = target.getZ() - from.getZ();
-                double dist = Math.sqrt(dx * dx + dz * dz);
-                if (dist <= HALF_ARRIVE_DISTANCE) {
-                    halt(villager);
-                    return;
-                }
-
-                // 受阻自动跳跃：连续 5 tick 水平几乎没动、且站在地面上 → 补一次原版跳跃。
-                // 阈值取得很小（0.01 格/tick），正常行走约 0.08 格/tick，不会误触发；
-                // 只在 isOnGround 时给，避免在空中反复叠加垂直速度变成"火箭"。
-                if (Math.abs(from.getX() - lastPos[0]) < BLOCKED_MIN_MOVE_PER_TICK
-                        && Math.abs(from.getZ() - lastPos[1]) < BLOCKED_MIN_MOVE_PER_TICK) {
-                    blockedTicks[0]++;
-                    if (blockedTicks[0] >= BLOCKED_TICKS_BEFORE_JUMP && villager.isOnGround()) {
-                        Vector jump = villager.getVelocity();
-                        jump.setY(JUMP_VELOCITY);
-                        villager.setVelocity(jump);
-                        blockedTicks[0] = 0;
-                    }
-                } else {
-                    blockedTicks[0] = 0;
-                }
-                lastPos[0] = from.getX();
-                lastPos[1] = from.getZ();
-
-                Vector velocity = villager.getVelocity();
-                velocity.setX(dx / dist * perTick);
-                velocity.setZ(dz / dist * perTick);
-                villager.setVelocity(velocity);
-            }, 0L, 1L);
+        private void startPathing(Villager villager, Location target, double speed) {
+            Pathfinder pathfinder = villager.getPathfinder();
+            pathfinder.moveTo(target, speed);
+            lastRepathMs = System.currentTimeMillis();
+            plugin.getLogger().info("[task] npc.move_to 寻路: 目标 ("
+                    + round(target.getX()) + ", " + round(target.getY()) + ", " + round(target.getZ())
+                    + ") speed=" + speed);
         }
 
         @Override
@@ -267,6 +214,44 @@ public final class NpcMoveToTool implements NpcTool {
                 return;
             }
 
+            // 不可达提前失败：重寻路次数用尽仍没有路径，说明目标大概率在封闭建筑/围栏/水里，
+            // 再耗下去只会拖满 60 秒超时（实测两个任务都是这样 TIMEOUT 的）。直接判失败，
+            // 让上层尽早换目标。
+            Pathfinder pathfinder = villager.getPathfinder();
+            if (!pathfinder.hasPath() && repathCount >= MAX_REPATHS) {
+                stop(state);
+                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                        "无可行路径：重寻路 " + MAX_REPATHS + " 次后仍没有路径，剩余 " + round(horizontal) + " 格");
+                plugin.getLogger().info("[task] npc.move_to 无可行路径, 提前失败: npc=" + task.npcId()
+                        + " 剩余 " + round(horizontal) + " 格");
+                return;
+            }
+
+            // 偏离守卫：村民会被僵尸惊到逃跑（AI 开启后恐慌寻路优先级更高），
+            // 一旦被赶得比原任务允许范围还远，就没必要再追了 —— 判失败让上层重新决策。
+            if (horizontal > MAX_DISTANCE + DRIFT_TOLERANCE) {
+                stop(state);
+                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                        "NPC 偏离目标：剩余 " + round(horizontal) + " 格，超出允许范围");
+                plugin.getLogger().info("[task] npc.move_to 偏离目标, 提前失败: npc=" + task.npcId()
+                        + " 剩余 " + round(horizontal) + " 格");
+                return;
+            }
+
+            // 寻路维护：路径走完/被方块挡掉后 Pathfinder 会清空路径，原地不动。
+            // 隔 REPATH_INTERVAL_MS 重下一次指令（最多 MAX_REPATHS 次），让它重新绕路；
+            // 次数用尽后仍无路径由上面的不可达判定收尾。
+            if (!pathfinder.hasPath()
+                    && nowMs - lastRepathMs >= REPATH_INTERVAL_MS
+                    && repathCount < MAX_REPATHS) {
+                double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
+                pathfinder.moveTo(target, speed);
+                lastRepathMs = nowMs;
+                repathCount++;
+                plugin.getLogger().info("[task] npc.move_to 重新寻路(" + repathCount + "/" + MAX_REPATHS
+                        + ") npc=" + task.npcId() + " 剩余 " + round(horizontal) + " 格");
+            }
+
             // 卡住检测：进度基准点存在 task.data()，随 npc.task.get 一起可查
             JsonObject progress = task.data();
             double lastX = current.getX();
@@ -300,7 +285,7 @@ public final class NpcMoveToTool implements NpcTool {
             progressData.addProperty("last_progress_z", lastZ);
             progressData.addProperty("last_progress_ms", lastProgressMs);
             task.updateData(progressData);
-            // 实际的逐 tick 推进由 startMovement 里的调度器负责，这里只做进度/到达/卡住判定
+            // 实际移动由原版导航（Pathfinder）驱动，这里只做重寻路/进度/到达/卡住判定
         }
 
         @Override
@@ -344,23 +329,17 @@ public final class NpcMoveToTool implements NpcTool {
         }
 
         private void stop(VillagerState state) {
-            cancelMovement();
             if (state == null) return;
             Villager villager = state.entity();
             if (villager == null || !villager.isValid()) return;
 
+            // 必须显式停止原版寻路，否则任务结束后村民还会沿着旧路径继续走
+            villager.getPathfinder().stopPathfinding();
             halt(villager);
             // 只在非对话状态恢复原版 AI：对话期间 AI 由 startConversation 冻结，
             // 这里如果无条件 setAI(true)，玩家正聊着村民就会重新乱逛。
             if (state.interactingPlayer() == null) {
                 villager.setAI(true);
-            }
-        }
-
-        private void cancelMovement() {
-            if (movementTask != null) {
-                movementTask.cancel();
-                movementTask = null;
             }
         }
 

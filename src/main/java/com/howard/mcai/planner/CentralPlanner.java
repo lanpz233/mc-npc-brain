@@ -1284,10 +1284,16 @@ public final class CentralPlanner extends BukkitRunnable {
             "(?:我|俺|咱)[^，。！？；]{0,8}(?:给你|送你|拿给你|递给你)"
                     + "|(?:你拿去|你拿着|拿去用|送你了|归你了)");
 
-    /** 承诺马上动身："我这就过去" / "我马上过来" / "我这就跟你走" */
+    /**
+     * 承诺马上动身："我这就过去" / "我马上过来" / "我这就去找你"。
+     * <p>
+     * 尾部的动词必须真的是"朝玩家移动"——旧版把裸 "去/走" 也算承诺，导致
+     * "我这就去把炉子灭了""我马上走去拿料"这类**和玩家无关**的句子被整句删掉，
+     * 若整条回复只有这一句，就会静默变成 "..."（实测玩家收到空回复的根因）。
+     */
     private static final Pattern PROMISE_MOVE = Pattern.compile(
             "(?:我|俺|咱)[^，。！？；]{0,6}(?:这就|马上|立刻|待会儿|等下|回头|一会儿)"
-                    + "[^，。！？；]{0,6}(?:去|过去|过来|走|跟着|跟你走)");
+                    + "[^，。！？；]{0,6}(?:过去|过来|去找你|找你|陪你|跟着你|跟你走|去你那|到你那儿|到你那)");
 
     /** 承诺记住："我记住了" / "我记下了" */
     private static final Pattern PROMISE_REMEMBER = Pattern.compile(
@@ -1457,7 +1463,24 @@ public final class CentralPlanner extends BukkitRunnable {
         String beforePromise = dialogue;
         dialogue = stripUnbackedPromises(vState, dialogue, toolCall, reallyGave, reallyLearned);
         if (dialogue == null || dialogue.isBlank()) {
-            dialogue = "...";
+            // 整条回复都被承诺守卫删空。若只是"这就过去/马上过来"这类**移动措辞**误判，
+            // 不能给玩家回 "..."（实测玩家收到空回复的直接原因）—— 退回原台词并留日志；
+            // 但如果原文确实只有"给你/拿去/我记住了"这类实物/记忆承诺（没有对应工具兑现），
+            // 仍按硬约束剥空，绝不展示空头支票。
+            boolean realGiveOrRememberPromise = beforePromise != null
+                    && (PROMISE_GIVE.matcher(beforePromise).find()
+                        || PROMISE_REMEMBER.matcher(beforePromise).find());
+            if (beforePromise != null && !beforePromise.isBlank() && !realGiveOrRememberPromise) {
+                plugin.getLogger().info("[MC-AI] 承诺守卫把整条台词删空，已退回原台词（疑似移动措辞误判）["
+                        + vState.profession().zhName + "]: [" + beforePromise + "]");
+                dialogue = beforePromise;
+            } else {
+                if (beforePromise != null && !beforePromise.isBlank()) {
+                    plugin.getLogger().info("[MC-AI] 空头承诺已整句剥离（无对应工具兑现）["
+                            + vState.profession().zhName + "]: [" + beforePromise + "]");
+                }
+                dialogue = "...";
+            }
         } else if (!dialogue.equals(beforePromise)) {
             plugin.getLogger().info("§7[MC-AI] 空头承诺已剥离 [" + vState.profession().zhName + "]: ["
                     + beforePromise + "] → [" + dialogue + "]");
