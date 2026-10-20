@@ -104,7 +104,7 @@ public final class LLMClient {
      */
     private static final Pattern PSEUDO_SAY_MARKER = Pattern.compile(
             "(?is)(?:\\[\\s*(?:tool|tool\\s*call)\\s*\\]"
-                    + "|(?:^|[\\r\\n])\\s*[-*]*\\s*\\**\\s*(?:tool|action)\\s*\\**\\s*[:：=]"
+                    + "|(?:^|[\\r\\n])\\s*[-*]*\\s*\\**\\s*(?:tool|action|say|speak)\\s*\\**\\s*[:：=]"
                     + "|\\{\\s*\"(?:action|tool)\"\\s*:\\s*\"(?:say|speak)\")");
 
     /** 台词字段名后面的引号内容（content/text/message/内容/台词，兼容中间夹冒号、反引号、** 等外壳） */
@@ -114,6 +114,16 @@ public final class LLMClient {
     /** 没有字段名时的兜底：任意含中文的引号片段 */
     private static final Pattern QUOTED_SPEECH = Pattern.compile(
             "[\"“]([^\"“”\\n]{1,200})[\"”]");
+
+    /**
+     * 行首的裸 {@code say("台词"} 调用（常见形态：反引号 + 未闭合右括号）。
+     * <p>
+     * 实测模型写到一半被截断：{@code `say("麦浪高过头顶，瞅着就饱。"}。
+     * 规则 3 找不到闭合括号不会剥，最后被残余守卫整行丢弃，连带把前面正常台词也丢了。
+     * 这里直接把引号里的台词抽出来，外壳（含未闭合的尾部）一并丢弃。
+     */
+    private static final Pattern UNCLOSED_SPEECH_CALL = Pattern.compile(
+            "(?is)(?:^|(?<=[\\r\\n]))[\\s`*]*\\b(?:say|speak)\\s*\\(\\s*[\"“]([^\"“”\\n]{1,200})[\"”]\\s*\\)?[^\\r\\n]*");
 
     /**
      * 残余代码特征（最后一道守卫）：中文台词里几乎不会出现的 ASCII 组合。
@@ -923,6 +933,10 @@ public final class LLMClient {
         //     台词只存在于 content/text 的引号里，直接走后续剥离会把台词一起删掉。
         cleaned = extractPseudoCallSpeech(cleaned).trim();
 
+        // 0.15 行首裸 say("台词" / `say("台词"：右侧括号可能缺失，
+        //      规则 3 找不到闭合位置不会剥，最后被残余守卫整行带走连累正常台词。
+        cleaned = unwrapUnclosedSpeechCall(cleaned).trim();
+
         // 0.2 剥掉内联 [动作:…] 标记 —— 这是我们自己写进对话历史的动作摘要格式，
         //    模型学会了照抄进正文。解析成功的话动作已执行，这里必须剥掉防它漏进气泡/聊天框。
         cleaned = cleaned.replaceAll("\\[动作[:：][^\\]]*\\]", "").trim();
@@ -978,7 +992,7 @@ public final class LLMClient {
         //    这是在模仿 tool_call 格式，不是台词。从标签起到结尾整段删掉：
         //    这段文本本身没有任何台词价值，留着只会让玩家看到代码。
         cleaned = cleaned.replaceAll(
-                "(?is)\\*{0,2}(?:action|tool|name|function|动作|工具)\\*{0,2}\\s*[:：]\\s*[\"']?[A-Za-z_][A-Za-z0-9_.]*[\"']?.*$",
+                "(?is)\\*{0,2}(?:action|tool|name|function|say|speak|动作|工具)\\*{0,2}\\s*[:：]\\s*[`\"']*[A-Za-z_][A-Za-z0-9_.]*[`\"']?.*$",
                 "").trim();
 
         // 5. <action>say</action> 这类自造 XML 也一并剥掉
@@ -1076,6 +1090,29 @@ public final class LLMClient {
             replaced = true;
         }
         if (!replaced) return text;
+        out.append(text.substring(last));
+        return out.toString().trim();
+    }
+
+    /**
+     * 把行首的 {@code say("台词"} / {@code `say("台词"} 换成台词本身，保留其他行。
+     * <p>
+     * 这类调用常常没有右括号（模型输出被截断），规则 3 的括号配对找不到终点就原样留下，
+     * 随后残余守卫看到 {@code `} 和 {@code say(} 会把整段丢弃 —— 连前面正常的中文台词
+     * 一起没了（实测徐燕闲聊）。这里只吃掉调用外壳，台词照常保留。
+     */
+    private static String unwrapUnclosedSpeechCall(String text) {
+        if (text == null || text.isEmpty()) return text;
+        Matcher m = UNCLOSED_SPEECH_CALL.matcher(text);
+        if (!m.find()) return text;
+
+        StringBuilder out = new StringBuilder();
+        int last = 0;
+        do {
+            out.append(text, last, m.start());
+            out.append(m.group(1));
+            last = m.end();
+        } while (m.find());
         out.append(text.substring(last));
         return out.toString().trim();
     }

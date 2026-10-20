@@ -136,6 +136,30 @@ class LlmClientStripTest {
         assertEquals("", LLMClient.stripToolCalls("好嘞\")"));
     }
 
+    /** Markdown 粗体 + say 字段的变体（实测：李英淑闲聊泄漏）—— 只保留引号里的台词 */
+    @Test
+    void recoversSpeechFromBoldSayField() {
+        String raw = "**say**: \"(揉揉眼) 睡够啦！今儿个日头高照，正打算跟你唠唠昨儿个收庄稼的趣事呢!\"";
+        assertEquals("(揉揉眼) 睡够啦！今儿个日头高照，正打算跟你唠唠昨儿个收庄稼的趣事呢!",
+                LLMClient.stripToolCalls(raw));
+    }
+
+    /** 行首未闭合的 `say("台词"（实测：徐燕闲聊）—— 只剥调用外壳，两台词都要留下 */
+    @Test
+    void recoversSpeechFromUnclosedSayCall() {
+        String raw = "（眯眼望天）可不是，麦子都堆到肩膀啦！\n`say(\"麦浪高过头顶，瞅着就饱。\"";
+        assertEquals("（眯眼望天）可不是，麦子都堆到肩膀啦！\n麦浪高过头顶，瞅着就饱。",
+                LLMClient.stripToolCalls(raw));
+    }
+
+    /** 反引号包住工具名的字段尾巴（实测：徐虎闲聊）—— 只删尾巴，保留前面的台词 */
+    @Test
+    void stripsBacktickedToolFieldTail() {
+        String raw = "徐燕，这大中午的日头毒不毒？俺寻思着你咋也不避避？\n**tool**: `say`";
+        assertEquals("徐燕，这大中午的日头毒不毒？俺寻思着你咋也不避避？",
+                LLMClient.stripToolCalls(raw));
+    }
+
     /** 正常中文台词（含全角括号、标点、数字）不能被残余守卫误伤 */
     @Test
     void keepsNormalChineseDialogue() {
