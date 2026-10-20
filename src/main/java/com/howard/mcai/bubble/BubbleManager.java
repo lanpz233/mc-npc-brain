@@ -110,22 +110,40 @@ public final class BubbleManager implements Listener {
      */
     public void showDialog(LivingEntity entity, String speakerName, String text) {
         String body = text == null ? "" : text;
-        showDialog(entity, speakerName, body, autoDurationTicks(body));
+        showDialog(entity, speakerName, null, body, autoDurationTicks(body));
+    }
+
+    /**
+     * 带"听者"的会话框 —— 玩家/NPC 对话统一走这个重载。
+     * <p>
+     * 气泡标题和聊天框都会显示 {@code 说话者>听者}，控制台同时留一行
+     * {@code [chat] 说话者>听者: 台词}，保证"谁对谁说话"在游戏内外都能追溯。
+     */
+    public void showDialog(LivingEntity entity, String speakerName, String listenerName, String text) {
+        String body = text == null ? "" : text;
+        showDialog(entity, speakerName, listenerName, body, autoDurationTicks(body));
     }
 
     /**
      * 带时长覆盖的会话框版本 —— 闲聊/群聊等"玩家是旁观者"的场景用更长时长，
      * 玩家从远处跑过来还能看清；默认对话仍走 {@link #autoDurationTicks} 动态计时。
      *
+     * @param listenerName 听者名字（可为 null：没有明确听者时只显示说话者）
      * @param durationTicks 显示时长（tick），传固定值覆盖自动计算
      */
-    public void showDialog(LivingEntity entity, String speakerName, String text, long durationTicks) {
+    public void showDialog(LivingEntity entity, String speakerName, String listenerName,
+                           String text, long durationTicks) {
         // 最终收口：无论调用方是谁，气泡正文都再过一遍剥离 —— 防止未来新增的展示路径
         // 忘记清洗，把模型原始 JSON / 工具调用直接怼到玩家脸上。
         String body = LLMClient.stripToolCalls(text == null ? "" : text);
         if (body.isBlank()) return;  // 清洗后没有可读内容 → 不创建空气泡
-        String display = "§6§l" + (speakerName == null || speakerName.isBlank() ? "村民" : speakerName)
-                + "\n§f" + body;
+        String speaker = (speakerName == null || speakerName.isBlank()) ? "村民" : speakerName;
+        String title = (listenerName == null || listenerName.isBlank())
+                ? speaker : speaker + ">" + listenerName;
+        // 全链路留档：所有会话框台词都进控制台（含闲聊/自主行动/无人听者），
+        // 格式与游戏内标题一致（说话者>听者），便于玩家/开发者 grep 追溯"谁对谁说"
+        plugin.getLogger().info("[chat] " + title + ": " + body);
+        String display = "§6§l" + title + "\n§f" + body;
         // 会话框比裸气泡高，Y 偏移多抬一点，防止长回复盖住村民的脸
         show(entity, display, durationTicks, true,
                 (float) (plugin.getPluginConfig().bubbleOffsetY() + 0.15));
@@ -143,6 +161,9 @@ public final class BubbleManager implements Listener {
      */
     public void showMobBubble(LivingEntity entity, String coloredText) {
         String text = coloredText == null ? "" : coloredText;
+        // 动物/怪物气泡同样进控制台留档 —— 规则驱动的氛围台词也要"所有运行内容可见"，
+        // 颜色码去掉，格式与村民会话框一致，便于 grep
+        plugin.getLogger().info("[chat] " + entity.getName() + ": " + text.replaceAll("§.", ""));
         show(entity, text, shortDurationTicks(text), true,
                 (float) (plugin.getPluginConfig().bubbleOffsetY() + 0.15));
     }

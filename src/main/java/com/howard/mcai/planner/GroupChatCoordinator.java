@@ -142,7 +142,7 @@ public final class GroupChatCoordinator {
                                 if (vs.entity().isValid()) {
                                     // 旁听附和也写入近期社交上下文：玩家切过来对话时能衔接
                                     vs.addRecentSocialLine(finalLine);
-                                    bubbleManager.showDialog(vs.entity(), npcName, finalLine);
+                                    bubbleManager.showDialog(vs.entity(), npcName, player.getName(), finalLine);
                                 }
                             });
                         })
@@ -150,7 +150,9 @@ public final class GroupChatCoordinator {
                             // LLM 挂了 → 规则兜底，不报空气泡
                             String fallback = Smalltalk.reactToPlayerMessage(message, npcName);
                             Bukkit.getScheduler().runTask(plugin, () -> {
-                                if (vs.entity().isValid()) bubbleManager.showDialog(vs.entity(), npcName, fallback);
+                                if (vs.entity().isValid()) {
+                                    bubbleManager.showDialog(vs.entity(), npcName, player.getName(), fallback);
+                                }
                             });
                             plugin.getLogger().warning("旁观附和 LLM 失败，规则兜底: " + ex.getMessage());
                             return null;
@@ -275,9 +277,9 @@ public final class GroupChatCoordinator {
                                     }
                                     // 若这期间玩家开始跟它对话，AI 开关交给 startConversation/endConversation 管理
                                 }, STAND_STILL_TICKS);
-                                bubbleManager.showDialog(vs.entity(), npcName, finalLine);
+                                bubbleManager.showDialog(vs.entity(), npcName, player.getName(), finalLine);
                                 if (player.isOnline()) {
-                                    player.sendMessage("§6[" + npcName + "] §f" + finalLine);
+                                    player.sendMessage("§6[" + npcName + ">" + player.getName() + "] §f" + finalLine);
                                 }
                             }
                         }

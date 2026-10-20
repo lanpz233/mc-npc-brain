@@ -1778,15 +1778,17 @@ public final class CentralPlanner extends BukkitRunnable {
                 ? customName.replaceAll("§.", "")
                 : vState.profession().zhName;
 
-        // 1. 头顶会话框（按字数自动计时）
-        bubbleManager.showDialog(villager, name, dialogue);
+        // 听者名字：聊天框/气泡/控制台统一用 NPC>玩家 标注"谁对谁说"
+        String listenerName = (nearPlayer != null && nearPlayer.isOnline()) ? nearPlayer.getName() : null;
 
-        // 2. 聊天框完整台词（发给互动玩家）+ 3. 控制台留档
-        String chatLine = "§6[" + name + "] §f" + dialogue;
-        if (nearPlayer != null && nearPlayer.isOnline()) {
-            nearPlayer.sendMessage(chatLine);
+        // 1. 头顶会话框（按字数自动计时）+ 控制台 [chat] 留档（由 BubbleManager 统一输出）
+        //    控制台日志已收口到 BubbleManager，这里不再重复打印，避免一行台词出现两次
+        bubbleManager.showDialog(villager, name, listenerName, dialogue);
+
+        // 2. 聊天框完整台词（只发给互动玩家）；前缀同样带 说话者>听者
+        if (listenerName != null) {
+            nearPlayer.sendMessage("§6[" + name + ">" + listenerName + "] §f" + dialogue);
         }
-        Bukkit.getConsoleSender().sendMessage(chatLine);
     }
 
     /**

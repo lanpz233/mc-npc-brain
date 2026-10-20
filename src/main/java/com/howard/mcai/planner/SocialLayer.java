@@ -144,15 +144,15 @@ public final class SocialLayer extends TickLayer {
             String shortFact = fact.length() > 40 ? fact.substring(0, 40) : fact;
             boolean added = bState.addGossipFact("听" + aName + "说，" + shortFact);
             if (added) {
-                bubbleManager.showDialog(bState.entity(), bName, "（凑近听" + aName + "讲了句悄悄话，点了点头）");
+                bubbleManager.showDialog(bState.entity(), bName, aName, "（凑近听" + aName + "讲了句悄悄话，点了点头）");
                 plugin.getMemoryStore().markDirty(bState.getUniqueId());
                 plugin.getLogger().info("§b[MC-AI] 村民传话: " + aName + " → " + bName + " 记住了「" + shortFact + "」");
             }
         } else {
-            bubbleManager.showDialog(bState.entity(), bName, "（听完" + aName + "的话，撇撇嘴，不太信）");
+            bubbleManager.showDialog(bState.entity(), bName, aName, "（听完" + aName + "的话，撇撇嘴，不太信）");
             plugin.getLogger().info("§b[MC-AI] 村民传话: " + aName + " → " + bName + " 没信 (openness=" + bState.openness() + ")");
         }
-        bubbleManager.showDialog(a, aName, "（凑到" + bName + "耳边小声嘀咕了几句）");
+        bubbleManager.showDialog(a, aName, bName, "（凑到" + bName + "耳边小声嘀咕了几句）");
     }
 
     /**

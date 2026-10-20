@@ -508,6 +508,10 @@ public final class PresentationLayer extends TickLayer {
             ambientBusy.addAll(group);
             ambientCooldown.put(vs.getUniqueId(), now);
 
+            plugin.getLogger().info("[闲聊] 开始: " + Smalltalk.nameOf(vs) + ">"
+                    + listenerNames(listeners) + "（最多 " + AMBIENT_MAX_ROUNDS + " 轮，距离 "
+                    + String.format("%.1f", v.getLocation().distance(listeners.get(0).entity().getLocation())) + " 格）");
+
             startAmbientTurn(vs, listeners, 0, "", 0, group);
             return;  // 每轮只开一个群
         }
@@ -543,6 +547,8 @@ public final class PresentationLayer extends TickLayer {
         String npcName = Smalltalk.nameOf(cur);
 
         String userContent;
+        // 听者名字：step 0 是全部邻居，step>0 是上一位说话的人（当前这句就是接他/她的话）
+        String listenerName;
         if (step == 0) {
             // 起话头：告诉说话者身边有谁，让他用自己人设起个话头
             StringBuilder neighborDesc = new StringBuilder();
@@ -550,6 +556,7 @@ public final class PresentationLayer extends TickLayer {
                 if (neighborDesc.length() > 0) neighborDesc.append("、");
                 neighborDesc.append(Smalltalk.nameOf(l)).append("(").append(l.profession().zhName).append(")");
             }
+            listenerName = listenerNames(listeners);
             userContent = "[场景] " + PromptBuilder.compactScene(cur) + "。\n"
                     + "[村民闲聊] 你在村里遇到邻居：" + neighborDesc
                     + "。随口起个话头聊聊（家常、天气、收成、村里新鲜事都行），"
@@ -564,6 +571,7 @@ public final class PresentationLayer extends TickLayer {
             String lastSpeakerName = step == 1
                     ? Smalltalk.nameOf(speaker)
                     : Smalltalk.nameOf(listeners.get(step - 2));
+            listenerName = lastSpeakerName;
             userContent = "[场景] " + PromptBuilder.compactScene(cur) + "。\n"
                     + "[村民闲聊] 邻居 " + lastSpeakerName
                     + " 刚才说：\"" + lastLine + "\"。你自然地接一句中文（≤24字），别复述原话。";
@@ -594,8 +602,12 @@ public final class PresentationLayer extends TickLayer {
                             // 模型没说话（占位 "..."）就不显示气泡 —— 禁止把占位符当台词展示
                             if (!"...".equals(finalLine)) {
                                 // 闲聊气泡用固定长时长（15s）：玩家是旁观者、往往在远处，
-                                // 动态计时对 24 字短句只有约 11 秒，跑近就没了
-                                bubbleManager.showDialog(cur.entity(), npcName, finalLine, AMBIENT_BUBBLE_TICKS);
+                                // 动态计时对 24 字短句只有约 11 秒，跑近就没了。
+                                // BubbleManager 会同时输出 [chat] 说话者>听者: 台词 到控制台。
+                                bubbleManager.showDialog(cur.entity(), npcName, listenerName,
+                                        finalLine, AMBIENT_BUBBLE_TICKS);
+                            } else {
+                                plugin.getLogger().info("[闲聊] " + npcName + " 无有效台词（模型输出为空或被清洗）");
                             }
                         }
                         if (nextStep <= listeners.size()) {
@@ -631,8 +643,20 @@ public final class PresentationLayer extends TickLayer {
         // 续一轮：最后接话的听者起头，原起话头者接 → 两人来回
         VillagerState lastListener = listeners.get(listeners.size() - 1);
         List<VillagerState> nextListeners = List.of(speaker);
+        plugin.getLogger().info("[闲聊] 续轮 " + (nextRound + 1) + ": "
+                + Smalltalk.nameOf(lastListener) + ">" + Smalltalk.nameOf(speaker));
         Bukkit.getScheduler().runTaskLater(plugin,
                 () -> startAmbientTurn(lastListener, nextListeners, 0, "", nextRound, group), 50L);
+    }
+
+    /** 听者名字串（多人用顿号连接）—— 控制台日志和气泡标题共用 */
+    private static String listenerNames(List<VillagerState> listeners) {
+        StringBuilder sb = new StringBuilder();
+        for (VillagerState l : listeners) {
+            if (sb.length() > 0) sb.append("、");
+            sb.append(Smalltalk.nameOf(l));
+        }
+        return sb.toString();
     }
 
     /** 当前轮参与者（说话者 + 听者）32 格内是否还有在线玩家 —— 每步开聊前都先过这道闸 */
@@ -668,6 +692,17 @@ public final class PresentationLayer extends TickLayer {
      * 留在 ambientBusy 里，攒到 ambientBusy.size()>=3 后自动闲聊永久停摆。
      */
     private void releaseAmbient(Set<UUID> group) {
-        ambientBusy.removeAll(group);
+        // removeAll 返回是否有成员真的被移除 —— 同一群可能被"轮数到顶"和"异常"重复释放，
+        // 只有真正清理掉占位时才打结束日志，避免同一群收尾打印两次
+        if (ambientBusy.removeAll(group)) {
+            StringBuilder names = new StringBuilder();
+            for (UUID id : group) {
+                VillagerState vs = villagers.get(id);
+                if (vs == null) continue;
+                if (names.length() > 0) names.append("、");
+                names.append(Smalltalk.nameOf(vs));
+            }
+            plugin.getLogger().info("[闲聊] 结束: " + (names.length() == 0 ? "（成员已离线）" : names.toString()));
+        }
     }
 }

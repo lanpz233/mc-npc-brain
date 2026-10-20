@@ -1,6 +1,7 @@
 package com.howard.mcai.listener;
 
 import com.howard.mcai.McaiPlugin;
+import com.howard.mcai.ai.Smalltalk;
 import com.howard.mcai.mob.VillagerState;
 import com.howard.mcai.planner.CentralPlanner;
 import com.howard.mcai.planner.GroupChatCoordinator;
@@ -74,6 +75,10 @@ public final class PlayerChatListener implements Listener {
             }
 
             if (captured != null) {
+                // 控制台留档玩家→NPC 的半句：与 NPC 台词统一 [chat] 前缀，
+                // 格式 玩家名>村民名，保证"谁对谁说话"在控制台完整可追溯
+                plugin.getLogger().info("[chat] " + player.getName() + ">"
+                        + Smalltalk.nameOf(captured) + ": " + message);
                 // 消息入历史 + 触发 LLM 统一走 planner（主线程）：
                 // - 砍价关键词拦截在 planner.onPlayerMessage 里做（自动匹配路径同样生效）
                 // - LLM 忙时自动积压，等当前响应后再入历史+续调，保证 user↔assistant 严格交替
@@ -87,6 +92,9 @@ public final class PlayerChatListener implements Listener {
             // findNearestAIVillager 用到 entity.isValid()/getLocation() 等 Paper API，必须切主线程
             VillagerState autoMatch = findNearestAIVillager(player);
             if (autoMatch != null) {
+                // 自动接入也算一次"玩家对 NPC 说话"，控制台同样留档
+                plugin.getLogger().info("[chat] " + player.getName() + ">"
+                        + Smalltalk.nameOf(autoMatch) + ": " + message);
                 // 多 NPC：说话直接切给最近的那个，其他人"闭嘴"
                 planner.switchConversation(player, autoMatch);
                 planner.onPlayerMessage(autoMatch, player,

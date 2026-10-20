@@ -650,8 +650,10 @@ public final class NeedsLayer extends TickLayer {
         // 所以不往任何人的聊天框写字 —— 否则最近的玩家会莫名收到一段没头没尾的台词。
         String name = Smalltalk.nameOf(vs);
         if (!"...".equals(finalDialogue)) {
-            bubbleManager.showDialog(v, name, finalDialogue, 300L);
-            Bukkit.getConsoleSender().sendMessage("§6[" + name + "] §f" + finalDialogue);
+            // 气泡标题与控制台 [chat] 都带"听者"：附近有玩家就是 名字>玩家名，
+            // 没有玩家时只标说话者（控制台日志由 BubbleManager 统一输出，这里不再重复打印）
+            bubbleManager.showDialog(v, name,
+                    audience != null ? audience.getName() : null, finalDialogue, 300L);
             // 写入近期社交上下文（顺带缓解 social/boredom —— 说话本身就是社交满足）
             vs.addRecentSocialLine(finalDialogue);
         }
