@@ -1433,8 +1433,10 @@ public final class CentralPlanner extends BukkitRunnable {
                                 : "§e" + (preUnifiedResult != null && preUnifiedResult.errorMessage() != null
                                         ? preUnifiedResult.errorMessage() : "这次没能把东西给你");
                     } else {
-                        gatedReject = plugin.getWorldInteraction().execute(vState, toolCall, nearPlayer);
-                        reallyGave = (gatedReject == null);   // execute 返回 null 才代表真出货了
+                        // 统一柜不可用（注册表未就绪）：宁可明确拒绝，也绝不假报"已送出"
+                        //（老后门 execute 入口已退役，再走它只会拿到 null 被误判成成功）
+                        gatedReject = "§e系统繁忙，这次没能把东西给你";
+                        reallyGave = false;
                     }
                 }
                 case "accept_swap" -> {
@@ -1784,19 +1786,7 @@ public final class CentralPlanner extends BukkitRunnable {
                     // 交换也已在"第二步半"执行完（双方物品一次性转移），这里只说话
                     speak(vState, nearPlayer, dialogue);
                 }
-                case "equip" -> {
-                    // 世界交互仅剩 equip 还走老后门 WorldInteractionService（其余已迁入统一柜）：
-                    // 权限三档判定（平民白名单/亲信领地/神使全权）+ 神使审计 audit.log
-                    String feedback = plugin.getWorldInteraction().execute(vState, toolCall, nearPlayer);
-                    if (feedback != null) {
-                        // 反馈行只进玩家聊天框 + 控制台（权限拒绝/确认提示是系统事实，不冒 NPC 气泡）
-                        if (nearPlayer != null && nearPlayer.isOnline()) {
-                            nearPlayer.sendMessage(feedback);
-                        }
-                        Bukkit.getConsoleSender().sendMessage(feedback);
-                    }
-                    speak(vState, nearPlayer, dialogue);
-                }
+                // equip 已迁入统一柜（走上面的统一分发分支），老后门世界交互到此全部退役
                 case "idle" -> {
                     // idle：只说台词，不做额外动作
                     speak(vState, nearPlayer, dialogue);
