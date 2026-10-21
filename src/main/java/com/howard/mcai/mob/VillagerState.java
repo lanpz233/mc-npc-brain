@@ -1367,6 +1367,49 @@ public final class VillagerState {
         return n;
     }
 
+    // ===== 背包换物提议（v0.4.1：选中他的货 + 点自己的货登记，模型裁决后执行）=====
+
+    /**
+     * 待裁决的换物提议 —— 玩家在背包界面选中 NPC 的 1 件东西、再点自己背包里
+     * 的一格物品登记。价值与有利程度由插件算好写进给模型的简报（ai/BarterBrief），
+     * 模型同意（调 accept_barter）后由 WorldInteractionService 复核双方物品还在、
+     * 一次性交换；模型不表态就什么都不发生。
+     */
+    public record PendingBarter(org.bukkit.Material npcMat, org.bukkit.Material offerMat,
+                                int offerCount, long atMs) {}
+
+    private static final long BARTER_WINDOW_MS = 180_000L;
+
+    private final Map<java.util.UUID, PendingBarter> pendingBarters = new java.util.HashMap<>();
+
+    public synchronized void setPendingBarter(java.util.UUID playerUuid, org.bukkit.Material npcMat,
+                                              org.bukkit.Material offerMat, int offerCount) {
+        if (playerUuid == null || npcMat == null || offerMat == null || offerCount <= 0) return;
+        pendingBarters.put(playerUuid, new PendingBarter(npcMat, offerMat, offerCount,
+                System.currentTimeMillis()));
+    }
+
+    public synchronized PendingBarter peekPendingBarter(java.util.UUID playerUuid) {
+        if (playerUuid == null) return null;
+        PendingBarter b = pendingBarters.get(playerUuid);
+        if (b == null) return null;
+        if (System.currentTimeMillis() - b.atMs() > BARTER_WINDOW_MS) {
+            pendingBarters.remove(playerUuid);
+            return null;
+        }
+        return b;
+    }
+
+    public synchronized PendingBarter consumePendingBarter(java.util.UUID playerUuid) {
+        PendingBarter b = peekPendingBarter(playerUuid);
+        if (b != null) pendingBarters.remove(playerUuid);
+        return b;
+    }
+
+    public synchronized void clearPendingBarter(java.util.UUID playerUuid) {
+        if (playerUuid != null) pendingBarters.remove(playerUuid);
+    }
+
     // ===== 玩家送礼（必须玩家亲口确认，代码层绝不擅自没收）=====
 
     /**

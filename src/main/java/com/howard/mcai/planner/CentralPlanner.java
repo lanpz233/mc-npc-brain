@@ -1515,6 +1515,21 @@ public final class CentralPlanner extends BukkitRunnable {
                         reallyLearned = handleLearn(vState, toolCall, nearPlayer);
                     }
                 }
+                case "accept_barter" -> {
+                    // 背包换物（v0.4.1）：模型点头才调本工具，成交与否决定台词能不能说"换了"，
+                    // 所以与 give_item 同路提前执行、结果带回；执行体复核双方物品还在，一次性交换
+                    if (isUnifiedTool("accept_barter")) {
+                        preUnifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
+                        boolean swapped = preUnifiedResult != null && preUnifiedResult.success()
+                                && preUnifiedResult.data() != null
+                                && preUnifiedResult.data().has("swapped")
+                                && preUnifiedResult.data().get("swapped").getAsBoolean();
+                        gatedReject = swapped ? null
+                                : "§e" + playerFacingReason(preUnifiedResult, "这笔换物没能成交");
+                    } else {
+                        gatedReject = "§e系统繁忙，这笔换物没能成交";
+                    }
+                }
                 default -> { /* 其余工具没有"会被静默拒绝"的门槛，仍走第三步正常执行 */ }
             }
             if (gatedReject != null) {
@@ -1733,6 +1748,10 @@ public final class CentralPlanner extends BukkitRunnable {
         } else {
             speak(vState, nearPlayer, dialogue);
         }
+
+        // 换物提议一轮定生死：本轮没调 accept_barter = 没谈成，登记作废
+        // （防陈年提议被日后某次调用误成交；新提议会重新登记）
+        if (nearPlayer != null) vState.clearPendingBarter(nearPlayer.getUniqueId());
 
         // === 第四步：无论如何追加 assistant（Jinja 交替硬约束） ===
         // 历史行附带 [动作:摘要] —— 旧版只存台词，模型回读时"不知道自己上一步做了什么"，

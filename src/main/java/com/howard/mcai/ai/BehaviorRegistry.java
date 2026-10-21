@@ -36,7 +36,7 @@ public final class BehaviorRegistry {
             // SPEC 2.14 世界交互类 —— 落地在 WorldInteractionService，权限三档约束
             // 注意：没有 take_item —— 从玩家身上拿东西必须走"玩家亲口确认"的两步流程
             // （CentralPlanner.annotateGift → resolvePendingGift），不给模型直接扣货的口子
-            "give_item", "break_block", "place_block",
+            "give_item", "break_block", "place_block", "accept_barter",
             "teleport_to", "teleport", "equip"
     );
 
@@ -180,6 +180,18 @@ public final class BehaviorRegistry {
                         "message", Map.of("type", "string", "description", "送东西时说的中文台词")
                 ),
                 List.of("item")));
+
+        // accept_barter —— 背包换物（v0.4.1）：玩家在背包界面提的换物，简报已把两边价值
+        // 与对 NPC 的有利程度算给他看；他点头才调，插件复核双方物品还在后一次性交换
+        tools.add(func("accept_barter",
+                "同意玩家刚才在你背包前提的换物：他选中你背包里的 1 件东西，拿他背包里的一格东西跟你换。"
+                        + "系统简报已经把两边东西值多少绿宝石、这笔买卖对你划不划算、他的东西对你的营生有没有用都算给你了。"
+                        + "你按性格和跟他的交情决定：愿意换就调用本工具，交换立即成交；不愿意就只用台词拒绝，不要调用。"
+                        + "调用时在 message 里说一句中文台词。",
+                Map.of(
+                        "message", Map.of("type", "string", "description", "同意换物时说的中文台词")
+                ),
+                List.of()));
 
         // break_block —— 职业白名单 + 领地保护（拆玩家的房子 = 拆家，必被拒）
         tools.add(func("break_block",

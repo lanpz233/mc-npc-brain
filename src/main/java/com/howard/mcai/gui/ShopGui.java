@@ -37,7 +37,7 @@ public final class ShopGui implements InventoryHolder {
     private static final int PAGE_SIZE = 28;   // 内区 4 行 × 7 列
     private static final int[] GRID_SLOTS = buildGridSlots();
 
-    private enum View {LIST, DETAIL, BARGAIN, BARTER}
+    private enum View {LIST, DETAIL, BARGAIN}
 
     private final McaiPlugin plugin;
     private final VillagerState state;
@@ -50,8 +50,6 @@ public final class ShopGui implements InventoryHolder {
     private int page = 0;
     /** 当前渲染里 槽位 → offerId（点击路由） */
     private final Map<Integer, String> slotOffers = new HashMap<>();
-    /** 抵价视图里 槽位 → 材料（点击路由） */
-    private final Map<Integer, Material> slotBarter = new HashMap<>();
 
     private ShopGui(McaiPlugin plugin, Player viewer, VillagerState state, ShopSession session) {
         this.plugin = plugin;
@@ -154,7 +152,6 @@ public final class ShopGui implements InventoryHolder {
             case LIST -> renderList(catalog);
             case DETAIL -> renderDetail(selected);
             case BARGAIN -> renderBargain(selected);
-            case BARTER -> renderBarter(selected);
         }
     }
 
@@ -232,9 +229,6 @@ public final class ShopGui implements InventoryHolder {
                     session.hasBargained(o.id())
                             ? List.of("§7这是你们谈好的价")
                             : List.of("§7点一下直接买（也可以先砍价）")));
-            inventory.setItem(44, button(Material.CHEST, "§e以物抵价 · 拿东西顶账",
-                    List.of("§7用你包里的东西抵一部分货款",
-                            "§7按他收购的牌价算，论捆计价")));
             int floor = BargainPolicy.floorPrice(o.emeraldPrice(),
                     state.emotion().favor(viewer.getUniqueId()));
             if (price <= floor) {
@@ -249,95 +243,6 @@ public final class ShopGui implements InventoryHolder {
             }
         }
         inventory.setItem(47, balanceCard());
-    }
-
-    /** 抵价视图：列出玩家身上“他肯收”的东西，点选凑整捆抵货款（计价见 BarterPlan） */
-    private void renderBarter(ShopCatalog.Offer o) {
-        if (o == null || o.buyBack()) {
-            view = View.LIST;
-            rebuild();
-            return;
-        }
-        slotBarter.clear();
-        var offers = ShopCatalog.fromRecipes(state.buildCurrentRecipes());
-        var terms = com.howard.mcai.shop.BarterPlan.termsFrom(offers);
-        int price = session.effectivePrice(o.id(), o.emeraldPrice());
-
-        List<Material> mats = new ArrayList<>();
-        for (Material m : terms.keySet()) {
-            if (ShopSettlement.countItem(viewer.getInventory(), m) > 0) mats.add(m);
-        }
-        if (mats.isEmpty()) {
-            inventory.setItem(22, button(Material.BARRIER, "§7你身上没有他肯收的东西",
-                    List.of("§7他收什么，看“收购”那一页", "§7带够整捆的东西再来抵价")));
-        } else {
-            int n = Math.min(mats.size(), GRID_SLOTS.length);
-            for (int i = 0; i < n; i++) {
-                Material m = mats.get(i);
-                int slot = GRID_SLOTS[i];
-                slotBarter.put(slot, m);
-                int have = ShopSettlement.countItem(viewer.getInventory(), m);
-                int picked = session.barterCount(m.name());
-                int[] t = terms.get(m);
-                ItemStack icon = new ItemStack(m, Math.max(1, Math.min(64, have)));
-                List<String> lore = new ArrayList<>();
-                lore.add("§7他收这个：§f" + t[0] + " 个 = " + t[1] + " 块绿宝石（一捆）");
-                lore.add("§7你身上有 §f" + have + " 个");
-                lore.add(picked > 0 ? "§a已选 " + picked + " 个" : "§7还没选");
-                lore.add("§e左键 +1 · 右键 -1");
-                inventory.setItem(slot, named(icon, "§f" + zh(m), lore));
-            }
-        }
-
-        // 结算预览（与结算同口径：BarterPlan 按整捆算）
-        Map<Material, Integer> basket = new java.util.LinkedHashMap<>();
-        for (var e : session.barterBasket().entrySet()) {
-            Material m = Material.matchMaterial(e.getKey());
-            if (m != null) basket.put(m, e.getValue());
-        }
-        var plan = com.howard.mcai.shop.BarterPlan.plan(basket, terms, price, state.stockOf(Material.EMERALD));
-        List<String> sum = new ArrayList<>();
-        sum.add("§7这件东西现在 §a" + price + " 块绿宝石");
-        if (plan.consumed().isEmpty()) {
-            sum.add("§7还没凑出能抵的整捆");
-        } else {
-            sum.add("§7抵价货值：§a" + plan.goodsValue() + " 块");
-            if (plan.emeraldDue() > 0) sum.add("§7还要补付：§e" + plan.emeraldDue() + " 块绿宝石");
-            if (plan.change() > 0) sum.add("§7他找你：§a" + plan.change() + " 块绿宝石");
-            if (plan.changeUnaffordable()) sum.add("§c他钱包不够找零，少抵一件吧");
-        }
-        sum.add("§8零头不计价、不消耗，多的自动留下");
-        inventory.setItem(31 + 9, button(Material.PAPER, "§6抵价结算", sum));
-        if (!plan.consumed().isEmpty() && !plan.changeUnaffordable()) {
-            inventory.setItem(40, ShopIcons.button(ShopIcons.BUY, "§a就这么买", List.of("§7货抵一部分，差价绿宝石结清")));
-        } else {
-            inventory.setItem(40, ShopIcons.button(ShopIcons.LOCK, "§7还买不了", List.of("§7先选够能抵的整捆东西")));
-        }
-        inventory.setItem(45, ShopIcons.button(ShopIcons.BACK, "§f回商品页", List.of()));
-        inventory.setItem(47, balanceCard());
-    }
-
-    private void clickBarter(int slot, boolean rightClick) {
-        if (slot == 45) {
-            view = View.DETAIL;
-            rebuild();
-            return;
-        }
-        if (slot == 40) {
-            ShopCatalog.Offer o = currentOffer();
-            if (o != null && !o.buyBack()) {
-                var r = ShopSettlement.buyWithBarter(plugin, viewer, state, o, session);
-                if (r.ok()) view = View.DETAIL;
-            }
-            rebuild();
-            return;
-        }
-        Material m = slotBarter.get(slot);
-        if (m != null) {
-            int have = ShopSettlement.countItem(viewer.getInventory(), m);
-            session.barterAdjust(m.name(), rightClick ? -1 : 1, have);
-            rebuild();
-        }
     }
 
     private void renderBargain(ShopCatalog.Offer o) {
@@ -487,7 +392,6 @@ public final class ShopGui implements InventoryHolder {
             case LIST -> clickList(slot);
             case DETAIL -> clickDetail(slot);
             case BARGAIN -> clickBargain(slot);
-            case BARTER -> clickBarter(slot, rightClick);
         }
     }
 
@@ -556,11 +460,6 @@ public final class ShopGui implements InventoryHolder {
                 session.setNpcLine("那……就按原价看看吧，想买随时点。");
                 rebuild();
             }
-            return;
-        }
-        if (slot == 44 && !o.buyBack()) {   // 以物抵价
-            view = View.BARTER;
-            rebuild();
             return;
         }
         if (slot == 40) {              // 买 / 卖
