@@ -186,8 +186,27 @@ def draw_bg(pal, emblem=None, emblem_color=CREAM):
     return img
 
 
+def draw_backpack():
+    """村民背包背景（素材阶段 4）：与商店柜台同几何（54 格窗口通用），
+    换成皮背包质感——深棕皮色、两侧背带、顶部皮牌 + 黄铜扣。字形 \\ue110。"""
+    pal = palette((94, 62, 38), (103, 69, 43), (66, 42, 24), (54, 36, 20),
+                  (122, 88, 54), (86, 56, 34), (70, 46, 26), (150, 116, 64))
+    img = draw_bg(pal)  # 几何完全复用（木板/货架/横梁/招牌位都不动）
+    d = ImageDraw.Draw(img)
+    # 两侧背带（沿外框内侧的竖皮带 + 缝线）
+    for x0 in (1, PANEL_W - 8):
+        d.rectangle([x0, 20, x0 + 6, 146], fill=(60, 38, 20, 255))
+        for yy in range(26, 144, 12):
+            d.line([x0 + 1, yy, x0 + 5, yy], fill=(150, 116, 64, 255), width=1)
+    # 顶部皮牌中央的黄铜扣（招牌区 44..159 / 5..19，中心 101,12）
+    d.rectangle([94, 6, 108, 18], outline=(196, 152, 84, 255), width=2)
+    d.line([101, 6, 101, 18], fill=(196, 152, 84, 255), width=2)
+    return img
+
+
 def main():
     draw_bg(GENERIC).save(os.path.join(OUT_DIR, "mcai_shop_bg.png"))
+    draw_backpack().save(os.path.join(OUT_DIR, "mcai_backpack_bg.png"))
     for key, (pal, emblem, color) in VARIANTS.items():
         draw_bg(pal, emblem, color).save(os.path.join(OUT_DIR, f"mcai_shop_bg_{key}.png"))
     print(f"backgrounds: 1 generic + {len(VARIANTS)} variants -> {OUT_DIR}")

@@ -67,7 +67,7 @@ public final class VillagerInventoryGui implements InventoryHolder {
         this.state = state;
         this.villagerUuid = state.getUniqueId();
         this.viewerUuid = viewer.getUniqueId();
-        this.inventory = Bukkit.createInventory(this, SIZE, "§6" + displayName() + "的背包");
+        this.inventory = Bukkit.createInventory(this, SIZE, title());
     }
 
     /**
@@ -90,6 +90,18 @@ public final class VillagerInventoryGui implements InventoryHolder {
     @Override
     public Inventory getInventory() {
         return inventory;
+    }
+
+    /**
+     * 窗口标题：开了资源包皮肤 → 背包专属背景字形（皮背包，素材阶段 4，
+     * 与商店柜台同字体 mcai_shop 的 \ue110）；没开 → 普通文字标题。
+     */
+    private net.kyori.adventure.text.Component title() {
+        if (plugin.getPluginConfig().shopSkinEnabled()) {
+            return net.kyori.adventure.text.Component.text("\uF808\uE110")
+                    .font(net.kyori.adventure.key.Key.key("minecraft", "mcai_shop"));
+        }
+        return net.kyori.adventure.text.Component.text("§6" + displayName() + "的背包");
     }
 
     public UUID villagerUuid() {
@@ -188,7 +200,7 @@ public final class VillagerInventoryGui implements InventoryHolder {
                 + "（达标必给，不掷骰子）/ 亲信门槛 " + fmt(plugin.getPluginConfig().confidantFavor()));
         favorLore.add("§7—— 对各位玩家的好感 ——");
         favorLore.addAll(topList(favorEntries(), "§8（还没有任何好感记录）"));
-        putStatus(47, Material.GOLDEN_APPLE, "§6§l情绪与好感", favorLore);
+        putStatusIcon(47, ShopIcons.HEART, "§6§l情绪与好感", favorLore);
 
         // 48 需求状态
         List<String> needLore = new ArrayList<>();
@@ -216,7 +228,7 @@ public final class VillagerInventoryGui implements InventoryHolder {
             }
         }
         relLore.add("§7受击(30秒内): §f" + (state.wasHitRecently() ? "§c是" : "§a否"));
-        putStatus(49, Material.ARMOR_STAND, "§6§l社会关系", relLore);
+        putStatusIcon(49, ShopIcons.BOND, "§6§l社会关系", relLore);
 
         // 50 环境与位置
         putStatus(50, Material.COMPASS, "§6§l环境与位置", envLore());
@@ -292,6 +304,11 @@ public final class VillagerInventoryGui implements InventoryHolder {
         }
         lore.add("§7当前状态: " + act);
         return lore;
+    }
+
+    /** 信息卡（图标版）：用资源包专属图标替代容易误解的原版物品（金苹果=情绪、盔甲架=关系都太绕） */
+    private void putStatusIcon(int slot, int cmd, String name, List<String> lore) {
+        inventory.setItem(slot, ShopIcons.button(cmd, name, lore));
     }
 
     /** 信息卡写入：只读，不进 slotMap（点它不会触发索要） */

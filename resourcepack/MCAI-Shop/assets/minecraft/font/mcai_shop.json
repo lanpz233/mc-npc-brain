@@ -140,6 +140,15 @@
       "chars": [
         "\ue10e"
       ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_backpack_bg.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue110"
+      ]
     }
   ]
 }
