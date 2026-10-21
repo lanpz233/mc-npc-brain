@@ -111,6 +111,9 @@ class FactGroundingTest {
     @Test
     void detectionIsScopedToShortFactQuestions() {
         assertEquals(EnumSet.of(FactAnswers.Kind.TIME_EXACT), FactAnswers.detect("几点了"));
+        // 服主实测漏网句式（v0.3.0）：“现在是什么时候”曾漏给模型，报出“三点零九分”（实际 18:13）
+        assertEquals(EnumSet.of(FactAnswers.Kind.TIME_EXACT), FactAnswers.detect("现在是什么时候"));
+        assertEquals(EnumSet.of(FactAnswers.Kind.TIME_EXACT), FactAnswers.detect("什么时辰了"));
         assertEquals(EnumSet.of(FactAnswers.Kind.TIME_PERIOD), FactAnswers.detect("天黑了没"));
         assertEquals(EnumSet.of(FactAnswers.Kind.WEATHER_NOW), FactAnswers.detect("有没有下雨"));
         assertEquals(EnumSet.of(FactAnswers.Kind.RAIN_FORECAST), FactAnswers.detect("这雨什么时候停啊"));

@@ -66,7 +66,8 @@ public final class FactAnswers {
             out.add(Kind.TIME_PERIOD);
         }
         // —— 时间：精确类 ——
-        if (containsAny(m, "几点", "几时", "现在时间", "报个时", "到点了吗")) {
+        if (containsAny(m, "几点", "几时", "现在时间", "报个时", "到点了吗",
+                "现在是什么时候", "现在是几点", "现在什么时间", "什么时辰")) {
             out.add(Kind.TIME_EXACT);
         }
         // —— 离天黑 ——
