@@ -107,3 +107,21 @@
 
 盘点人备注：B 表「插件实际把关」一列均为代码实证；凡本表说「无/靠提示词」的，
 都经过对执行路径的逐条核查，不是印象判断。
+
+---
+
+## 附：迁移完成记录（2026-10-21，Fong 批准全案后执行）
+
+E 节建议顺序已全部落地（每件一个 PR，均经本地全量编译 + 单元测试后合并）：
+
+1. 止血（offer_trade 免费送改扣库存）：PR #3；
+2. give_item → `npc.give_item` + GiftPolicy 确定性裁决（掷骰子 giveChance 全链路删除）：PR #4；
+3. accept_swap → `npc.accept_swap` + SwapPolicy（插件先算值不值）：PR #5；
+4. break_block / place_block → `npc.break_block` / `npc.place_block`：PR #6；
+5. teleport / teleport_to → `npc.teleport` / `npc.teleport_to`（后者标 HIGH 先卡神使）：PR #7；
+6. equip → `npc.equip`；`WorldInteractionService.execute` 老分发入口删除：PR #8；
+7. move_to 退役直线硬推、并入 `npc.move_to` 寻路任务；follow_player → `npc.follow_player` 任务制：PR #9；
+8. say / wave / nod / shake_head / idle（登记标记）与 look_at / flee / find_shelter / learn 统一登记：PR #10。
+
+迁移后唯一仍走老路径的是 `offer_trade`——交易将随独立交易 UI（设计决策路线二）一起重做。
+统一柜现共登记 25 件工具（原有 8 件 + 本轮新增 17 件），全部经 ToolDispatcher 一条路执行。

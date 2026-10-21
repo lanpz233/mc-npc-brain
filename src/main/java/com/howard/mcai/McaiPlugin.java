@@ -491,6 +491,17 @@ public final class McaiPlugin extends JavaPlugin {
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcEquipTool(this));
         // follow_player 改任务制迁入统一柜（持续跟随，替代老后门的两步假跟随）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcFollowPlayerTool(this));
+        // 表达/感知类轻动作统一登记（迁移收官批）：say/手势/idle 为登记标记，
+        // look_at/flee/find_shelter/learn 各有自己的统一工具（把关与旧路径同一套）
+        toolRegistry.register(com.howard.mcai.tool.tools.NpcMarkerTool.say());
+        toolRegistry.register(com.howard.mcai.tool.tools.NpcMarkerTool.wave());
+        toolRegistry.register(com.howard.mcai.tool.tools.NpcMarkerTool.nod());
+        toolRegistry.register(com.howard.mcai.tool.tools.NpcMarkerTool.shakeHead());
+        toolRegistry.register(com.howard.mcai.tool.tools.NpcMarkerTool.idle());
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcLookAtTool(this));
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcFleeTool(this));
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcFindShelterTool(this));
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcLearnTool(this));
         getLogger().info("工具系统: 已注册 " + toolRegistry.size() + " 个工具");
     }
 
