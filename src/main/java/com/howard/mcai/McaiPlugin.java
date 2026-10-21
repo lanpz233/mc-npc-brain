@@ -484,6 +484,9 @@ public final class McaiPlugin extends JavaPlugin {
         // break_block / place_block 迁入统一柜（权限把关仍在 WorldInteractionService）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcBreakBlockTool(this));
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcPlaceBlockTool(this));
+        // teleport / teleport_to 迁入统一柜（teleport_to 标 HIGH，策略层先卡神使）
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcTeleportTool(this));
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcTeleportToTool(this));
         getLogger().info("工具系统: 已注册 " + toolRegistry.size() + " 个工具");
     }
 

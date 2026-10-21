@@ -1553,6 +1553,15 @@ public final class CentralPlanner extends BukkitRunnable {
                     }
                     Bukkit.getConsoleSender().sendMessage(feedback);
                 }
+                // 工具成功但带系统提示（如传送待确认「请回复好」）→ 同样原样转达玩家
+                if (unifiedResult != null && unifiedResult.success() && unifiedResult.data() != null
+                        && unifiedResult.data().has("notice")) {
+                    String notice = unifiedResult.data().get("notice").getAsString();
+                    if (nearPlayer != null && nearPlayer.isOnline()) {
+                        nearPlayer.sendMessage(notice);
+                    }
+                    Bukkit.getConsoleSender().sendMessage(notice);
+                }
             }
             speak(vState, nearPlayer, dialogue);
         } else if (toolCall != null) {
@@ -1775,10 +1784,9 @@ public final class CentralPlanner extends BukkitRunnable {
                     // 交换也已在"第二步半"执行完（双方物品一次性转移），这里只说话
                     speak(vState, nearPlayer, dialogue);
                 }
-                case "teleport_to", "teleport", "equip" -> {
-                    // SPEC 2.14 世界交互 —— 统一走 WorldInteractionService：
+                case "equip" -> {
+                    // 世界交互仅剩 equip 还走老后门 WorldInteractionService（其余已迁入统一柜）：
                     // 权限三档判定（平民白名单/亲信领地/神使全权）+ 神使审计 audit.log
-                    // 传送玩家走确认流（"CONFIRM_PENDING"提示会发给玩家，等其回复"好"）
                     String feedback = plugin.getWorldInteraction().execute(vState, toolCall, nearPlayer);
                     if (feedback != null) {
                         // 反馈行只进玩家聊天框 + 控制台（权限拒绝/确认提示是系统事实，不冒 NPC 气泡）
