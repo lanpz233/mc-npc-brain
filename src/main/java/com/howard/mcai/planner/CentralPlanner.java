@@ -579,15 +579,16 @@ public final class CentralPlanner extends BukkitRunnable {
         int want = Math.min(parseBegCount(original, stock), stock);
 
         double fav = vState.emotion().favor(player.getUniqueId());
-        // 态度参考：好感越高越愿意给（EmotionState.giveChance），但不再由代码层直接交付。
-        // 真正的交付等模型表态 —— 它调 give_item 或台词明确答应给，才执行给予接口。
-        double chance = vState.emotion().giveChance(player.getUniqueId());
-        // 回收窗：这件东西本来就是这位玩家刚送出去的（3 分钟内），态度上直接愿意归还
+        // 裁决由插件当场算死（GiftPolicy：好感门槛按物品价值分档），不再掷骰子。
+        // 结果钉进索要请求：模型只有表态权——裁决不给时，它嘴上答应了也交不出货
+        // （交付环节会按请求里的 pluginApproved 拦截）。
         boolean reclaim = vState.consumeReclaim(player.getUniqueId(), mat);
-        boolean willing = reclaim
-                || java.util.concurrent.ThreadLocalRandom.current().nextDouble() < chance;
-        // 钉死数量：GUI 那一套复用（模型把 count 写成一整叠也不算数）
-        vState.setItemRequest(player.getUniqueId(), mat, want);
+        boolean envoy = plugin.getPermissionManager().rankOf(vState, player.getUniqueId())
+                == com.howard.mcai.security.NpcRank.ENVOY;
+        boolean willing = com.howard.mcai.security.GiftPolicy.willingToGive(
+                fav, com.howard.mcai.security.PermissionManager.valueOf(mat), envoy, reclaim);
+        // 钉死数量+裁决：GUI 那一套复用（模型把 count 写成一整叠也不算数）
+        vState.setItemRequest(player.getUniqueId(), mat, want, willing);
 
         String zh = com.howard.mcai.ai.PromptBuilder.materialToZh(mat);
         String attitude = reclaim ? "这件东西本来就是他刚送你的，你愿意还给他"
@@ -595,8 +596,7 @@ public final class CentralPlanner extends BukkitRunnable {
         plugin.getLogger().info("§b[MC-AI] 聊天讨要: " + player.getName() + " → "
                 + com.howard.mcai.ai.Smalltalk.nameOf(vState) + " " + mat.name() + " x" + want
                 + " 好感=" + String.format("%.0f", fav)
-                + " 命中概率=" + String.format("%.0f", chance * 100) + "%"
-                + " 态度=" + (reclaim ? "物归原主" : (willing ? "愿意" : "不太愿意"))
+                + " 裁决=" + (reclaim ? "物归原主" : (willing ? "给(GiftPolicy达标)" : "不给(GiftPolicy未达门槛)"))
                 + " → 等模型表态后交付");
         sendDebug(player, "§b[MC-AI] 讨要态度: " + (willing ? "愿意" : "不太愿意"));
 
@@ -1413,11 +1413,22 @@ public final class CentralPlanner extends BukkitRunnable {
         String gatedReject = null;      // 非 null = 该动作被门槛拒了，值是给玩家看的原因
         boolean reallyGave = false;     // give_item 是否真的把东西交出去了
         boolean reallyLearned = false;  // learn 是否真的写进了永久记忆
+        ToolResult preUnifiedResult = null;  // give_item 在第二步半经统一分发的结果（第三步复用，禁止重复执行）
         if (toolCall != null) {
             switch (toolCall.name()) {
                 case "give_item" -> {
-                    gatedReject = plugin.getWorldInteraction().execute(vState, toolCall, nearPlayer);
-                    reallyGave = (gatedReject == null);   // execute 返回 null 才代表真出货了
+                    // give_item 已迁入统一柜：经 ToolDispatcher 执行（GiftPolicy 确定性裁决），
+                    // 结果带回给承诺守卫；注册表不可用时才回退老后门（迁移期保险丝，正常不会触发）
+                    if (isUnifiedTool("give_item")) {
+                        preUnifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
+                        reallyGave = preUnifiedResult != null && preUnifiedResult.success();
+                        gatedReject = reallyGave ? null
+                                : "§e" + (preUnifiedResult != null && preUnifiedResult.errorMessage() != null
+                                        ? preUnifiedResult.errorMessage() : "这次没能把东西给你");
+                    } else {
+                        gatedReject = plugin.getWorldInteraction().execute(vState, toolCall, nearPlayer);
+                        reallyGave = (gatedReject == null);   // execute 返回 null 才代表真出货了
+                    }
                 }
                 case "accept_swap" -> {
                     // 玩家在背包界面右键发起的交换：模型同意才真正转移双方物品。
@@ -1444,6 +1455,12 @@ public final class CentralPlanner extends BukkitRunnable {
         // 在这里替它把东西真正交出去，避免"嘴上答应、背包里却没有"。
         if (!reallyGave && nearPlayer != null && looksLikeGivingConsent(dialogue)) {
             var request = vState.peekItemRequest(nearPlayer.getUniqueId());
+            // 插件裁决不给（登记索要时已算死）：模型嘴上答应了也不交货——结果归插件，模型只有表达权
+            if (request != null && !request.pluginApproved()) {
+                plugin.getLogger().info("§c[MC-AI] 索要交付拦截: 插件裁决为不给（GiftPolicy），模型台词答应也不算数 — "
+                        + com.howard.mcai.ai.Smalltalk.nameOf(vState) + " / " + request.mat().name());
+                request = null;
+            }
             if (request != null) {
                 String fail = plugin.getWorldInteraction()
                         .handOverFromStock(vState, nearPlayer, request.mat(), request.count());
@@ -1500,11 +1517,14 @@ public final class CentralPlanner extends BukkitRunnable {
 
         // === 第三步：执行行为 ===
         // 统一注册表工具的真实结果（null = 本轮不是统一工具）—— 用于历史摘要如实标注成败
-        ToolResult unifiedResult = null;
+        ToolResult unifiedResult = preUnifiedResult;
         if (toolCall != null && isUnifiedTool(toolCall.name())) {
             // 新工具一律走 ToolDispatcher：参数校验、权限、幂等、任务生命周期都在里面。
+            // give_item 已在第二步半分发过（为了赶在承诺守卫之前拿到真实成败），这里只复用结果，绝不执行第二遍。
             // 即使被拒/失败也要照常说话 —— 模型选了工具不等于台词可以吞掉。
-            unifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
+            if (unifiedResult == null) {
+                unifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
+            }
             speak(vState, nearPlayer, dialogue);
         } else if (toolCall != null) {
             // 对话中"腿被锁住" —— 移动类动作一律不执行（"站立不动 + 持续直视玩家"是项目硬约束）。
