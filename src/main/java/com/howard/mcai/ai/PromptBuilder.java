@@ -1017,6 +1017,9 @@ public final class PromptBuilder {
      */
     public static String materialToZh(org.bukkit.Material mat) {
         if (mat == null || mat.isAir()) return "空";
+        // 官方中文名全表优先（与商店显示同一套名，玩家和村民对得上号）；手写 ITEM_ZH 只作兜底
+        String official = ItemZhTable.zhOf(mat);
+        if (official != null) return official;
         String key = mat.name().toLowerCase();
         return ITEM_ZH.getOrDefault(key, key.replace('_', ' '));
     }
