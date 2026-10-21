@@ -1134,6 +1134,19 @@ public final class CentralPlanner extends BukkitRunnable {
     }
 
     /**
+     * 给玩家看的失败原因 —— 模型传参错误（INVALID_ARGUMENT）是模型自己的事，
+     * 原始校验文本（「缺少必填参数: message」这类开发术语）只进日志，绝不发玩家；
+     * 玩家只得一句人话兜底。其余失败（插件规矩/权限）的原因照常透传，那是玩家该知道的事实。
+     */
+    private static String playerFacingReason(ToolResult result, String fallback) {
+        if (result == null || ToolResult.ErrorCode.INVALID_ARGUMENT.name().equals(result.errorCode())
+                || result.errorMessage() == null || result.errorMessage().isBlank()) {
+            return fallback;
+        }
+        return result.errorMessage();
+    }
+
+    /**
      * Minecraft 世界观关键词过滤器 —— 防串戏 guardrail（硬约束）。
      * <p>
      * 四层检查：
@@ -1271,6 +1284,9 @@ public final class CentralPlanner extends BukkitRunnable {
         if (dialogue != null) dialogue = LLMClient.stripToolCalls(dialogue);
         // 再兜一层 [动作:<摘要>]（stripToolCalls 已剥，这里保留是为了下面对 null 的处理顺序不变）
         if (dialogue != null) dialogue = dialogue.replaceAll("\\[动作:[^\\]]*\\]", "");
+        // 「（未成功）」是写给历史摘要的内部成败标记，绝不能出现在台词里 ——
+        // 模型偶尔会把历史里的标记回声成台词（实测村民直接回一句「（未成功）」），出口再兜一层
+        if (dialogue != null) dialogue = dialogue.replace("（未成功）", "").trim();
         String cleaned = filterWorldLore(dialogue, profession);
         if (cleaned == null || cleaned.isBlank()) return cleaned;
         // Markdown 加粗 **xxx** → MC 的加粗色码：模型爱用 ** 强调，原样显示就是一串裸星号，
@@ -1441,8 +1457,7 @@ public final class CentralPlanner extends BukkitRunnable {
                         preUnifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
                         reallyGave = preUnifiedResult != null && preUnifiedResult.success();
                         gatedReject = reallyGave ? null
-                                : "§e" + (preUnifiedResult != null && preUnifiedResult.errorMessage() != null
-                                        ? preUnifiedResult.errorMessage() : "这次没能把东西给你");
+                                : "§e" + playerFacingReason(preUnifiedResult, "这次没能把东西给你");
                     } else {
                         // 统一柜不可用（注册表未就绪）：宁可明确拒绝，也绝不假报"已送出"
                         //（老后门 execute 入口已退役，再走它只会拿到 null 被误判成成功）
@@ -1460,8 +1475,7 @@ public final class CentralPlanner extends BukkitRunnable {
                                 && preUnifiedResult.data().has("swapped")
                                 && preUnifiedResult.data().get("swapped").getAsBoolean();
                         gatedReject = (preUnifiedResult != null && !preUnifiedResult.success())
-                                ? "§e" + (preUnifiedResult.errorMessage() != null
-                                        ? preUnifiedResult.errorMessage() : "交换没能完成")
+                                ? "§e" + playerFacingReason(preUnifiedResult, "交换没能完成")
                                 : null;
                     } else {
                         var swap = plugin.getWorldInteraction().swapWithPlayer(vState, nearPlayer);
@@ -1574,6 +1588,7 @@ public final class CentralPlanner extends BukkitRunnable {
                 // 旧口径只记日志不打扰玩家——保持一致，避免聊天时刷系统提示。
                 if (unifiedResult != null && !unifiedResult.success()
                         && unifiedResult.errorMessage() != null && isActionTool(toolCall.name())
+                        && !ToolResult.ErrorCode.INVALID_ARGUMENT.name().equals(unifiedResult.errorCode())
                         && !MOVEMENT_TOOLS.contains(toolCall.name())) {
                     String feedback = "§e" + unifiedResult.errorMessage();
                     if (nearPlayer != null && nearPlayer.isOnline()) {
