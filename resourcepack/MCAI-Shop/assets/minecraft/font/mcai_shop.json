@@ -149,6 +149,141 @@
       "chars": [
         "\ue110"
       ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_generic.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue120"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_farmer.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue121"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_toolsmith.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue122"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_weaponsmith.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue123"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_armorer.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue124"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_cleric.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue125"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_librarian.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue126"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_cartographer.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue127"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_fletcher.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue128"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_fisherman.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue129"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_butcher.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue12a"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_leatherworker.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue12b"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_mason.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue12c"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_shepherd.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue12d"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/badge_nitwit.png",
+      "ascent": 8,
+      "height": 10,
+      "chars": [
+        "\ue12e"
+      ]
     }
   ]
 }

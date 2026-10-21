@@ -189,6 +189,8 @@ public final class McaiPlugin extends JavaPlugin {
         llmClient = new LLMClient(config);
         // chatHistory 压缩的 token 阈值接线（VillagerState 无 plugin 引用，走静态镜像）
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
+        // 职业徽章开关走同样的静态镜像（CentralPlanner 的静态提示方法无 plugin 引用）
+        com.howard.mcai.ai.ProfessionBadge.setEnabled(config.shopSkinEnabled());
 
         // 1.5 加载配方表（拼进 system prompt，让村民对话有真实参考）
         recipeLookup = new RecipeLookup();

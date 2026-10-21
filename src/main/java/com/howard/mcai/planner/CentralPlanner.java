@@ -226,8 +226,20 @@ public final class CentralPlanner extends BukkitRunnable {
         if (player == null || !player.isOnline() || vState.entity() == null) return;
         String text = "§e💬 正在与 §6" + com.howard.mcai.ai.Smalltalk.nameOf(vState)
                 + " §e对话中 §7· 再右键一次结束";
-        player.sendActionBar(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
-                .legacySection().deserialize(text));
+        net.kyori.adventure.text.Component bar = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                .legacySection().deserialize(text);
+        // 开了资源包皮肤 → 名字前挂职业徽章（与他商店招牌同图，素材阶段 5）
+        if (com.howard.mcai.ai.ProfessionBadge.enabled()) {
+            bar = badgeComponent(vState).append(net.kyori.adventure.text.Component.space()).append(bar);
+        }
+        player.sendActionBar(bar);
+    }
+
+    /** 职业徽章组件（mcai_shop 字体字形）；调用方先确认 ProfessionBadge.enabled() */
+    private static net.kyori.adventure.text.Component badgeComponent(VillagerState vState) {
+        return net.kyori.adventure.text.Component
+                .text(com.howard.mcai.ai.ProfessionBadge.badgeOf(vState.profession()))
+                .font(net.kyori.adventure.key.Key.key("minecraft", "mcai_shop"));
     }
 
     /** 清掉动作栏提示（结束对话时） */
@@ -1863,7 +1875,16 @@ public final class CentralPlanner extends BukkitRunnable {
 
         // 2. 聊天框完整台词（只发给互动玩家）；前缀同样带 说话者>听者
         if (listenerName != null) {
-            nearPlayer.sendMessage("§6[" + name + ">" + listenerName + "] §f" + dialogue);
+            String line = "§6[" + name + ">" + listenerName + "] §f" + dialogue;
+            if (com.howard.mcai.ai.ProfessionBadge.enabled()) {
+                // 开了资源包皮肤 → 台词前挂职业徽章（与他商店招牌同图，素材阶段 5）
+                nearPlayer.sendMessage(badgeComponent(vState)
+                        .append(net.kyori.adventure.text.Component.space())
+                        .append(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                                .legacySection().deserialize(line)));
+            } else {
+                nearPlayer.sendMessage(line);
+            }
         }
     }
 
