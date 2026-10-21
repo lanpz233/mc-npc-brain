@@ -104,6 +104,17 @@ public final class NeedsLayer extends TickLayer {
 
             // === 1. 情境判定（全在主线程，Paper API 安全） ===
             boolean sleeping = v.isSleeping();
+            // 睡姿纠正（2026-10-21 实测：隔墙躺草地"睡"满一夜）：原版 AI 偶尔让村民在
+            // 不是床的位置进入睡眠，本层旧版只认 isSleeping 就回精力、从不核查躺哪。
+            // 身下两层 3×3 内没有真床 = 躺地上了 → 叫醒；本轮后段 trySleep 会按规矩
+            // 重新带他走回真床边。注：Paper 没有通用的"进入睡眠"事件可拦（只有玩家版），
+            // 巡查叫醒就是正解 —— 犯一次最多躺一个巡查间隔（约 30 秒）。
+            if (sleeping && !isOnBed(v)) {
+                v.wakeup();
+                sleeping = false;
+                plugin.getLogger().info("§b[MC-AI] 睡姿纠正: " + Smalltalk.nameOf(vs)
+                        + " 没睡在床上，已叫醒");
+            }
             boolean moving = v.getVelocity().lengthSquared() > 0.01;
             boolean conversing = vs.interactingPlayer() != null;
             boolean night = !v.getWorld().isDayTime();
@@ -245,6 +256,23 @@ public final class NeedsLayer extends TickLayer {
         }
         // 还没走到：朝整张床的中心挪（walkTowards 每 20 tick 走一步，对话中自动取消；走到就睡）
         walkTowards(vs, bed.center());
+    }
+
+    /** 睡着时核查躺的位置：同层与下一层 3×3 内有真床方块才算睡在床上（躺床时实体就贴在床面上，两层必有一层是床） */
+    private boolean isOnBed(Villager v) {
+        Location loc = v.getLocation();
+        org.bukkit.World w = v.getWorld();
+        int bx = loc.getBlockX(), by = loc.getBlockY(), bz = loc.getBlockZ();
+        for (int dy = 0; dy >= -1; dy--) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (w.getBlockAt(bx + dx, by + dy, bz + dz).getType().name().endsWith("_BED")) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /** 一张床的两个关键点：sleepAt = 床头格中心（躺下的锚点），center = 整张床的中心（走近的目标） */
