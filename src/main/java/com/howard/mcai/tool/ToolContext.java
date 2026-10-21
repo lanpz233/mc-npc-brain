@@ -8,7 +8,7 @@ import java.util.UUID;
  * 只能由 {@link ToolDispatcher} 根据服务端已认证的请求构造，
  * 模型输出中的任何字段都不能直接变成这里的 callerType —— 否则等于让模型自己声明权限。
  *
- * @param callerType 调用方类型（对话模型 / 行为模型 / 插件内部 / 控制台 / 外部协议）
+ * @param callerType 调用方类型（对话模型 / 插件自主决策 / 插件内部 / 控制台 / 外部协议）
  * @param callerId   调用方标识（模型名、插件名、外部客户端 ID 等），用于幂等与审计
  * @param npcId      目标 NPC 的实体 UUID
  * @param playerUuid 互动玩家 UUID；没有玩家上下文时为 null
@@ -30,7 +30,8 @@ public record ToolContext(
      */
     public enum CallerType {
         DIALOG_MODEL,
-        BEHAVIOR_MODEL,
+        /** 插件自主决策（需求驱动）—— v0.1.4 起取代旧的行为模型调用方 */
+        AUTONOMY,
         INTERNAL,
         PLUGIN,
         CONSOLE,
@@ -38,7 +39,7 @@ public record ToolContext(
         MCP;
 
         public boolean fromModel() {
-            return this == DIALOG_MODEL || this == BEHAVIOR_MODEL;
+            return this == DIALOG_MODEL;
         }
     }
 }

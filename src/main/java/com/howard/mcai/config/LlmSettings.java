@@ -3,11 +3,10 @@ package com.howard.mcai.config;
 /**
  * 单个 LLM 后端的连接与采样参数。
  * <p>
- * 双模型架构里对话模型（Qwen）和行为模型（MiniCPM）需要独立的 url / model / max-tokens：
- * 它们可能跑在同一个 Ollama 上，但模型名不同、输出预算不同，行为模型还必须关闭 thinking
- * 才能稳定输出 JSON。把差异收进这个 record，{@code LLMClient} 就不用关心"自己是谁"。
+ * v0.1.4 起只剩对话模型（Qwen）：行为决策已改为插件端打分，不再有第二个模型。
+ * 本 record 只描述这一个后端的连接与采样参数。
  *
- * @param role            角色名（dialog / behavior），只用于日志排查
+ * @param role            角色名（dialog），只用于日志排查
  * @param url             完整的 OpenAI 兼容 chat/completions 地址
  * @param apiKey          Authorization Bearer；空 = 不发该头
  * @param model           模型名；"auto" = 运行时探测后端当前加载的模型
@@ -16,7 +15,6 @@ package com.howard.mcai.config;
  * @param maxTokens        单次输出上限
  * @param reasoningEffort  Ollama/OpenAI 的思考控制；null/空 = 不发该字段
  * @param keepAlive        Ollama 专用驻留时长；仅本机 endpoint 才发送
- * @param disableThinking  true = 本机 Ollama 请求里带 think:false（MiniCPM 必须关闭思考才能出 JSON）
  */
 public record LlmSettings(
         String role,
@@ -27,8 +25,7 @@ public record LlmSettings(
         int readTimeoutMs,
         int maxTokens,
         String reasoningEffort,
-        String keepAlive,
-        boolean disableThinking
+        String keepAlive
 ) {
 
     /** 是否配置为自动跟随后端当前模型 */
@@ -38,7 +35,6 @@ public record LlmSettings(
 
     /** 日志用短描述（不打码 key，key 不落日志） */
     public String describe() {
-        return role + " @ " + url + " model=" + model
-                + (disableThinking ? " think=off" : "");
+        return role + " @ " + url + " model=" + model;
     }
 }

@@ -35,20 +35,8 @@ llm:
   reasoning-effort: ''        # 关思考填 'none'（Qwen3.5/Ollama）；云端不支持的留空
   keep-alive: '60m'           # Ollama 专用（模型驻留时长）；只在 url 指向本机时才发送，云端自动跳过
 
-  # 行为模型：只负责"下一步做什么"，不负责说话（MiniCPM-1B）
-  # 留空 url/api-key = 复用上面对话模型的地址与密钥；model 必须显式写死，不能用 auto
-  #（auto 会探测到对话模型，行为模型就失去意义了）
-  behavior:
-    url: 'http://127.0.0.1:11434'
-    api-key: ''
-    model: 'minicpm-act:latest'
-    max-tokens: 256
-    # 是否让需求驱动的自主行动改由行为模型决策；false = 仍用对话模型（旧路径）
-    autonomy-enabled: false
-    # 候选模式：服务端预生成 2-4 个已校验的合法动作，模型只回一个序号。
-    # 1B 模型自由生成 JSON/坐标的合法率很低，选择模式能显著提高可用率；
-    # 换成 2B 或更大的行为模型后可设为 false，回到自由 JSON 决策（同一套校验，无需改代码）。
-    candidate-mode: true
+  # （v0.1.4 起）不再有行为模型：村民的自主行动由插件端按需求/距离/性格打分决策，
+  # 本文件里若还留着旧的 behavior: 配置段会被直接忽略，不用特意删。
 
 tick:
   interval-ticks: 60          # 表现层频率：3 秒（Paper 服 20 tps）

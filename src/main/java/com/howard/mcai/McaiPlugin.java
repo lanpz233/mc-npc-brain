@@ -1,7 +1,5 @@
 package com.howard.mcai;
 
-import com.howard.mcai.ai.BehaviorDecisionParser;
-import com.howard.mcai.ai.BehaviorModelClient;
 import com.howard.mcai.ai.BehaviorRegistry;
 import com.howard.mcai.ai.LLMClient;
 import com.howard.mcai.ai.LLMResponse;
@@ -142,8 +140,6 @@ public final class McaiPlugin extends JavaPlugin {
     /** 交易会话登记处（商店界面/砍价进度，关窗不丢；路线二交易 UI 的状态层） */
     private final com.howard.mcai.shop.ShopSessionManager shopSessions =
             new com.howard.mcai.shop.ShopSessionManager();
-    /** 行为模型（MiniCPM）：只做动作选择，不负责说话 */
-    private BehaviorModelClient behaviorModelClient;
 
     /** 记录一次群聊回复（GroupChatCoordinator 在回复气泡上屏时调用） */
     public void markGroupReplyAt() {
@@ -259,8 +255,6 @@ public final class McaiPlugin extends JavaPlugin {
         // 把新工具名并入 LLMClient 的 fallback 正则，避免模型按新名字输出时丢调用
         LLMClient.registerFallbackToolNames(
                 toolRegistry.all().stream().map(NpcTool::wireName).toList());
-        // 行为模型：只选动作。配置留空时自动回退对话模型（behaviorSettings() 负责）
-        behaviorModelClient = new BehaviorModelClient(config.behaviorSettings(), toolRegistry);
 
         // 5. 先造 CentralPlanner（Listener 要调它的 triggerLLM）
         //    LLMClient 不再传引用 —— planner 运行时动态取 plugin.getLlmClient()，
@@ -565,7 +559,6 @@ public final class McaiPlugin extends JavaPlugin {
             sender.sendMessage("§e/ai envoy list §f- 查看权限等级说明与神使名单");
             sender.sendMessage("§e/ai tool list §f- 查看已注册工具");
             sender.sendMessage("§e/ai tool <工具名> <村民名> [参数1 参数2 ... | JSON] §f- 直接调用工具（调试用）");
-            sender.sendMessage("§e/ai behavior <村民名> [提示] §f- 让行为模型基于真实状态选一步动作");
             return true;
         }
         switch (args[0].toLowerCase()) {
@@ -579,7 +572,6 @@ public final class McaiPlugin extends JavaPlugin {
             case "needs" -> handleNeeds(sender, args);
             case "envoy" -> handleEnvoy(sender, args);
             case "tool" -> handleTool(sender, args);
-            case "behavior" -> handleBehavior(sender, args);
             default -> sender.sendMessage("§c未知子命令: " + args[0]);
         }
         return true;
@@ -1065,84 +1057,6 @@ public final class McaiPlugin extends JavaPlugin {
     }
 
     /**
-     * /ai behavior <村民名> [提示] —— 用行为模型（MiniCPM）基于真实游戏状态选一步动作，
-     * 然后走统一 Dispatcher 执行。用于阶段五"模型适配"的实机验收：
-     * 验证 1B 模型的 JSON 输出能被解析、校验并真正落地，而不经过对话模型。
-     */
-    private void handleBehavior(CommandSender sender, String[] args) {
-        if (args.length < 2) {
-            sender.sendMessage("§c用法: /ai behavior <村民名> [提示语]");
-            return;
-        }
-        if (behaviorModelClient == null) {
-            sender.sendMessage("§c行为模型尚未初始化（插件未完成启动？）");
-            return;
-        }
-        String npcName = args[1];
-        String hint = args.length > 2
-                ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length))
-                : null;
-        VillagerState target = findVillagerByExactName(npcName);
-        if (target == null) {
-            sender.sendMessage("§c找不到村民: " + npcName);
-            return;
-        }
-
-        UUID playerUuid = sender instanceof Player player ? player.getUniqueId() : null;
-        // 状态必须在主线程采集（Bukkit API 约束）
-        JsonObject state = gameStateProvider.npcStatus(target.getUniqueId(), playerUuid);
-        if (state == null) {
-            sender.sendMessage("§c读不到该村民的状态（实体已失效？）");
-            return;
-        }
-        state.add("nearby_entities", gameStateProvider.nearbyEntities(target.getUniqueId(), 16, 32));
-
-        sender.sendMessage("§7行为模型: §f" + behaviorModelClient.settings().model()
-                + " §7@ §f" + behaviorModelClient.settings().url());
-        // 控制台同步留痕：命令参数、模型选择/空闲/解析失败都要能看到
-        getLogger().info("[behavior] " + npcName + " hint=" + (hint == null ? "(none)" : hint)
-                + " model=" + behaviorModelClient.settings().model());
-        behaviorModelClient.decide(target.getUniqueId(), playerUuid, "command", state, hint)
-                .thenAccept(outcome -> Bukkit.getScheduler().runTask(this, () -> {
-                    if (!outcome.ok()) {
-                        getLogger().warning("[behavior] " + npcName + " 解析失败: " + outcome.error());
-                        sender.sendMessage("§c行为模型输出无法解析: " + outcome.error());
-                        return;
-                    }
-                    if (outcome.idle()) {
-                        getLogger().info("[behavior] " + npcName + " → idle");
-                        sender.sendMessage("§e行为模型决定: idle（这一步不行动）");
-                        return;
-                    }
-                    ToolRequest request = outcome.request();
-                    getLogger().info("[behavior] " + npcName + " → " + request.tool()
-                            + " args=" + request.arguments());
-                    sender.sendMessage("§a行为模型选择: §6" + request.tool()
-                            + " §7args=" + request.arguments());
-                    try {
-                        ToolResult result = toolDispatcher.dispatchSync(request);
-                        sender.sendMessage("§a[tool] → " + result.status()
-                                + (result.success() ? "" : " §c" + result.errorCode() + ": "
-                                + result.errorMessage()));
-                        if (result.taskId() != null) {
-                            sender.sendMessage("§7task_id: " + result.taskId());
-                        }
-                    } catch (Exception e) {
-                        getLogger().warning("[behavior] " + npcName + " 工具执行异常: "
-                                + e.getClass().getSimpleName() + ": " + e.getMessage());
-                        sender.sendMessage("§c工具执行异常: " + e.getClass().getSimpleName()
-                                + ": " + e.getMessage());
-                    }
-                }))
-                .exceptionally(ex -> {
-                    getLogger().warning("[behavior] " + npcName + " 调用失败: " + ex.getMessage());
-                    Bukkit.getScheduler().runTask(this, () ->
-                            sender.sendMessage("§c行为模型调用失败: " + ex.getMessage()));
-                    return null;
-                });
-    }
-
-    /**
      * /ai chat <消息> —— 对准 AI 生物说话（手动触发的快捷方式）。
      * 真正的对话现在靠 PlayerChatListener 自动处理（进入对话模式后正常聊天就行），
      * /ai chat 留着给"想指定对话对象"或者"没进入对话模式"的场景。
@@ -1223,7 +1137,6 @@ public final class McaiPlugin extends JavaPlugin {
         reloadConfig();
         config = PluginConfig.load(getConfig());
         llmClient = new LLMClient(config);
-        rebuildBehaviorModelClient();
         // 新 config 对象要同步给静态镜像，否则压缩阈值永远是启动时的旧值
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
         // 顺带 reload 配方表 + 人格标签库（用户可能编辑了）
@@ -1411,7 +1324,6 @@ public final class McaiPlugin extends JavaPlugin {
         reloadConfig();
         config = PluginConfig.load(getConfig());
         llmClient = new LLMClient(config);
-        rebuildBehaviorModelClient();
         sender.sendMessage("§a✓ 模型已设为: §f" + config.llmModel());
         if (llmClient.isAutoModel()) {
             sender.sendMessage("§7auto 模式：每次请求前探测后端当前加载的模型（30 秒缓存），"
@@ -1477,7 +1389,6 @@ public final class McaiPlugin extends JavaPlugin {
         reloadConfig();
         config = PluginConfig.load(getConfig());
         llmClient = new LLMClient(config);
-        rebuildBehaviorModelClient();
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
 
         sender.sendMessage("§a✓ 已切换到 " + (local ? "§e本机" : "§b云端") + " §f" + config.llmModel());
@@ -1584,14 +1495,4 @@ public final class McaiPlugin extends JavaPlugin {
     public ToolDispatcher getToolDispatcher() { return toolDispatcher; }
     public LlmToolAdapter getLlmToolAdapter() { return llmToolAdapter; }
     public com.howard.mcai.shop.ShopSessionManager getShopSessions() { return shopSessions; }
-    public BehaviorModelClient getBehaviorModelClient() { return behaviorModelClient; }
-
-    /**
-     * 配置变更后重建行为模型客户端（/ai reload、/ai llm 切换后端时调用）。
-     * 注册表不变，只换后端参数；解析器也跟着新 settings 走。
-     */
-    public void rebuildBehaviorModelClient() {
-        if (toolRegistry == null) return;
-        behaviorModelClient = new BehaviorModelClient(config.behaviorSettings(), toolRegistry);
-    }
 }

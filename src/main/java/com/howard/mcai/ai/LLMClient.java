@@ -591,12 +591,6 @@ public final class LLMClient {
             sb.append("\"reasoning_effort\":\"").append(escape(settings.reasoningEffort())).append("\",");
         }
 
-        // 行为模型专用：MiniCPM 开着 thinking 时会把输出预算全耗在思考上，正文为空（实测）。
-        // think 是 Ollama 专有顶层字段，只在 endpoint 是本机时发送，云端 API 收到会 400。
-        if (settings.disableThinking() && PluginConfig.isLocalEndpoint(settings.url())) {
-            sb.append("\"think\":false,");
-        }
-
         // 模型驻留 60 分钟 —— Ollama 默认 5 分钟空闲就卸载 6.1GB 权重，
         // 下一条消息要等十几秒重新加载，玩家会感觉"NPC 突然卡死"。
         // **只在 endpoint 是本机时发**：这是 Ollama 专有字段，云端 API（OpenAI/DeepSeek…）

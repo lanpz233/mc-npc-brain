@@ -2,16 +2,16 @@ package com.howard.mcai.planner;
 
 import com.google.gson.JsonObject;
 import com.howard.mcai.McaiPlugin;
-import com.howard.mcai.ai.BehaviorModelClient;
-import com.howard.mcai.ai.BehaviorRegistry;
-import com.howard.mcai.ai.LLMResponse;
+import com.howard.mcai.ai.LlmToolAdapter;
 import com.howard.mcai.ai.PromptBuilder;
 import com.howard.mcai.ai.Smalltalk;
+import com.howard.mcai.ai.ToolCall;
 import com.howard.mcai.bubble.BubbleManager;
 import com.howard.mcai.mob.NeedsState;
 import com.howard.mcai.mob.VillagerState;
-import com.howard.mcai.tool.GameStateProvider;
 import com.howard.mcai.tool.NpcTask;
+import com.howard.mcai.tool.ToolContext;
+import com.howard.mcai.tool.ToolRequest;
 import com.howard.mcai.tool.ToolResult;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -36,15 +36,15 @@ import java.util.concurrent.ThreadLocalRandom;
  *       吃货饿得快、社牛耐不住寂寞），睡觉/移动/聊天中的回落也在这一步做</li>
  *   <li><b>规则满足</b>（不调 LLM）：饿了且库存有食物 → 直接吃（清 hunger）；
  *       睡觉时回精力。动物式基础动作走规则，符合"规则打底，LLM 做社交时刻"的分层原则</li>
- *   <li><b>LLM 自主行动</b>：需求越过阈值（默认 80）且 NPC 空闲 → 触发一次"目标决策"
- *       调用，模型按需求 + 性格选一个工具（找吃/闲逛/找人聊/探索），行动后削减对应需求。
+ *   <li><b>插件自主行动</b>：需求越过阈值（默认 80）且 NPC 空闲 → 触发一次"目标决策"
+ *       插件按需求紧迫度 + 距离 + 性格给候选动作打分选一个（找吃/闲逛/找人聊/探索），行动后削减对应需求。
  *       有内在驱动，不等玩家指令 —— 这是"放一个 NPC 不管 10 分钟自己活起来"的来源</li>
  * </ol>
  * <p>
  * 成本护栏（本地模型不烧穿）：
  * <ul>
  *   <li>自主行动只在 32 格内有在线玩家时触发（没人看不动脑，与闲聊同一约束）</li>
- *   <li>每个 NPC 独立冷却（默认 120 秒），且每轮 tick 全村最多触发 1 次决策调用</li>
+ *   <li>每个 NPC 独立冷却（默认 120 秒），且每轮 tick 全村最多触发 1 次自主决策</li>
  *   <li>对话中 / LLM 忙 / 正在闲聊占位的 NPC 一律跳过</li>
  * </ul>
  * 自主行动的台词<b>不写入 chatHistory</b>（同闲聊：背景生活不污染正式记忆），
@@ -345,211 +345,49 @@ public final class NeedsLayer extends TickLayer {
 
         autonomyCooldown.put(vs.getUniqueId(), now);
         autonomyTriggeredThisRound = true;
-        triggerAutonomyLLM(vs, dominant);
+        triggerAutonomy(vs, dominant);
     }
 
     /**
-     * 发起自主决策调用 —— 一次性 prompt（不写 chatHistory），
-     * 工具面收窄为安全集合（say/move_to/follow_player/look_at/wave/nod/idle），
-     * 需求驱动的自主行动不该开店/拆家。
+     * 自主行动（纯插件决策，v0.1.4 起无行为模型）：
+     * 候选动作由 {@link #buildCandidates} 生成（全部预先校验），
+     * {@link AutonomyDecider} 按需求紧迫度/距离/任务状态/性格打分选一个，
+     * 执行统一走 ToolDispatcher。纯计算、无 IO，在 tick 主线程内同步完成。
      */
-    private void triggerAutonomyLLM(VillagerState vs, String dominant) {
-        triggerAutonomyLLM(vs, dominant, true);
-    }
-
-    /**
-     * @param allowBehaviorModel true = 允许先尝试行为模型；失败回退时传 false，避免递归重试
-     */
-    private void triggerAutonomyLLM(VillagerState vs, String dominant, boolean allowBehaviorModel) {
-        // 双模型：开启后由 MiniCPM 只负责"下一步动作"，Qwen 不再参与自主行动决策。
-        // 行为模型不可用/状态读不到时继续走下面的对话模型路径，保证单模型部署不受影响。
-        if (allowBehaviorModel
-                && plugin.getPluginConfig().llmBehaviorAutonomyEnabled()
-                && plugin.getBehaviorModelClient() != null
-                && triggerAutonomyByBehaviorModel(vs, dominant)) {
-            return;
-        }
-
-        NeedsState needs = vs.needs();
-        StringBuilder needsJson = new StringBuilder("{");
-        var snap = needs.snapshot();
-        boolean first = true;
-        for (var e : snap.entrySet()) {
-            if (!first) needsJson.append(", ");
-            needsJson.append("\"").append(e.getKey()).append("\": ").append(e.getValue().intValue());
-            first = false;
-        }
-        needsJson.append("}");
-
-        // 按最迫切需求给一条"人话"行动提示（模型按需选工具，不做选择题之外的发散）
-        String hint = switch (dominant) {
-            case NeedsState.HUNGER -> "你饿了。可以 move_to 去田里/铺子找吃的，或 say 嘀咕一句肚子饿";
-            case NeedsState.ENERGY -> "你困得不行。move_to 走回家睡觉";
-            case NeedsState.BOREDOM -> "闲得发慌。move_to 去别处转转，或 say 嘀咕一句想找点乐子";
-            case NeedsState.CURIOSITY -> "好奇心作祟。move_to 去围观让你好奇的东西";
-            case NeedsState.SOCIAL -> "想找人说说话。say 喊一嗓子，或 move_to 凑到最近的人旁边";
-            default -> "按你的需求选个行动";
-        };
-
-        String userContent = "[自主行动] 没有玩家跟你说话 —— 你在过自己的日子。\n"
-                + "当前需求: " + needsJson + "\n"
-                + "[场景] " + PromptBuilder.compactScene(vs) + "。\n"
-                + "最迫切的需求是 " + NeedsState.zhName(dominant) + "（数值 " + (int) needs.get(dominant) + "）。"
-                + hint + "。只调用一个工具，message 参数里说一句中文（≤20字）。\n"
-                + "（注：message 里的内容玩家听得见，但这段行动不会进入你的正式记忆）";
-
-        List<Map<String, String>> messages = List.of(
-                Map.of("role", "system", "content",
-                        PromptBuilder.buildVillagerSystemPrompt(vs.profession(),
-                                Smalltalk.nameOf(vs), vs.personalityTagIds(), vs)),
-                Map.of("role", "user", "content", userContent));
-
-        plugin.getLogger().info("§b[MC-AI] 需求驱动: " + Smalltalk.nameOf(vs)
-                + " " + NeedsState.zhName(dominant) + "=" + (int) needs.get(dominant) + " → 触发自主行动");
-
-        plugin.getLlmClient().chat(messages, BehaviorRegistry.autonomyToolSchemas())
-                .thenAccept(response -> Bukkit.getScheduler().runTask(plugin,
-                        () -> executeAutonomy(vs, response, dominant)))
-                .exceptionally(ex -> {
-                    plugin.getLogger().warning("自主行动 LLM 失败: " + ex.getMessage());
-                    return null;
-                });
-    }
-
-    /**
-     * 行为模型自主行动：状态在主线程采集，推理异步，结果回主线程走 Dispatcher。
-     * <p>
-     * 两种决策模式共用同一份状态：
-     * <ul>
-     *   <li>候选模式（config {@code llm.behavior.candidate-mode}，默认开）：服务端先算出 2-4 个
-     *       已通过 schema 校验的动作，1B 模型只回序号。实测 1B 自由生成坐标/工具名的合法率不到一半，
-     *       但"从合法选项里挑一个"明显更稳</li>
-     *   <li>自由模式：老路径，模型自己产出工具名与参数，适合 2B 以上模型</li>
-     * </ul>
-     *
-     * @return false = 状态读不到，调用方应回退对话模型路径
-     */
-    private boolean triggerAutonomyByBehaviorModel(VillagerState vs, String dominant) {
-        GameStateProvider provider = plugin.getGameStateProvider();
-        if (provider == null) return false;
-
-        JsonObject state = provider.npcStatus(vs.getUniqueId(), null);
-        if (state == null) return false;
-        state.add("nearby_entities", provider.nearbyEntities(vs.getUniqueId(), 16, 32));
-
-        // 当前任务必须让模型看见：否则它会反复挑 move_to，被"单 NPC 单任务"限制拒成 NPC_BUSY，
-        // 白白浪费一次决策（而且日志看起来像模型坏了）。
+    private void triggerAutonomy(VillagerState vs, String dominant) {
         NpcTask activeTask = plugin.getNpcTaskManager() == null
                 ? null : plugin.getNpcTaskManager().activeFor(vs.getUniqueId());
-        state.add("current_task", taskSnapshot(activeTask));
+        List<AutonomyDecider.Candidate> candidates = buildCandidates(vs, dominant, activeTask);
 
-        plugin.getLogger().info("§b[MC-AI] 需求驱动(行为模型): " + Smalltalk.nameOf(vs)
-                + " " + NeedsState.zhName(dominant) + "=" + (int) vs.needs().get(dominant));
+        plugin.getLogger().info("§b[MC-AI] 需求驱动(插件决策): " + Smalltalk.nameOf(vs)
+                + " " + NeedsState.zhName(dominant) + "=" + (int) vs.needs().get(dominant)
+                + " 候选: " + describeCandidates(candidates));
 
-        if (plugin.getPluginConfig().llmBehaviorCandidateMode()) {
-            List<BehaviorModelClient.Candidate> candidates =
-                    buildCandidates(vs, dominant, activeTask);
-            // 候选清单也打出来：模型选了序号但选错时，需要能回看当时到底给了哪些选项
-            plugin.getLogger().info("§b[MC-AI] 候选动作: " + describeCandidates(candidates));
-            decideByChoice(vs, dominant, state, candidates, 0);
-        } else {
-            decideByFreeForm(vs, dominant, state);
-        }
-        return true;
-    }
-
-    /** 自由 JSON 模式（旧路径）：模型自己生成工具名 + 参数 */
-    private void decideByFreeForm(VillagerState vs, String dominant, JsonObject state) {
-        plugin.getBehaviorModelClient()
-                .decide(vs.getUniqueId(), null, "needs", state, behaviorHint(dominant))
-                .thenAccept(outcome -> Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (!outcome.ok()) {
-                        // 解析失败不静默吞掉：回退对话模型，保持自主行动仍有产出
-                        plugin.getLogger().warning("自主行动行为模型输出无法解析，回退对话模型: "
-                                + outcome.error());
-                        triggerAutonomyLLM(vs, dominant, false);
-                        return;
-                    }
-                    if (outcome.idle()) {
-                        plugin.getLogger().info("§b[MC-AI] 自主行动(行为模型) idle: "
-                                + Smalltalk.nameOf(vs));
-                        return;
-                    }
-                    ToolResult result = plugin.getToolDispatcher().dispatchSync(outcome.request());
-                    plugin.getLogger().info("§b[MC-AI] 自主行动(行为模型) " + Smalltalk.nameOf(vs)
-                            + " → " + outcome.request().tool() + " " + result.status()
-                            + (result.success() ? "" : " " + result.errorCode()
-                            + ": " + result.errorMessage()));
-                    if (!result.success()) return;
-                    vs.needs().satisfy(dominant, NeedsState.SATISFY_ON_ACTION);
-                    plugin.getMemoryStore().markDirty(vs.getUniqueId());
-                }))
-                .exceptionally(ex -> {
-                    Bukkit.getScheduler().runTask(plugin, () -> {
-                        plugin.getLogger().warning("自主行动行为模型失败，回退对话模型: " + ex.getMessage());
-                        triggerAutonomyLLM(vs, dominant, false);
-                    });
-                    return null;
-                });
-    }
-
-    /** 候选模式：异步选序号，回主线程执行。attempt 用于 NPC_BUSY 时只回喂一次。 */
-    private void decideByChoice(VillagerState vs, String dominant, JsonObject state,
-                                List<BehaviorModelClient.Candidate> candidates, int attempt) {
-        plugin.getBehaviorModelClient()
-                .decideChoice(vs.getUniqueId(), null, "needs", state,
-                        behaviorHint(dominant), candidates)
-                .thenAccept(outcome -> Bukkit.getScheduler().runTask(plugin,
-                        () -> handleChoice(vs, dominant, state, candidates, attempt, outcome)))
-                .exceptionally(ex -> {
-                    Bukkit.getScheduler().runTask(plugin, () -> {
-                        plugin.getLogger().warning("自主行动行为模型失败，回退对话模型: " + ex.getMessage());
-                        triggerAutonomyLLM(vs, dominant, false);
-                    });
-                    return null;
-                });
-    }
-
-    private void handleChoice(VillagerState vs, String dominant, JsonObject state,
-                              List<BehaviorModelClient.Candidate> candidates, int attempt,
-                              BehaviorModelClient.ChoiceOutcome outcome) {
-        if (!outcome.ok()) {
-            plugin.getLogger().warning("自主行动候选选择无法解析，回退对话模型: "
-                    + outcome.error());
-            triggerAutonomyLLM(vs, dominant, false);
-            return;
-        }
-        if (outcome.idle()) {
-            plugin.getLogger().info("§b[MC-AI] 自主行动(行为模型) idle: " + Smalltalk.nameOf(vs));
+        AutonomyDecider.Decision decision = AutonomyDecider.decide(
+                dominant, vs.needs().get(dominant), vs.openness(),
+                activeTask != null, candidates, ThreadLocalRandom.current());
+        if (decision.idle()) {
+            plugin.getLogger().info("§b[MC-AI] 自主行动(插件决策) idle: " + Smalltalk.nameOf(vs));
             return;
         }
 
-        ToolResult result = plugin.getToolDispatcher().dispatchSync(outcome.request());
-        plugin.getLogger().info("§b[MC-AI] 自主行动(行为模型) " + Smalltalk.nameOf(vs)
-                + " 选择#" + outcome.index()
-                + " → " + outcome.request().tool() + " " + result.status()
-                + (result.success() ? "" : " " + result.errorCode()
-                + ": " + result.errorMessage()));
-
-        // NPC_BUSY 回喂：把"被拒绝的动作/原因"塞回状态再问一次，让模型改选取消任务或 idle。
-        // 只重试一次，否则状态不变时会无限循环烧模型。
-        if (!result.success()
-                && ToolResult.ErrorCode.NPC_BUSY.code().equals(result.errorCode())
-                && attempt == 0) {
-            JsonObject retryState = state.deepCopy();
-            JsonObject rejected = new JsonObject();
-            rejected.addProperty("tool", outcome.request().tool());
-            rejected.addProperty("error_code", result.errorCode());
-            rejected.addProperty("error_message", result.errorMessage());
-            retryState.add("last_action_rejected", rejected);
-            decideByChoice(vs, dominant, retryState, candidates, 1);
+        AutonomyDecider.Candidate picked = candidates.get(decision.index());
+        ToolRequest request = new LlmToolAdapter(plugin.getToolRegistry()).toRequest(
+                new ToolCall(picked.action(), picked.args()),
+                ToolContext.CallerType.AUTONOMY, "needs-autonomy", vs.getUniqueId(), null);
+        if (request == null) {
+            plugin.getLogger().warning("自主行动(插件决策) 候选构造请求失败: " + picked.action());
             return;
         }
+        ToolResult result = plugin.getToolDispatcher().dispatchSync(request);
+        plugin.getLogger().info("§b[MC-AI] 自主行动(插件决策) " + Smalltalk.nameOf(vs)
+                + " 选择#" + decision.index() + " → " + request.tool() + " " + result.status()
+                + (result.success() ? "" : " " + result.errorCode() + ": " + result.errorMessage()));
         if (!result.success()) return;
 
         // 建任务的动作（move_to 等）只是"被接受"，还没真干完：需求先挂账，
         // 等任务完成由执行方结算（NpcMoveToTool 调 consumePendingNeedSatisfy），
-        // 失败就丢弃——旧版一接受就降 35 点，不可达目标白折腾一趟也照样"满足"。
+        // 失败就丢弃——一接受就降 35 点的话，不可达目标白折腾一趟也照样"满足"。
         if (result.data() != null && result.data().has("task_id")) {
             vs.setPendingNeedSatisfy(dominant);
             return;
@@ -559,10 +397,10 @@ public final class NeedsLayer extends TickLayer {
     }
 
     /** 候选清单的日志摘要：[0]idle [1]npc.move_to{...}，一行打完便于对照模型返回的序号 */
-    private static String describeCandidates(List<BehaviorModelClient.Candidate> candidates) {
+    private static String describeCandidates(List<AutonomyDecider.Candidate> candidates) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < candidates.size(); i++) {
-            BehaviorModelClient.Candidate c = candidates.get(i);
+            AutonomyDecider.Candidate c = candidates.get(i);
             if (i > 0) sb.append(' ');
             sb.append('[').append(i).append(']').append(c.action());
             if (!c.args().isEmpty()) sb.append(c.args());
@@ -574,11 +412,11 @@ public final class NeedsLayer extends TickLayer {
      * 生成候选动作。硬性要求：每个候选都必须能通过 schema 校验并真的可执行，
      * 否则"候选模式"只是把非法输出换了个地方出现。
      */
-    private List<BehaviorModelClient.Candidate> buildCandidates(
+    private List<AutonomyDecider.Candidate> buildCandidates(
             VillagerState vs, String dominant, NpcTask activeTask) {
-        List<BehaviorModelClient.Candidate> candidates = new ArrayList<>();
-        candidates.add(new BehaviorModelClient.Candidate("idle",
-                "do nothing and stay where you are", new JsonObject()));
+        List<AutonomyDecider.Candidate> candidates = new ArrayList<>();
+        candidates.add(new AutonomyDecider.Candidate("idle",
+                "do nothing and stay where you are", new JsonObject(), 0));
 
         // 已有任务在跑时不能再给 move_to：NpcTaskManager 规定同一 NPC 只能有一个任务，
         // 这个候选 100% 会被拒成 NPC_BUSY，等于给模型挖坑。
@@ -589,22 +427,23 @@ public final class NeedsLayer extends TickLayer {
             args.addProperty("y", target.getY());
             args.addProperty("z", target.getZ());
             args.addProperty("speed", 0.8);
-            candidates.add(new BehaviorModelClient.Candidate("npc.move_to",
+            candidates.add(new AutonomyDecider.Candidate("npc.move_to",
                     "walk to x=" + Math.round(target.getX()) + " y=" + Math.round(target.getY())
-                            + " z=" + Math.round(target.getZ()), args));
+                            + " z=" + Math.round(target.getZ()), args,
+                    target.distance(vs.entity().getLocation())));
         }
 
         JsonObject observeArgs = new JsonObject();
         observeArgs.addProperty("radius", 16);
         observeArgs.addProperty("limit", 16);
-        candidates.add(new BehaviorModelClient.Candidate("world.observe.entities",
-                "look around at nearby entities", observeArgs));
+        candidates.add(new AutonomyDecider.Candidate("world.observe.entities",
+                "look around at nearby entities", observeArgs, 0));
 
         if (activeTask != null) {
             JsonObject cancelArgs = new JsonObject();
             cancelArgs.addProperty("task_id", activeTask.id());
-            candidates.add(new BehaviorModelClient.Candidate("npc.task.cancel",
-                    "stop the current action (" + activeTask.toolName() + ")", cancelArgs));
+            candidates.add(new AutonomyDecider.Candidate("npc.task.cancel",
+                    "stop the current action (" + activeTask.toolName() + ")", cancelArgs, 0));
         }
         return candidates;
     }
@@ -651,98 +490,6 @@ public final class NeedsLayer extends TickLayer {
         }
     }
 
-    /** 当前任务摘要；没有任务时返回 JsonNull，让模型明确知道"手上没活" */
-    private static com.google.gson.JsonElement taskSnapshot(NpcTask task) {
-        if (task == null) return com.google.gson.JsonNull.INSTANCE;
-        JsonObject json = new JsonObject();
-        json.addProperty("task_id", task.id());
-        json.addProperty("tool", task.toolName());
-        json.addProperty("state", task.state().name());
-        JsonObject progress = task.data();
-        if (progress != null) json.add("progress", progress);
-        return json;
-    }
-
-    /**
-     * 行为模型的 system prompt 是英文，提示也用英文写，避免 1B 模型在混合语言下跑偏。
-     * 只描述意图，具体工具与参数由行为模型自己从注册表里选。
-     */
-    private static String behaviorHint(String dominant) {
-        return switch (dominant) {
-            case NeedsState.HUNGER -> "The NPC is hungry. Move toward farmland or a shop, or idle.";
-            case NeedsState.ENERGY -> "The NPC is exhausted. Move toward home to sleep, or idle.";
-            case NeedsState.BOREDOM -> "The NPC is bored. Move somewhere else to look around, or idle.";
-            case NeedsState.CURIOSITY -> "The NPC is curious. Move closer to something interesting, or idle.";
-            case NeedsState.SOCIAL -> "The NPC wants company. Move toward the nearest player or villager, or idle.";
-            default -> "Pick one safe action for the NPC, or idle.";
-        };
-    }
-
-    /**
-     * 执行自主行动结果（主线程）—— 轻量执行器：
-     * 台词冒气泡 + 附近玩家聊天框（不写 chatHistory），动作按工具类型落地，
-     * 行动完成后削减触发需求（需求满足后降低）。
-     */
-    private void executeAutonomy(VillagerState vs, LLMResponse response, String dominant) {
-        Villager v = vs.entity();
-        if (!v.isValid() || v.isDead()) return;
-
-        var toolCall = response.hasToolCall() ? response.firstToolCall() : null;
-        String toolName = toolCall != null && BehaviorRegistry.isValidTool(toolCall.name())
-                ? toolCall.name() : null;
-
-        // 台词：tool message 优先，正文兜底；空 → "..." 透传（禁止硬编码兜底台词）
-        String dialogue = toolCall != null ? jsonStr(toolCall, "message") : null;
-        if (dialogue == null || dialogue.isBlank()) {
-            dialogue = response.content();
-        }
-        dialogue = Smalltalk.stripToolCall(dialogue);
-        if (dialogue == null || dialogue.isBlank()) dialogue = "...";
-        String finalDialogue = CentralPlanner.sanitizeDialogue(dialogue, vs.profession());
-
-        // 动作落地
-        Player audience = nearestPlayer(v, plugin.getPluginConfig().needsVisibilityRadius());
-        if (toolName != null) {
-            switch (toolName) {
-                case "move_to" -> {
-                    double tx = jsonNum(toolCall, "x", v.getLocation().getX());
-                    double ty = jsonNum(toolCall, "y", v.getLocation().getY());
-                    double tz = jsonNum(toolCall, "z", v.getLocation().getZ());
-                    walkTowards(vs, new Location(v.getWorld(), tx, ty, tz));
-                }
-                case "follow_player" -> {
-                    if (audience != null) walkTowards(vs, audience.getLocation());
-                }
-                case "wave", "nod" -> playGesture(v, toolName);
-                case "look_at" -> {
-                    if (audience != null) CentralPlanner.faceTowards(v, audience.getLocation());
-                }
-                // say / idle：无额外动作
-                default -> { }
-            }
-        }
-
-        // 台词展示：**只冒气泡**（15 秒固定时长，同闲聊）+ 控制台留档。
-        // 规则：聊天框文字只发给"正在跟该 NPC 对话的那个玩家"（CentralPlanner.speak 负责），
-        // 其他玩家一律只看到头顶气泡。自主行动时根本没有人在跟它聊天，
-        // 所以不往任何人的聊天框写字 —— 否则最近的玩家会莫名收到一段没头没尾的台词。
-        String name = Smalltalk.nameOf(vs);
-        if (!"...".equals(finalDialogue)) {
-            // 气泡标题与控制台 [chat] 都带"听者"：附近有玩家就是 名字>玩家名，
-            // 没有玩家时只标说话者（控制台日志由 BubbleManager 统一输出，这里不再重复打印）
-            bubbleManager.showDialog(v, name,
-                    audience != null ? audience.getName() : null, finalDialogue, 300L);
-            // 写入近期社交上下文（顺带缓解 social/boredom —— 说话本身就是社交满足）
-            vs.addRecentSocialLine(finalDialogue);
-        }
-
-        // 需求满足：行动完成后削减触发需求
-        vs.needs().satisfy(dominant, NeedsState.SATISFY_ON_ACTION);
-        plugin.getMemoryStore().markDirty(vs.getUniqueId());
-        plugin.getLogger().info("§b[MC-AI] 自主行动完成: " + name + " " + toolName
-                + " → " + NeedsState.zhName(dominant) + " 降至 " + (int) vs.needs().get(dominant));
-    }
-
     /** 朝目标连续走几步（setVelocity 单次走不远，每 20 tick 补一步共 5 步，对话中取消） */
     private void walkTowards(VillagerState vs, Location target) {
         Villager v = vs.entity();
@@ -751,16 +498,6 @@ public final class NeedsLayer extends TickLayer {
                 if (!v.isValid() || v.isDead() || vs.interactingPlayer() != null) return;
                 CentralPlanner.moveEntityTowards(v, target, 1.0);
             }, 20L * i);
-        }
-    }
-
-    /** 肢体动作（同 CentralPlanner.playGesture：wave=起跳 / nod=前跳） */
-    private void playGesture(Villager v, String action) {
-        if (action.equals("wave")) {
-            v.setVelocity(new org.bukkit.util.Vector(0, 0.45, 0));
-        } else if (action.equals("nod")) {
-            var dir = v.getLocation().getDirection().normalize().multiply(0.3);
-            v.setVelocity(new org.bukkit.util.Vector(dir.getX(), 0.25, dir.getZ()));
         }
     }
 
@@ -778,19 +515,4 @@ public final class NeedsLayer extends TickLayer {
         return best;
     }
 
-    private static String jsonStr(com.howard.mcai.ai.ToolCall tool, String key) {
-        var obj = tool.arguments();
-        if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) return null;
-        return obj.get(key).getAsString();
-    }
-
-    private static double jsonNum(com.howard.mcai.ai.ToolCall tool, String key, double def) {
-        var obj = tool.arguments();
-        if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) return def;
-        try {
-            return obj.get(key).getAsDouble();
-        } catch (Exception e) {
-            return def;
-        }
-    }
 }
