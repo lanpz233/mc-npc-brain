@@ -14,7 +14,7 @@
 4 倍（192）超采样绘制，最后 LANCZOS 缩到 64，线条干净。
 
 用法: python3 make_icons.py   (依赖 Pillow)
-产物: MCAI-Shop/assets/minecraft/textures/item/mcai_*.png + models/item/mcai_*.json + paper.json overrides（必须放 item 文件夹：新版图集只扫固定目录，自创文件夹里只有编号模型引用的贴图不会被收进图集）
+产物: MCAI-Shop/assets/mcai/textures/icon/*.png + models + minecraft paper.json overrides
 """
 from PIL import Image, ImageDraw, ImageFont
 import json
@@ -54,10 +54,11 @@ def cjk_font(size):
     raise RuntimeError("no CJK face with 买")
 
 
-def centered(d, text, font, fill, cy=S // 2):
+def centered(d, text, font, fill, cy=S // 2, stroke=0):
     box = d.textbbox((0, 0), text, font=font)
     w, h = box[2] - box[0], box[3] - box[1]
-    d.text(((S - w) / 2 - box[0], cy - h / 2 - box[1]), text, font=font, fill=fill)
+    d.text(((S - w) / 2 - box[0], cy - h / 2 - box[1]), text, font=font, fill=fill,
+           stroke_width=stroke, stroke_fill=fill)
 
 
 def coin(rim, face, hi, text):
@@ -80,16 +81,16 @@ def plate(bg, edge, draw_fn):
 
 
 def char_plate(bg, edge, ch):
-    f = cjk_font(27)
-    return plate(bg, edge, lambda d: centered(d, ch, f, (255, 255, 255, 255)))
+    f = cjk_font(29)
+    return plate(bg, edge, lambda d: centered(d, ch, f, (255, 255, 255, 255), stroke=X(1)))
 
 
 def tag(bg, edge, ch):
     """价签：圆角牌 + 左上穿孔 + 绳圈"""
-    f = cjk_font(25)
+    f = cjk_font(27)
     def draw(d):
         d.ellipse([X(7), X(7), X(15), X(15)], outline=(255, 255, 255, 255), width=X(2))
-        centered(d, ch, f, (255, 255, 255, 255), cy=S // 2 + X(3))
+        centered(d, ch, f, (255, 255, 255, 255), cy=S // 2 + X(2), stroke=X(1))
     return plate(bg, edge, draw)
 
 
@@ -198,10 +199,23 @@ def bond_img():
 reg("heart", 1036, heart_img())
 reg("bond", 1037, bond_img())
 
-# 写纹理（缩到 64x64）+ 模型 + paper overrides
+PIX = 32  # 像素网格：先落到 32x32 的格子上，再最近邻放大到 64 —— MC 像素味
+
+
+def pixelize(img):
+    """把平滑绘制的图变成像素风：32 格 + 每图≤12 色 + 透明边缘一刀切硬边。"""
+    small = img.resize((PIX, PIX), Image.LANCZOS)
+    a = small.getchannel("A").point(lambda v: 255 if v >= 110 else 0)
+    q = small.convert("RGB").quantize(colors=12, method=Image.MEDIANCUT).convert("RGB")
+    out = q.convert("RGBA")
+    out.putalpha(a)
+    return out.resize((OUT, OUT), Image.NEAREST)
+
+
+# 写纹理（像素化到 64x64）+ 模型 + paper overrides
 overrides = []
 for name, (cmd, img) in sorted(ICONS.items(), key=lambda kv: kv[1][0]):
-    img.resize((OUT, OUT), Image.LANCZOS).save(os.path.join(TEX_DIR, f"mcai_{name}.png"))
+    pixelize(img).save(os.path.join(TEX_DIR, f"mcai_{name}.png"))
     model = {"parent": "item/generated", "textures": {"layer0": f"minecraft:item/mcai_{name}"}}
     with open(os.path.join(MODEL_DIR, f"mcai_{name}.json"), "w", encoding="utf-8") as f:
         json.dump(model, f, ensure_ascii=False, indent=2)
@@ -221,7 +235,7 @@ cols = 6
 rows = (len(names) + cols - 1) // cols
 sheet = Image.new("RGBA", (cols * OUT, rows * OUT), (40, 40, 40, 255))
 for i, (name, (_, img)) in enumerate(names):
-    small = img.resize((OUT, OUT), Image.LANCZOS)
+    small = pixelize(img)
     sheet.paste(small, ((i % cols) * OUT, (i // cols) * OUT), small)
 sheet = sheet.resize((cols * OUT * 2, rows * OUT * 2), Image.NEAREST)
 sheet.save("/tmp/icon-sheet.png")
