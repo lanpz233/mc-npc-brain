@@ -8,223 +8,223 @@
       "predicate": {
         "custom_model_data": 1001
       },
-      "model": "mcai:icon/cut_1"
+      "model": "minecraft:item/mcai_cut_1"
     },
     {
       "predicate": {
         "custom_model_data": 1002
       },
-      "model": "mcai:icon/cut_2"
+      "model": "minecraft:item/mcai_cut_2"
     },
     {
       "predicate": {
         "custom_model_data": 1003
       },
-      "model": "mcai:icon/cut_3"
+      "model": "minecraft:item/mcai_cut_3"
     },
     {
       "predicate": {
         "custom_model_data": 1004
       },
-      "model": "mcai:icon/cut_4"
+      "model": "minecraft:item/mcai_cut_4"
     },
     {
       "predicate": {
         "custom_model_data": 1005
       },
-      "model": "mcai:icon/cut_5"
+      "model": "minecraft:item/mcai_cut_5"
     },
     {
       "predicate": {
         "custom_model_data": 1006
       },
-      "model": "mcai:icon/cut_6"
+      "model": "minecraft:item/mcai_cut_6"
     },
     {
       "predicate": {
         "custom_model_data": 1007
       },
-      "model": "mcai:icon/cut_7"
+      "model": "minecraft:item/mcai_cut_7"
     },
     {
       "predicate": {
         "custom_model_data": 1008
       },
-      "model": "mcai:icon/cut_8"
+      "model": "minecraft:item/mcai_cut_8"
     },
     {
       "predicate": {
         "custom_model_data": 1009
       },
-      "model": "mcai:icon/cut_9"
+      "model": "minecraft:item/mcai_cut_9"
     },
     {
       "predicate": {
         "custom_model_data": 1010
       },
-      "model": "mcai:icon/cut_10"
+      "model": "minecraft:item/mcai_cut_10"
     },
     {
       "predicate": {
         "custom_model_data": 1011
       },
-      "model": "mcai:icon/raise_1"
+      "model": "minecraft:item/mcai_raise_1"
     },
     {
       "predicate": {
         "custom_model_data": 1012
       },
-      "model": "mcai:icon/raise_2"
+      "model": "minecraft:item/mcai_raise_2"
     },
     {
       "predicate": {
         "custom_model_data": 1013
       },
-      "model": "mcai:icon/raise_3"
+      "model": "minecraft:item/mcai_raise_3"
     },
     {
       "predicate": {
         "custom_model_data": 1014
       },
-      "model": "mcai:icon/raise_4"
+      "model": "minecraft:item/mcai_raise_4"
     },
     {
       "predicate": {
         "custom_model_data": 1015
       },
-      "model": "mcai:icon/raise_5"
+      "model": "minecraft:item/mcai_raise_5"
     },
     {
       "predicate": {
         "custom_model_data": 1016
       },
-      "model": "mcai:icon/raise_6"
+      "model": "minecraft:item/mcai_raise_6"
     },
     {
       "predicate": {
         "custom_model_data": 1017
       },
-      "model": "mcai:icon/raise_7"
+      "model": "minecraft:item/mcai_raise_7"
     },
     {
       "predicate": {
         "custom_model_data": 1018
       },
-      "model": "mcai:icon/raise_8"
+      "model": "minecraft:item/mcai_raise_8"
     },
     {
       "predicate": {
         "custom_model_data": 1019
       },
-      "model": "mcai:icon/raise_9"
+      "model": "minecraft:item/mcai_raise_9"
     },
     {
       "predicate": {
         "custom_model_data": 1020
       },
-      "model": "mcai:icon/raise_10"
+      "model": "minecraft:item/mcai_raise_10"
     },
     {
       "predicate": {
         "custom_model_data": 1021
       },
-      "model": "mcai:icon/tag_cut"
+      "model": "minecraft:item/mcai_tag_cut"
     },
     {
       "predicate": {
         "custom_model_data": 1022
       },
-      "model": "mcai:icon/tag_raise"
+      "model": "minecraft:item/mcai_tag_raise"
     },
     {
       "predicate": {
         "custom_model_data": 1023
       },
-      "model": "mcai:icon/buy"
+      "model": "minecraft:item/mcai_buy"
     },
     {
       "predicate": {
         "custom_model_data": 1024
       },
-      "model": "mcai:icon/sell"
+      "model": "minecraft:item/mcai_sell"
     },
     {
       "predicate": {
         "custom_model_data": 1025
       },
-      "model": "mcai:icon/accept"
+      "model": "minecraft:item/mcai_accept"
     },
     {
       "predicate": {
         "custom_model_data": 1026
       },
-      "model": "mcai:icon/reject"
+      "model": "minecraft:item/mcai_reject"
     },
     {
       "predicate": {
         "custom_model_data": 1027
       },
-      "model": "mcai:icon/back"
+      "model": "minecraft:item/mcai_back"
     },
     {
       "predicate": {
         "custom_model_data": 1028
       },
-      "model": "mcai:icon/close"
+      "model": "minecraft:item/mcai_close"
     },
     {
       "predicate": {
         "custom_model_data": 1029
       },
-      "model": "mcai:icon/price"
+      "model": "minecraft:item/mcai_price"
     },
     {
       "predicate": {
         "custom_model_data": 1030
       },
-      "model": "mcai:icon/lock"
+      "model": "minecraft:item/mcai_lock"
     },
     {
       "predicate": {
         "custom_model_data": 1031
       },
-      "model": "mcai:icon/balance"
+      "model": "minecraft:item/mcai_balance"
     },
     {
       "predicate": {
         "custom_model_data": 1032
       },
-      "model": "mcai:icon/prev"
+      "model": "minecraft:item/mcai_prev"
     },
     {
       "predicate": {
         "custom_model_data": 1033
       },
-      "model": "mcai:icon/next"
+      "model": "minecraft:item/mcai_next"
     },
     {
       "predicate": {
         "custom_model_data": 1034
       },
-      "model": "mcai:icon/mode_buy"
+      "model": "minecraft:item/mcai_mode_buy"
     },
     {
       "predicate": {
         "custom_model_data": 1035
       },
-      "model": "mcai:icon/mode_sell"
+      "model": "minecraft:item/mcai_mode_sell"
     },
     {
       "predicate": {
         "custom_model_data": 1036
       },
-      "model": "mcai:icon/heart"
+      "model": "minecraft:item/mcai_heart"
     },
     {
       "predicate": {
         "custom_model_data": 1037
       },
-      "model": "mcai:icon/bond"
+      "model": "minecraft:item/mcai_bond"
     }
   ]
 }

@@ -14,7 +14,7 @@
 4 倍（192）超采样绘制，最后 LANCZOS 缩到 64，线条干净。
 
 用法: python3 make_icons.py   (依赖 Pillow)
-产物: MCAI-Shop/assets/mcai/textures/icon/*.png + models + minecraft paper.json overrides
+产物: MCAI-Shop/assets/minecraft/textures/item/mcai_*.png + models/item/mcai_*.json + paper.json overrides（必须放 item 文件夹：新版图集只扫固定目录，自创文件夹里只有编号模型引用的贴图不会被收进图集）
 """
 from PIL import Image, ImageDraw, ImageFont
 import json
@@ -25,8 +25,8 @@ K = 4              # 超采样倍数：实际绘制边长 = 192
 S = BASE * K
 OUT = 64           # 成品边长（2 的整数次幂，图集才认）
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MCAI-Shop")
-TEX_DIR = os.path.join(ROOT, "assets", "mcai", "textures", "icon")
-MODEL_DIR = os.path.join(ROOT, "assets", "mcai", "models", "icon")
+TEX_DIR = os.path.join(ROOT, "assets", "minecraft", "textures", "item")
+MODEL_DIR = os.path.join(ROOT, "assets", "minecraft", "models", "item")
 os.makedirs(TEX_DIR, exist_ok=True)
 os.makedirs(MODEL_DIR, exist_ok=True)
 
@@ -201,11 +201,11 @@ reg("bond", 1037, bond_img())
 # 写纹理（缩到 64x64）+ 模型 + paper overrides
 overrides = []
 for name, (cmd, img) in sorted(ICONS.items(), key=lambda kv: kv[1][0]):
-    img.resize((OUT, OUT), Image.LANCZOS).save(os.path.join(TEX_DIR, f"{name}.png"))
-    model = {"parent": "item/generated", "textures": {"layer0": f"mcai:icon/{name}"}}
-    with open(os.path.join(MODEL_DIR, f"{name}.json"), "w", encoding="utf-8") as f:
+    img.resize((OUT, OUT), Image.LANCZOS).save(os.path.join(TEX_DIR, f"mcai_{name}.png"))
+    model = {"parent": "item/generated", "textures": {"layer0": f"minecraft:item/mcai_{name}"}}
+    with open(os.path.join(MODEL_DIR, f"mcai_{name}.json"), "w", encoding="utf-8") as f:
         json.dump(model, f, ensure_ascii=False, indent=2)
-    overrides.append({"predicate": {"custom_model_data": cmd}, "model": f"mcai:icon/{name}"})
+    overrides.append({"predicate": {"custom_model_data": cmd}, "model": f"minecraft:item/mcai_{name}"})
 
 paper = {"parent": "item/generated", "textures": {"layer0": "item/paper"}, "overrides": overrides}
 paper_path = os.path.join(ROOT, "assets", "minecraft", "models", "item")
