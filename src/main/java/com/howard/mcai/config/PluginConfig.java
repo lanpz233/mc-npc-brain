@@ -109,7 +109,13 @@ public record PluginConfig(
          * 商店标题是否挂资源包背景图。默认 false：没装配套资源包（MCAI-Shop）的客户端
          * 标题会显示方框字，所以装好包再开；开了之后商店窗口是一张木柜台图而不是灰箱子。
          */
-        boolean shopSkinEnabled
+        boolean shopSkinEnabled,
+
+        /** 商店资源包内置下载服务的端口（自动发包用，见 resourcepack/PackServer） */
+        int resourcePackPort,
+
+        /** 发包地址的主机名覆盖（null = 按每个玩家连进来的地址自动推导；内网穿透/代理时才需要填） */
+        String resourcePackHost
 ) {
 
     /**
@@ -174,7 +180,9 @@ public record PluginConfig(
                 cfg.getDouble("villagers.blacksmith.spawn-y", 64),
                 cfg.getDouble("villagers.blacksmith.spawn-z", 100),
                 // Shop
-                cfg.getBoolean("shop.resource-pack-skin", false)
+                cfg.getBoolean("shop.resource-pack-skin", false),
+                cfg.getInt("shop.resource-pack-port", 8765),
+                blankToNull(cfg.getString("shop.resource-pack-host", ""))
         );
     }
 
