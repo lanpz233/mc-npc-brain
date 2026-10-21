@@ -258,6 +258,7 @@ public final class McaiPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new PlayerQuitListener(this, villagers), this);
         // NPC 背包 GUI 拦截（按 F 打开、点击索要；所有点击/拖拽 cancel，索要转成一次对话）
         Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.VillagerInventoryListener(), this);
+        Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.ShopGuiListener(), this);
         // 交易成交 → 好感 +1（玩家照顾 NPC 生意也是互动，让"关系够不够好"能靠日常攒起来）
         Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.VillagerTradeListener(this), this);
 

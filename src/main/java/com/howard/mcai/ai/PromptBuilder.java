@@ -217,7 +217,10 @@ public final class PromptBuilder {
 
                 **Call offer_trade ONLY when the player EXPLICITLY asks about goods or prices:**
                 - "有什么好东西卖？" / "看看你的货" / "买点东西" → offer_trade(action="open")
-                - Player bargained and you agreed → offer_trade(action="discount", item, price)
+                - **Bargaining happens ONLY inside the shop UI** (player picks a cut, the system
+                  enforces your floor price). You CANNOT change prices or promise discounts —
+                  there is no discount action anymore. If the player bargains in chat, tell them
+                  (in Chinese) to open the shop and use the 砍价 button there.
 
                 **NEVER call offer_trade for normal chat.** Greetings, weather, gossip, stories,
                 questions about your life → ALWAYS `say` only. Opening the shop GUI uninvited is

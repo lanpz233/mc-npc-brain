@@ -218,11 +218,11 @@ public final class CentralPlanner extends BukkitRunnable {
         if (!systemNote) {
             // 嘴上冒犯/威胁 → 代码层直接改好感/恐惧（不能指望模型"自觉生气"）
             applyVerbalTemper(vState, player, message);
-            // 砍价关键词拦截 —— 在 LLM 之前执行，代码层直接改价。
-            // 拦截成功会返回附加了"成交说明"的消息，让 LLM 明确知道交易已按新价达成，
-            // 否则它嘴上仍报旧价、甚至调 discount 把砍好的价改回去
-            effectiveMessage = interceptBargain(vState, player, message);
-            // 砍价已命中 → 后面不再按"讨东西"处理，避免"给我3个面包，1绿宝石"这种交易话被当成索要
+            // 聊天砍价已退役（2026-10-21，交易界面路线二）：聊天里报数字不再改价，
+            // 价格只在商店界面里由玩家点砍价按钮、插件守底线。这里只做识别 + 事实注入：
+            // 让模型知道自己无权在聊天里答应价格，防止它嘴上许诺一个插件不会兑现的价。
+            effectiveMessage = annotateBargainAttempt(vState, message);
+            // 识别到砍价意图 → 后面不再按"讨东西"处理，避免"给我3个面包，1绿宝石"这种交易话被当成索要
             boolean bargained = !effectiveMessage.equals(message);
             // 教学意图检测 —— 玩家在"教"NPC 东西时，按好感/熟悉度/开放度判定这次信不信，
             // 把立场注入消息，让 NPC 台词语气（好奇接受 vs 半信半疑）和真实存储结果一致
@@ -745,49 +745,28 @@ public final class CentralPlanner extends BukkitRunnable {
             .toList();
 
     /**
-     * 代码层砍价拦截 —— 正则提取商品和价格，直接改 dynamicPrices + 刷 GUI。
-     * 独立于 LLM：不管模型有没有调 discount，价格都同步生效。
+     * 聊天砍价识别（只识别、不改价）—— 砍价已随交易界面路线二退役：
+     * 价格只在商店界面里由 BargainPolicy + ShopSession 决定，聊天里报的数字一律不生效。
+     * 命中「数字+绿宝+商品名」时给消息附加事实注入，防模型在台词里许诺价格。
      *
-     * @return 拦截成功返回附加了"成交说明"的消息（给 LLM 看的事实注入），
-     *         没拦截到返回原消息
+     * @return 命中返回附加了系统说明的消息；没命中返回原消息
      */
-    private String interceptBargain(VillagerState vState, Player player, String message) {
+    private String annotateBargainAttempt(VillagerState vState, String message) {
         String zhItem = extractBargainItem(message);
         Integer price = extractBargainPrice(message);
         if (zhItem == null || price == null || price <= 0) return message;
 
         Material mat = TradeRegistry.zhToMaterial(zhItem);
-        // 绿宝石本身是货币（"1绿宝石3个面包"里的"绿宝石"是价格单位），砍它会毁掉收购配方
         if (mat == null || mat == Material.EMERALD) return message;
         if (!TradeRegistry.professionCanSell(vState.profession(), mat)) return message;
 
-        vState.setItemPrice(mat.name(), price);
-        vState.lockBargain(mat.name(), price);  // 上锁：LLM 的 discount/offer 在锁定期内不得改这个价
-        vState.entity().setRecipes(vState.buildCurrentRecipes());
-        plugin.getMemoryStore().markDirty(vState.getUniqueId());
-        plugin.getLogger().info("§b[MC-AI] 玩家砍价触发: " + zhItem + " → " + price + "绿宝（已持久化+上锁）");
-        sendDebug(player, "§b[MC-AI] 砍价生效: " + zhItem + " → " + price + "绿宝");
-
-        // 如果玩家的交易 GUI 正开着 → 强制刷新（setRecipes 不会更新已打开的窗口，得重开）
-        org.bukkit.inventory.InventoryView view = player.getOpenInventory();
-        if (view.getTopInventory().getHolder() instanceof Villager openVillager
-                && openVillager.getUniqueId().equals(vState.entity().getUniqueId())) {
-            player.closeInventory();
-            Villager villager = vState.entity();
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                if (player.isOnline() && villager.isValid()) {
-                    player.openMerchant(villager, true);
-                }
-            }, 1L);
-        }
-
-        // 给 LLM 注入成交事实 —— 英文说明对指令跟随更可靠，台词仍要求中文。
-        // 没有这段，模型会按历史锚定报旧价，甚至调 discount 把砍好的价改回去
-        return message + "\n[Shop system note: the player bargained and the deal is ALREADY CLOSED. "
-                + zhItem + " price is NOW " + price + " emerald(s) — the GUI already shows it. "
-                + "You have ALREADY AGREED. Respond in Chinese, confirm the deal happily and mention "
-                + "the NEW price (" + price + "绿宝石). NEVER mention any other price. "
-                + "Do NOT call offer_trade discount/offer for " + zhItem + " again.]";
+        plugin.getLogger().info("§7[MC-AI] 聊天砍价（已退役，不改价）: " + zhItem + " → " + price + "绿宝，仅注入事实说明");
+        return message + "\n[Shop system note: the player is trying to bargain IN CHAT. "
+                + "Bargaining NO LONGER works in chat — prices change ONLY inside the shop UI, "
+                + "where the player picks a cut amount and the system enforces your floor price. "
+                + "You have NOT agreed to any new price. The current price of " + zhItem + " is unchanged. "
+                + "Respond in Chinese: do NOT promise any discount or new price; "
+                + "invite the player to open your shop and use the 砍价 button there.]";
     }
 
     /**
@@ -1666,12 +1645,9 @@ public final class CentralPlanner extends BukkitRunnable {
                                     if (mat == Material.EMERALD) {
                                         plugin.getLogger().info("§c[MC-AI] 拒绝上架 '" + baseZh + "' — 绿宝石是货币不是商品");
                                     } else if (mat != null) {
-                                        // 砍价锁保护：LLM 用别的价格"重新上架"会覆盖玩家砍下来的价
-                                        Integer locked = vState.getBargainLock(mat.name());
-                                        if (locked != null && price != locked) {
-                                            plugin.getLogger().info("§c[MC-AI] 拒绝上架 '" + baseZh + "' → " + price
-                                                    + "绿宝：与玩家砍价锁 " + locked + "绿宝 冲突，保持锁定价");
-                                        } else if (!TradeRegistry.professionCanSell(vState.profession(), mat)) {
+                                        // 上架价 = 商品标价；玩家谈成的价只记在各自的 ShopSession 里，
+                                        // 重新上架不会冲掉谁的成交价（不再需要旧的砍价锁）
+                                        if (!TradeRegistry.professionCanSell(vState.profession(), mat)) {
                                             plugin.getLogger().info("§c[MC-AI] 拒绝上架 '" + baseZh + "' — " + vState.profession().zhName + "不卖这个");
                                         } else {
                                             vState.addOfferedItem(mat.name(), price, count, wantEnchant ? enchantStore : null);
@@ -1684,37 +1660,11 @@ public final class CentralPlanner extends BukkitRunnable {
                                 }
                             }
                             case "discount" -> {
-                                // 砍价降价 —— 只改"卖"配方（result=物品）；
-                                // 绿宝石本身是货币，砍"绿宝石"会毁掉收购配方（result=EMERALD），必须拒绝
-                                if (baseZh != null && price > 0) {
-                                    Material mat = TradeRegistry.zhToMaterial(baseZh);
-                                    if (mat == Material.EMERALD) {
-                                        plugin.getLogger().info("§c[MC-AI] 拒绝砍价 '" + itemZh + "' — 货币本身没有价格");
-                                    } else if (mat != null) {
-                                        // 砍价锁保护：玩家代码层砍过的价，LLM 不得用自己编的价格覆盖
-                                        Integer locked = vState.getBargainLock(mat.name());
-                                        if (locked != null && price != locked) {
-                                            plugin.getLogger().info("§c[MC-AI] 拒绝 discount '" + itemZh + "' → " + price
-                                                    + "绿宝：与玩家砍价锁 " + locked + "绿宝 冲突，保持锁定价");
-                                        } else {
-                                            boolean matched = false;
-                                            for (var r : recipes) {
-                                                if (TradeRegistry.recipeSells(r, mat)) {
-                                                    // setEmeraldPrice 支持 >64 拆槽，且在深拷贝上改不污染缓存
-                                                    TradeRegistry.setEmeraldPrice(r, price);
-                                                    matched = true;
-                                                    break;
-                                                }
-                                            }
-                                            if (matched) {
-                                                vState.setItemPrice(mat.name(), price);  // 持久化到动态价格表
-                                                plugin.getLogger().info("§b[MC-AI] 砍价持久化: " + itemZh + " → " + price + "绿宝");
-                                            } else {
-                                                plugin.getLogger().info("§c[MC-AI] 砍价失败: " + vState.profession().zhName + "不卖 '" + itemZh + "'");
-                                            }
-                                        }
-                                    }
-                                }
+                                // 已退役（2026-10-21，交易界面路线二）：模型无权改价。
+                                // 砍价只在商店界面里发生：玩家选砍幅、BargainPolicy 守底线、结果记 ShopSession。
+                                // 模型再调 discount 只记日志，价格纹丝不动，台词里许诺的折扣不会被兑现。
+                                plugin.getLogger().info("§7[MC-AI] 忽略 discount（模型改价已退役）: "
+                                        + itemZh + " → " + price + "绿宝");
                             }
                             case "remove" -> {
                                 if (baseZh != null) {
@@ -1731,14 +1681,21 @@ public final class CentralPlanner extends BukkitRunnable {
 
                         // === 交易意图门卫（代码层兜底） ===
                         // Uncensored 模型聊天聊着就要开店。只有玩家最近真的谈到交易才准弹 GUI；
-                        // discount/offer/remove 是砍价/管理流程不受此限。
+                        // offer/remove 是管理流程不受此限。
                         boolean isPlainOpen = action.equals("open");
                         if (isPlainOpen && !hasRecentTradeIntent(vState)) {
                             plugin.getLogger().info("§c[MC-AI] 拦截 offer_trade(open): 玩家最近没聊到交易，降级为 say");
                             sendDebug(nearPlayer, "§e[MC-AI] NPC 想开商店，但你没在谈交易，已拦下");
-                        } else {
-                            villager.setRecipes(recipes);
-                            nearPlayer.openMerchant(villager, true);
+                        } else if (isPlainOpen) {
+                            // 开店改走自家商店界面（路线二）：原版交易窗退役。
+                            // 模型这句台词写进会话台词栏，界面一打开村民就在「说着话」；
+                            // 上架/下架动作不开店（商品表已更新，下次开店自然刷新）。
+                            var session = plugin.getShopSessions()
+                                    .getOrCreate(vState.getUniqueId(), nearPlayer.getUniqueId());
+                            if (dialogue != null && !dialogue.isBlank()) {
+                                session.setNpcLine(dialogue);
+                            }
+                            com.howard.mcai.gui.ShopGui.open(plugin, nearPlayer, vState);
                         }
                     }
                     speak(vState, nearPlayer, dialogue);
@@ -1756,7 +1713,7 @@ public final class CentralPlanner extends BukkitRunnable {
                     speak(vState, nearPlayer, dialogue);
                 }
                 // equip 已迁入统一柜（走上面的统一分发分支），老后门世界交互到此全部退役。
-                // 本 switch 如今只剩 offer_trade（交易将随日后独立交易 UI 一起重做）与兜底。
+                // 本 switch 如今只剩 offer_trade（2026-10-21 已改道自家商店界面，见该分支）与兜底。
                 default -> {
                     // 未知 tool → 只显示台词（不要崩溃）
                     speak(vState, nearPlayer, dialogue);
