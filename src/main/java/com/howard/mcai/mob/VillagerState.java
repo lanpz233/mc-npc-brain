@@ -198,33 +198,8 @@ public final class VillagerState {
         return new java.util.HashMap<>(offeredItems);
     }
 
-    // ===== 砍价锁 =====
-
-    /**
-     * 玩家代码层砍价锁 —— material → [price, timestampMs]。
-     * 玩家说"1绿宝石3个面包"时代码层直接改价成交，但 LLM 不知道，
-     * 经常调 discount 工具用自己编的价格把砍好的价覆盖回去。
-     * 锁定期内 LLM 的改价工具不得覆盖锁定价。
-     */
-    private final Map<String, long[]> bargainLocks = new java.util.HashMap<>();
-
-    private static final long BARGAIN_LOCK_MS = 300_000L;  // 锁 5 分钟，玩家再砍会刷新
-
-    /** 记录砍价锁（拦截成功时调用） */
-    public synchronized void lockBargain(String materialName, int price) {
-        bargainLocks.put(materialName, new long[]{price, System.currentTimeMillis()});
-    }
-
-    /** 取某物品的砍价锁价；过期返回 null */
-    public synchronized Integer getBargainLock(String materialName) {
-        long[] lock = bargainLocks.get(materialName);
-        if (lock == null) return null;
-        if (System.currentTimeMillis() - lock[1] > BARGAIN_LOCK_MS) {
-            bargainLocks.remove(materialName);
-            return null;
-        }
-        return (int) lock[0];
-    }
+    // 砍价锁已删除（2026-10-21）：聊天砍价与模型改价双双退役后，价格只在商店界面
+    // 里由 BargainPolicy + ShopSession 决定，不再有「锁价防覆盖」的需求。
 
     /** 动态价格表（PromptBuilder/MemoryStore 用） */
     public java.util.Map<String, Integer> dynamicPrices() {
