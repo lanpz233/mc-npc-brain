@@ -67,13 +67,25 @@
   <button data-tab="backups">🗂️ 备份恢复</button>
 </nav>
 <main>
-  <section id="tab-settings"></section>
+  <section id="tab-settings">
+    <div class="card" id="settingsTools">
+      <h2>总览与批量操作</h2>
+      <p class="note" id="overviewInfo">加载中…</p>
+      <div class="toolbar">
+        <button id="exportSettingsBtn">⬇ 导出全部设置（JSON）</button>
+        <button id="importSettingsBtn">⬆ 导入设置（JSON）</button>
+        <button id="resetAllBtn">↺ 全部恢复默认</button>
+        <span class="spacer"></span>
+        <span class="note">导入后先检查一遍，再点右上角“保存设置”才真正生效。</span>
+      </div>
+    </div>
+  </section>
 
   <section id="tab-recipes" hidden>
     <div class="card">
       <h2>配方表（recipes.json）</h2>
       <p class="note">村民谈论合成时查的就是这张表。材料写法：一行一个，格式是 <b>物品ID=数量</b>，比如 <b>minecraft:iron_ingot=3</b>。改完点保存，插件会先检查一遍，写错了不会落盘。</p>
-      <div class="toolbar"><button id="addRecipeBtn">＋ 新增配方</button><span class="spacer"></span><button class="primary" data-save-data="recipes.json">保存配方表</button></div>
+      <div class="toolbar"><button id="addRecipeBtn">＋ 新增配方</button><input type="search" id="recipeFilter" placeholder="搜索配方" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;"><span class="spacer"></span><button data-export-data="recipes.json">⬇ 导出</button><button data-import-data="recipes.json">⬆ 导入</button><button class="primary" data-save-data="recipes.json">保存配方表</button></div>
       <div id="recipeRows"></div>
     </div>
   </section>
@@ -82,7 +94,7 @@
     <div class="card">
       <h2>性格标签库（personality_tags.json）</h2>
       <p class="note">每个村民会被抽中几个标签当性格底色。“言行提示”就是写给村民看的性格说明；traits 是性格数值微调（JSON 小对象，不懂可以留空）。</p>
-      <div class="toolbar"><button id="addTagBtn">＋ 新增标签</button><span class="spacer"></span><button class="primary" data-save-data="personality_tags.json">保存性格标签</button></div>
+      <div class="toolbar"><button id="addTagBtn">＋ 新增标签</button><input type="search" id="tagFilter" placeholder="搜索标签" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;"><span class="spacer"></span><button data-export-data="personality_tags.json">⬇ 导出</button><button data-import-data="personality_tags.json">⬆ 导入</button><button class="primary" data-save-data="personality_tags.json">保存性格标签</button></div>
       <div id="tagRows"></div>
     </div>
   </section>
@@ -91,7 +103,7 @@
     <div class="card">
       <h2>姓氏库（surnames.json）</h2>
       <p class="note">权重越大，这个姓在村里越常见。</p>
-      <div class="toolbar"><button id="addSurnameBtn">＋ 新增姓氏</button><span class="spacer"></span><button class="primary" data-save-data="surnames.json">保存姓氏库</button></div>
+      <div class="toolbar"><button id="addSurnameBtn">＋ 新增姓氏</button><span class="spacer"></span><button data-export-data="surnames.json">⬇ 导出</button><button data-import-data="surnames.json">⬆ 导入</button><button class="primary" data-save-data="surnames.json">保存姓氏库</button></div>
       <div id="surnameRows"></div>
     </div>
     <div class="card">
@@ -101,7 +113,7 @@
         <div><b>女名用字</b><textarea id="femaleChars" rows="12" style="margin-top:6px;"></textarea></div>
         <div><b>男名用字</b><textarea id="maleChars" rows="12" style="margin-top:6px;"></textarea></div>
       </div>
-      <div class="toolbar"><span class="spacer"></span><button class="primary" data-save-data="given_names.json">保存名字用字</button></div>
+      <div class="toolbar"><span class="spacer"></span><button data-export-data="given_names.json">⬇ 导出</button><button data-import-data="given_names.json">⬆ 导入</button><button class="primary" data-save-data="given_names.json">保存名字用字</button></div>
     </div>
   </section>
 
@@ -112,6 +124,8 @@
       <div class="toolbar">
         <select id="rawSelect"></select>
         <button id="rawFormatBtn">整理格式</button>
+        <button id="rawExportBtn">⬇ 导出这个文件</button>
+        <button id="rawImportBtn">⬆ 导入到编辑器</button>
         <span class="spacer"></span>
         <button class="primary" id="rawSaveBtn">保存这个文件</button>
       </div>
@@ -177,14 +191,25 @@ function setStatus(text, dirty) {
 }
 
 // ================= 常规设置 =================
+const fieldInputs = {};  // path -> {field, input}
+
 function renderSettings() {
   const wrap = $("#tab-settings");
-  wrap.innerHTML = "";
+  $$(".section-card", wrap).forEach(c => c.remove());
+  for (const k of Object.keys(fieldInputs)) delete fieldInputs[k];
+
+  if (state.info) {
+    $("#overviewInfo").textContent = "现在插件里的数据：配方 " + state.info.recipes
+      + " 条 · 性格标签 " + state.info.tags + " 个 · 姓氏 " + state.info.surnames
+      + " 个 · 名字用字 " + state.info.givenChars
+      + " 个。下面每一项都标了生效方式，改完点右上角“保存设置”。";
+  }
+
   const sections = new Map();
   for (const field of state.fields) {
     if (!sections.has(field.section)) {
       const card = document.createElement("div");
-      card.className = "card";
+      card.className = "card section-card";
       card.innerHTML = "<h2></h2>";
       card.querySelector("h2").textContent = field.section;
       wrap.appendChild(card);
@@ -219,6 +244,7 @@ function renderSettings() {
       input.type = "checkbox";
       input.checked = !!value;
       input.addEventListener("change", () => markDirty(field, input.checked));
+      right.appendChild(input);
     } else if (field.type === "INT" || field.type === "DOUBLE") {
       input = document.createElement("input");
       input.type = "number";
@@ -230,6 +256,7 @@ function renderSettings() {
         const raw = input.value.trim();
         markDirty(field, raw === "" ? null : Number(raw));
       });
+      right.appendChild(input);
     } else {
       input = document.createElement("input");
       input.type = field.type === "PASSWORD" ? "password" : "text";
@@ -248,15 +275,92 @@ function renderSettings() {
         });
         wrapPwd.appendChild(show);
         right.appendChild(wrapPwd);
-        row.appendChild(right);
-        card.appendChild(row);
-        return;
+      } else {
+        right.appendChild(input);
       }
     }
-    right.appendChild(input);
+    fieldInputs[field.path] = { field, input };
+
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "small";
+    reset.textContent = "↺ 默认";
+    reset.title = "把这一项恢复成默认值（" + (field.defaultValue == null ? "" : field.defaultValue) + "）";
+    reset.style.marginTop = "6px";
+    reset.addEventListener("click", () => setFieldValue(field, field.defaultValue, true));
+    right.appendChild(reset);
+
     row.appendChild(right);
     card.appendChild(row);
   }
+}
+
+/** 把某项设置填回表单（导入/恢复默认用），mark=true 时同时记为待保存修改 */
+function setFieldValue(field, value, mark) {
+  const rec = fieldInputs[field.path];
+  if (rec) {
+    if (field.type === "BOOL") rec.input.checked = !!value;
+    else rec.input.value = value == null ? "" : value;
+  }
+  if (mark) {
+    let v = value;
+    if (field.type === "INT" || field.type === "DOUBLE") v = Number(value);
+    if (field.type === "BOOL") v = !!value;
+    markDirty(field, v);
+  }
+}
+
+/** 表单当前的全部值（已保存的 + 尚未保存的改动） */
+function currentFormValues() {
+  const out = {};
+  for (const field of state.fields) {
+    out[field.path] = dirtyConfig.has(field.path) ? dirtyConfig.get(field.path) : state.values[field.path];
+  }
+  return out;
+}
+
+// ================= 导出 / 导入 =================
+function downloadText(name, text) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function downloadJson(name, obj) {
+  downloadText(name, JSON.stringify(obj, null, 2));
+}
+function pickFileText(cb) {
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = ".json,application/json,text/plain";
+  inp.addEventListener("change", () => {
+    const file = inp.files[0];
+    if (!file) return;
+    file.text().then(t => cb(t)).catch(e => toast("读文件失败：" + e.message, true));
+  });
+  inp.click();
+}
+function pickJson(cb) {
+  pickFileText(t => {
+    try { cb(JSON.parse(t)); }
+    catch (e) { toast("这个文件不是合法 JSON：" + e.message, true); }
+  });
+}
+function importDataDoc(name) {
+  pickJson(obj => {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+      toast("导入内容应该是一个 JSON 对象", true);
+      return;
+    }
+    docs[name] = obj;
+    rawContents[name] = JSON.stringify(obj, null, 2);
+    if (name === "recipes.json") renderRecipes();
+    if (name === "personality_tags.json") renderTags();
+    if (name === "surnames.json" || name === "given_names.json") renderNames();
+    if ($("#rawSelect").value === name) $("#rawText").value = rawContents[name];
+    toast("已导入 " + name + "，检查没问题后点该页的保存按钮才会写进插件");
+  });
 }
 
 function markDirty(field, value) {
@@ -621,8 +725,66 @@ $("#search").addEventListener("input", (e) => {
     row.style.display = !q || row.dataset.search.includes(q) ? "" : "none";
   });
   $$("#tab-settings .card").forEach(card => {
+    if (card.id === "settingsTools") return;
     const any = $$(".field", card).some(r => r.style.display !== "none");
     card.style.display = any ? "" : "none";
+  });
+});
+
+$("#exportSettingsBtn").addEventListener("click", () => {
+  downloadJson("mc-ai-settings.json", currentFormValues());
+  toast("设置已导出成 mc-ai-settings.json，在本地改好后用“导入设置”导回来");
+});
+$("#importSettingsBtn").addEventListener("click", () => {
+  pickJson(obj => {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+      toast("导入内容应该是一个 JSON 对象", true);
+      return;
+    }
+    let applied = 0, ignored = 0;
+    for (const [path, value] of Object.entries(obj)) {
+      const field = state.fields.find(f => f.path === path);
+      if (!field) { ignored++; continue; }
+      setFieldValue(field, value, true);
+      applied++;
+    }
+    toast("已导入 " + applied + " 项设置" + (ignored ? "，忽略了 " + ignored + " 项不认识的" : "")
+      + "，检查后点右上角“保存设置”生效", ignored > 0 && applied === 0);
+  });
+});
+$("#resetAllBtn").addEventListener("click", () => {
+  if (!confirm("把全部设置恢复成默认值？恢复后还要点“保存设置”才会生效，随时可以改回来。")) return;
+  for (const field of state.fields) setFieldValue(field, field.defaultValue, true);
+  toast("已全部填回默认值，检查后点“保存设置”生效");
+});
+$$("[data-export-data]").forEach(btn => btn.addEventListener("click", () => {
+  const name = btn.dataset.exportData;
+  try {
+    if (name === "recipes.json") collectRecipes();
+    if (name === "personality_tags.json") collectTags();
+    if (name === "surnames.json") collectSurnames();
+    if (name === "given_names.json") collectGivenNames();
+  } catch (e) { toast(e.message, true); return; }
+  downloadJson(name, docs[name]);
+  toast("已导出 " + name + "，在本地改好后用“导入”导回来");
+}));
+$$("[data-import-data]").forEach(btn => btn.addEventListener("click", () => importDataDoc(btn.dataset.importData)));
+$("#rawExportBtn").addEventListener("click", () => {
+  downloadText($("#rawSelect").value, $("#rawText").value);
+});
+$("#rawImportBtn").addEventListener("click", () => {
+  pickFileText(t => { $("#rawText").value = t; toast("已导入到编辑器，检查后点“保存这个文件”"); });
+});
+$("#recipeFilter").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  $$("#recipeRows details").forEach(r => {
+    r.style.display = !q || r.textContent.toLowerCase().includes(q) ? "" : "none";
+  });
+});
+$("#tagFilter").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  $$("#tagRows details").forEach(r => {
+    r.style.display = !q || r.textContent.toLowerCase().includes(q) ? "" : "none";
   });
 });
 
