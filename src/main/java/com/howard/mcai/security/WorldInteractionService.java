@@ -1,7 +1,6 @@
 package com.howard.mcai.security;
 
 import com.howard.mcai.McaiPlugin;
-import com.howard.mcai.ai.ToolCall;
 import com.howard.mcai.ai.TradeRegistry;
 import com.howard.mcai.mob.VillagerState;
 import org.bukkit.Bukkit;
@@ -22,18 +21,22 @@ import java.util.concurrent.ConcurrentHashMap;
  * 原则：能做，但有限制 —— NPC 不能拆家、平民不能刷物品。
  * 所有动作先过 {@link PermissionManager} 判定，神使动作再过 {@link AuditLog} 留痕。
  * <p>
- * 工具清单（注意：已无 take_item —— 从玩家身上拿东西只走"玩家亲口确认"的两步流程，
+ * 动作清单（注意：已无 take_item —— 从玩家身上拿东西只走"玩家亲口确认"的两步流程，
  * 不给模型直接扣货的口子，详见 {@link #takeFromPlayer}）：
  * <pre>
- * （give_item 已于 2026-10-21 迁入统一柜：tool/tools/NpcGiveItemTool，裁决走 GiftPolicy）
- * break_block(x,y,z)     破坏方块（breakNaturally 正常掉落）
- * place_block(x,y,z,mat) 放置方块（扣 NPC 库存；神使免库存）
- * teleport_to(target)    传送到目标 / 把目标拉过来（他人=神使；玩家需聊天回"好"确认）
- * teleport(x,y,z)        传送自己到坐标（全等级允许 = 2.13 "传送只传自己"）
- * equip(item,slot)       穿装备/拿手上展示（消耗库存）
+ * 2026-10-21 全部迁入统一工具柜（tool/tools/*Tool），本类只留执行体：
+ * give_item    → NpcGiveItemTool（裁决 GiftPolicy）
+ * accept_swap  → NpcAcceptSwapTool（裁决 SwapPolicy，转移走 swapWithPlayer）
+ * break_block  → NpcBreakBlockTool（执行体 breakBlockAt）
+ * place_block  → NpcPlaceBlockTool（执行体 placeBlockAt）
+ * teleport     → NpcTeleportTool（执行体 teleportSelfTo）
+ * teleport_to  → NpcTeleportToTool（执行体 teleportToTarget；确认走 consumeTeleportConfirm）
+ * equip        → NpcEquipTool（执行体 equipItem）
+ * 外加代码层直达通道：handOverFromStock（索要交付）、deliverFreeGift（免费送出库存）、
+ * takeFromPlayer（玩家确认后收礼）、swapWithPlayer（交换转移）。
  * </pre>
  * <p>
- * 线程模型：execute 只在 Paper 主线程调用（CentralPlanner.executeDecision 内），
+ * 线程模型：所有执行体只在 Paper 主线程调用（统一分发器保证），
  * Paper API（breakNaturally/teleport/inventory）天然安全。
  */
 public final class WorldInteractionService {
@@ -95,27 +98,11 @@ public final class WorldInteractionService {
         this.auditLog = auditLog;
     }
 
-    // ===== 主入口 =====
-
-    /**
-     * 执行一个世界交互工具（主线程）。
-     *
-     * @return 给玩家看的反馈行（§ 色彩码；null = 无需额外反馈，只说 LLM 台词）
-     */
-    public String execute(VillagerState vState, ToolCall tool, Player nearPlayer) {
-        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vState);
-        // 亲信判定按"当前这位玩家"的好感 —— 无玩家上下文（nearPlayer=null）用 legacyFavor 回退
-        NpcRank rank = permissions.rankOf(vState, nearPlayer != null ? nearPlayer.getUniqueId() : null);
-
-        return switch (tool.name()) {
-            // break_block / place_block 已迁入统一柜（NpcBreakBlockTool / NpcPlaceBlockTool，
-            // 经 breakBlockAt / placeBlockAt 执行）；teleport / teleport_to 也已迁入
-            // （NpcTeleportTool / NpcTeleportToTool，经 teleportSelfTo / teleportToTarget 执行），
-            // 均不再走本入口。本入口仅剩 equip，待其迁柜后整体退役。
-            case "equip" -> equip(vState, npcName, rank, tool);
-            default -> null;
-        };
-    }
+    // ===== 主入口（已退役） =====
+    // 旧的 execute(ToolCall) 分发入口于 2026-10-21 随 equip 迁柜一并删除：
+    // 全部世界交互动作（give_item / accept_swap / break_block / place_block /
+    // teleport / teleport_to / equip）都已迁入统一工具柜，本类只保留各动作的
+    // 执行体（公开方法）与代码层直达通道（索要交付、收礼、传送确认等）。
 
     // ===== 代码层直接交付（玩家索要物品时由决策层调用，不依赖模型是否真的调 give_item） =====
 
@@ -486,10 +473,16 @@ public final class WorldInteractionService {
 
     // ===== equip：穿装备/拿手上展示（消耗库存） =====
 
-    private String equip(VillagerState vs, String npcName, NpcRank rank, ToolCall tool) {
-        Material mat = resolveItem(safeStr(tool, "item"));
+    /**
+     * 穿戴一件库存物品（统一柜 NpcEquipTool 的执行体；规则与旧后门时期一致：
+     * 必须有库存、旧装备先收回库存再换新、换下的不凭空消失）。
+     *
+     * @param slot mainhand/helmet/chestplate/leggings/boots；空或未知值按 mainhand
+     * @return 给玩家看的反馈行（null = 成功）
+     */
+    public String equipItem(VillagerState vs, Material mat, String slot) {
+        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
         if (mat == null || mat.isAir()) return "§e不知道这是什么东西";
-        String slot = safeStr(tool, "slot");
         if (slot == null || slot.isBlank()) slot = "mainhand";
 
         if (vs.stockOf(mat) < 1) {
@@ -602,8 +595,7 @@ public final class WorldInteractionService {
         return null;
     }
 
-    /** 工具参数里的坐标 → Block（相对世界硬边界做保护，越界返回 null） */
-    /** 坐标 → 方块（与 argBlock 同口径：y 越界/实体缺失 → null） */
+    /** 坐标 → 方块（相对世界硬边界做保护：y 越界/实体缺失 → null） */
     private static Block blockAt(VillagerState vs, double x, double y, double z) {
         if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)) return null;
         if (y < -64 || y > 320) return null;
@@ -612,32 +604,7 @@ public final class WorldInteractionService {
         return entity.getWorld().getBlockAt((int) x, (int) y, (int) z);
     }
 
-    private static Block argBlock(VillagerState vs, ToolCall tool) {
-        double x = argNum(tool, "x", Double.NaN);
-        double y = argNum(tool, "y", Double.NaN);
-        double z = argNum(tool, "z", Double.NaN);
-        if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)) return null;
-        if (y < -64 || y > 320) return null;
-        return vs.entity().getWorld().getBlockAt((int) x, (int) y, (int) z);
-    }
-
     private static String fmtLoc(Location loc) {
         return loc.getWorld().getName() + "@" + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ();
-    }
-
-    private static String safeStr(ToolCall tool, String key) {
-        var obj = tool.arguments();
-        if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) return null;
-        return obj.get(key).getAsString();
-    }
-
-    private static double argNum(ToolCall tool, String key, double def) {
-        var obj = tool.arguments();
-        if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) return def;
-        try {
-            return obj.get(key).getAsDouble();
-        } catch (Exception e) {
-            return def;
-        }
     }
 }
