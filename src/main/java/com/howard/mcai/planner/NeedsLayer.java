@@ -218,42 +218,65 @@ public final class NeedsLayer extends TickLayer {
 
     /**
      * 真睡觉（规则动作，不调 LLM）：
-     * 疲惫 ≥70 + 天黑 → 找 16 格内的床；走到床边（2.5 格内）就上床睡。
+     * 疲惫 ≥70 + 天黑 → 找 16 格内的床；真走到床边（贴着整张床的中心、同层）才上床睡。
      * 睡着后本层每轮按 ENERGY_SLEEP 回疲惫，天亮原版 AI 叫醒。
      * 没床 → 不瞎跑（原地待着），等天亮或玩家搭话。
+     * <p>
+     * 旧版的毛病（实测截图）：扫到床的任意一格方块就把它的**角落坐标**当睡觉点，
+     * 且直线 2.5 格内（隔墙、站在地上都算）就躺下 —— 人横在床边、头不沾枕、随地乱睡。
+     * 现在认整张床：落点钉在床头格中心，触发条件是真到了床边。
      */
     private void trySleep(VillagerState vs) {
         Villager v = vs.entity();
         if (v.isSleeping() || v.isDead()) return;
-        Location bed = findNearbyBed(v, 16);
+        BedSpot bed = findNearbyBed(v, 16);
         if (bed == null) return;  // 没床睡不了，别梦游
-        if (v.getLocation().distanceSquared(bed) <= 2.5 * 2.5) {
-            if (v.sleep(bed)) {
+        Location here = v.getLocation();
+        double dx = here.getX() - bed.center().getX();
+        double dz = here.getZ() - bed.center().getZ();
+        boolean atBed = dx * dx + dz * dz <= 1.9 * 1.9
+                && Math.abs(here.getY() - bed.center().getY()) <= 1.0;
+        if (atBed) {
+            if (v.sleep(bed.sleepAt())) {
                 plugin.getLogger().info("§b[MC-AI] 睡觉: " + Smalltalk.nameOf(vs)
                         + " 上床了（疲惫 " + (int) vs.needs().get(NeedsState.ENERGY) + "）");
             }
             return;
         }
-        // 还没走到：挪过去（walkTowards 每 20 tick 走一步，对话中自动取消；下几轮 tick 走到就睡）
-        walkTowards(vs, bed.clone().add(0.5, 0, 0.5));
+        // 还没走到：朝整张床的中心挪（walkTowards 每 20 tick 走一步，对话中自动取消；走到就睡）
+        walkTowards(vs, bed.center());
     }
 
-    /** 16 格内找最近的床（y 上下 2 格），没有返回 null */
-    private Location findNearbyBed(Villager v, int radius) {
+    /** 一张床的两个关键点：sleepAt = 床头格中心（躺下的锚点），center = 整张床的中心（走近的目标） */
+    private record BedSpot(Location sleepAt, Location center) {
+    }
+
+    /** 16 格内找最近的一张床（y 上下 2 格）：按床数据认出床头，整床只算一次。没有返回 null */
+    private BedSpot findNearbyBed(Villager v, int radius) {
         org.bukkit.World w = v.getWorld();
         Location c = v.getLocation();
         int cx = c.getBlockX(), cy = c.getBlockY(), cz = c.getBlockZ();
-        Location best = null;
+        BedSpot best = null;
         double bestD2 = Double.MAX_VALUE;
         for (int x = cx - radius; x <= cx + radius; x++) {
             for (int y = cy - 2; y <= cy + 2; y++) {
                 for (int z = cz - radius; z <= cz + radius; z++) {
                     org.bukkit.block.Block b = w.getBlockAt(x, y, z);
                     if (!b.getType().name().endsWith("_BED")) continue;
-                    double d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz);
+                    if (!(b.getBlockData() instanceof org.bukkit.block.data.type.Bed bedData)) continue;
+                    // 床占两格：不管扫到哪格，都换算回床头那格 —— 落点必须在床头，人才躺得正
+                    org.bukkit.block.Block head = bedData.getPart() == org.bukkit.block.data.type.Bed.Part.HEAD
+                            ? b : b.getRelative(bedData.getFacing());
+                    if (!(head.getBlockData() instanceof org.bukkit.block.data.type.Bed headData)
+                            || headData.getPart() != org.bukkit.block.data.type.Bed.Part.HEAD) continue;
+                    org.bukkit.block.Block foot = head.getRelative(bedData.getFacing().getOppositeFace());
+                    Location center = head.getLocation().add(0.5, 0, 0.5)
+                            .add(foot.getLocation().add(0.5, 0, 0.5)).multiply(0.5);
+                    double dx = center.getX() - c.getX(), dz = center.getZ() - c.getZ();
+                    double d2 = dx * dx + dz * dz + (center.getY() - cy) * (center.getY() - cy);
                     if (d2 < bestD2) {
                         bestD2 = d2;
-                        best = b.getLocation();
+                        best = new BedSpot(head.getLocation().add(0.5, 0, 0.5), center);
                     }
                 }
             }
@@ -496,6 +519,13 @@ public final class NeedsLayer extends TickLayer {
         }
         if (!result.success()) return;
 
+        // 建任务的动作（move_to 等）只是"被接受"，还没真干完：需求先挂账，
+        // 等任务完成由执行方结算（NpcMoveToTool 调 consumePendingNeedSatisfy），
+        // 失败就丢弃——旧版一接受就降 35 点，不可达目标白折腾一趟也照样"满足"。
+        if (result.data() != null && result.data().has("task_id")) {
+            vs.setPendingNeedSatisfy(dominant);
+            return;
+        }
         vs.needs().satisfy(dominant, NeedsState.SATISFY_ON_ACTION);
         plugin.getMemoryStore().markDirty(vs.getUniqueId());
     }
@@ -554,6 +584,10 @@ public final class NeedsLayer extends TickLayer {
     /**
      * 按主导需求挑一个可走到的目标点：社交需求走向最近的玩家，其余需求在 6-12 格内随机转转。
      * Y 固定为 NPC 当前高度，确保满足 move_to 的 3 格高度差限制。
+     * <p>
+     * 随机点必须先验可达（实测教训）：旧版纯几何乱扔点，扔到自家小屋墙外，
+     * 她贴墙蹭了近半分钟才被判失败。现改为：最多试 3 个点，每个点先问原版导航
+     * "有没有路"，再避开 15 分钟内刚失败过的区域；都不过 → 这轮不出门（只剩 idle/观察候选）。
      */
     private Location candidateTarget(VillagerState vs, String dominant) {
         Villager villager = vs.entity();
@@ -562,15 +596,31 @@ public final class NeedsLayer extends TickLayer {
             Player nearest = nearestPlayer(villager, 16.0);
             if (nearest != null) {
                 Location loc = nearest.getLocation();
-                return new Location(here.getWorld(), loc.getX(), here.getY(), loc.getZ());
+                Location target = new Location(here.getWorld(), loc.getX(), here.getY(), loc.getZ());
+                return reachable(villager, target) ? target : null;
             }
         }
-        double angle = ThreadLocalRandom.current().nextDouble(Math.PI * 2);
-        double distance = 6.0 + ThreadLocalRandom.current().nextDouble() * 6.0;
-        return new Location(here.getWorld(),
-                here.getX() + Math.cos(angle) * distance,
-                here.getY(),
-                here.getZ() + Math.sin(angle) * distance);
+        for (int attempt = 0; attempt < 3; attempt++) {
+            double angle = ThreadLocalRandom.current().nextDouble(Math.PI * 2);
+            double distance = 6.0 + ThreadLocalRandom.current().nextDouble() * 6.0;
+            Location target = new Location(here.getWorld(),
+                    here.getX() + Math.cos(angle) * distance,
+                    here.getY(),
+                    here.getZ() + Math.sin(angle) * distance);
+            if (vs.recentlyFailedNear(target, 6.0, 15 * 60_000L)) continue;
+            if (!reachable(villager, target)) continue;
+            return target;
+        }
+        return null;
+    }
+
+    /** 原版导航能不能算出一条到目标的路（只试算不出发）。室内的点隔着墙会直接没路，正好滤掉。 */
+    private static boolean reachable(Villager villager, Location target) {
+        try {
+            return villager.getPathfinder().findPath(target) != null;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** 当前任务摘要；没有任务时返回 JsonNull，让模型明确知道"手上没活" */

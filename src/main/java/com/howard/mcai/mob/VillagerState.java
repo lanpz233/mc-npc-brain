@@ -1306,6 +1306,45 @@ public final class VillagerState {
         if (playerUuid != null) itemRequests.remove(playerUuid);
     }
 
+    // ===== 自主移动的两本账（仅内存，不落盘：都是短期经验） =====
+
+    /** 上次自主移动失败的目标点 —— 短期内选点要避开这片，免得对着同一面墙反复撞 */
+    private volatile double failedMoveX, failedMoveZ;
+    private volatile long failedMoveAtMs;
+
+    public synchronized void recordFailedMoveTarget(org.bukkit.Location loc) {
+        if (loc == null) return;
+        failedMoveX = loc.getX();
+        failedMoveZ = loc.getZ();
+        failedMoveAtMs = System.currentTimeMillis();
+    }
+
+    /** 该点是否落在"刚失败过"的区域内（窗口内 + 半径内） */
+    public synchronized boolean recentlyFailedNear(org.bukkit.Location loc, double radius, long windowMs) {
+        if (loc == null || failedMoveAtMs == 0) return false;
+        if (System.currentTimeMillis() - failedMoveAtMs > windowMs) return false;
+        double dx = loc.getX() - failedMoveX, dz = loc.getZ() - failedMoveZ;
+        return dx * dx + dz * dz <= radius * radius;
+    }
+
+    /**
+     * 待结算的自主需求：需求驱动选了"建任务"的动作（如 move_to）时，先把需求名挂这里，
+     * 等任务真的完成才降需求（由任务执行方调用 consume 取走结算）；任务失败则取走丢弃——
+     * 活没干完不记功。旧逻辑是任务一被接受就降 35 点，不可达目标也会反复被满足感喂饱。
+     */
+    private volatile String pendingNeedSatisfy;
+
+    public void setPendingNeedSatisfy(String need) {
+        pendingNeedSatisfy = need;
+    }
+
+    /** 取走并清空待结算需求（没有返回 null） */
+    public synchronized String consumePendingNeedSatisfy() {
+        String n = pendingNeedSatisfy;
+        pendingNeedSatisfy = null;
+        return n;
+    }
+
     // ===== GUI 右键交换（玩家手持物品 ↔ NPC 点击格物品）=====
 
     /**
