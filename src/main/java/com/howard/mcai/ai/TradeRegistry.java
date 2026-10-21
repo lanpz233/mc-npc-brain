@@ -113,16 +113,20 @@ public final class TradeRegistry {
      */
     public static Material zhToMaterial(String zhName) {
         if (zhName == null || zhName.isBlank()) return null;
-        return ZH_TO_MATERIAL.get(zhName.trim());
+        Material m = ZH_TO_MATERIAL.get(zhName.trim());
+        // 手写词典没有 → 查官方全表（红砖块、石头台阶这类正式名也能听懂）
+        return m != null ? m : ItemZhTable.materialOf(zhName);
     }
 
     /**
-     * Material → 中文物品名（反向查找）。
-     * PromptBuilder 拼商店清单时用 —— 把 TradeRegistry 里的 Material 翻成中文给 LLM 看。
-     * 找不到就返回英文 Material 名（至少不让 LLM 懵）。
+     * Material → 中文物品名。
+     * 商店界面与 PromptBuilder 拼清单时用。优先官方全表（ItemZhTable，1480 条全覆盖），
+     * 手写小词典只作兜底 —— 旧版只查小词典，漏网物品直接漏英文（stone slab 事件）。
      */
     public static String materialToZh(Material m) {
         if (m == null) return "?";
+        String zh = ItemZhTable.zhOf(m);
+        if (zh != null) return zh;
         // 反向遍历 ZH_TO_MATERIAL 找 key
         for (var e : ZH_TO_MATERIAL.entrySet()) {
             if (e.getValue() == m) return e.getKey();
@@ -130,9 +134,11 @@ public final class TradeRegistry {
         return m.name().toLowerCase().replace('_', ' ');
     }
 
-    /** 返回所有已知中文物品名（PlayerChatListener 砍价关键词匹配用） */
+    /** 返回所有已知中文物品名（手写词典 + 官方全表；PlayerChatListener 砍价关键词匹配用） */
     public static java.util.Set<String> zhItemKeys() {
-        return ZH_TO_MATERIAL.keySet();
+        java.util.Set<String> all = new java.util.HashSet<>(ZH_TO_MATERIAL.keySet());
+        all.addAll(ItemZhTable.zhKeys());
+        return java.util.Collections.unmodifiableSet(all);
     }
 
     /**
