@@ -56,7 +56,20 @@ public final class ShopGui implements InventoryHolder {
         this.viewer = viewer;
         this.state = state;
         this.session = session;
-        this.inventory = Bukkit.createInventory(this, SIZE, "§6" + npcName() + "的小店");
+        this.inventory = Bukkit.createInventory(this, SIZE, title());
+    }
+
+    /**
+     * 窗口标题：开了资源包皮肤（config shop.resource-pack-skin）→ 用负空间字 + 背景字形
+     * （资源包 MCAI-Shop 的 minecraft:mcai_shop 字体），整窗是一张木柜台图、没有文字标题
+     * （店名在界面里的村民名牌上）；没开 → 普通文字标题，没装包的客户端不会看到方框字。
+     */
+    private net.kyori.adventure.text.Component title() {
+        if (plugin.getPluginConfig().shopSkinEnabled()) {
+            return net.kyori.adventure.text.Component.text("\uF808\uE100")
+                    .font(net.kyori.adventure.key.Key.key("minecraft", "mcai_shop"));
+        }
+        return net.kyori.adventure.text.Component.text("§6" + npcName() + "的小店");
     }
 
     /** 打开商店（主线程）。会话按（村民，玩家）取/建：关窗重开还是同一份进度 */

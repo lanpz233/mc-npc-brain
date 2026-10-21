@@ -1,0 +1,19 @@
+{
+  "providers": [
+    {
+      "type": "space",
+      "advances": {
+        "\uf808": -8
+      }
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue100"
+      ]
+    }
+  ]
+}
