@@ -91,23 +91,25 @@ public final class BehaviorRegistry {
         tools.add(func("wave", "挥手打招呼。做一个招手的动画动作。",
                 Map.of(), List.of()));
 
-        // offer_trade —— 动态交易：LLM 可以指定上架什么、卖多少钱、砍价降价
-        // 参数全可选：只开 GUI 就不传；要改/加/删配方才传
+        // offer_trade —— 开自家商店界面 + 上架/下架管理。
+        // 砍价不在这里：玩家在界面里自己选砍幅、插件守底线，模型无权改价（discount 已退役）。
+        // 参数全可选：只开 GUI 就不传；要加/删商品才传
         tools.add(func("offer_trade",
                 """
-                对玩家打开交易界面。**只在玩家明确要看货/谈价格时使用！**
+                对玩家打开你的商店界面。**只在玩家明确要看货/谈价格时使用！**
                 日常聊天、打招呼、闲聊时调用它非常失礼 —— 那种情况一律用 say。
                 这个函数可以动态改你的商店：
-                - action="open"：只打开商店（用当前配置，不传参数时默认）
+                - action="open"：打开商店界面（不传参数时默认）
                 - action="offer"：上架一件商品（item 中文名，price 绿宝价格，count 给几个）
                 - action="offer" + price=0：**免费送**（东西会直接放进对方背包，不进商店；但必须从你库存里出——没有库存就送不了，不许凭空变出来）
-                - action="discount"：砍价降价（item 降为新 price）
                 - action="remove"：下架商品（item）
+                **你不能改价、不能答应折扣**：砍价由玩家在商店界面里点按钮完成，系统守底线。
+                玩家在聊天里跟你砍价时，告诉他打开商店用里面的砍价按钮，不要许诺任何价格。
                 """,
                 Map.of(
-                        "action", Map.of("type", "string", "description", "操作类型：open(默认,只开商店), offer(上架), discount(降价), remove(下架)"),
+                        "action", Map.of("type", "string", "description", "操作类型：open(默认,打开商店), offer(上架), remove(下架)"),
                         "item", Map.of("type", "string", "description", "商品中文名，例如 铁剑/钻石镐/面包/绿宝石"),
-                        "price", Map.of("type", "number", "description", "绿宝石价格（整数）。offer 时 0=免费赠送；discount 时为新价格"),
+                        "price", Map.of("type", "number", "description", "绿宝石价格（整数）。仅 offer 用：0=免费赠送"),
                         "count", Map.of("type", "number", "description", "一次给几个（offer 时可选，默认 1）"),
                         "enchant", Map.of("type", "string", "description",
                                 "附魔类型（可选，中文）：锋利/效率/保护/力量/耐久/火焰附加/击退/海之眷顾 等。卖附魔物品时填；不填时也可把 item 名写成'附魔钻石剑'，系统会自动加合适附魔")

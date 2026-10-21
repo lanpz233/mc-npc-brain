@@ -37,6 +37,9 @@ public final class ShopSession {
     /** 玩家当前选中的商品 offerId（点开详情/砍价面板时用）；null = 在商品列表页 */
     private String selectedOfferId;
 
+    /** 砍价被还价后的待确认价：offerId → 村民的还价（底线价）。玩家点「接受」才落定 recordBargain */
+    private final Map<String, Integer> pendingCounters = new HashMap<>();
+
     public ShopSession(UUID npcUuid, UUID playerUuid, long nowMs) {
         this.npcUuid = npcUuid;
         this.playerUuid = playerUuid;
@@ -91,6 +94,21 @@ public final class ShopSession {
         bargainedOffers.add(offerId);
         agreedPrices.put(offerId, Math.max(1, agreedPrice));
         return true;
+    }
+
+    /** 记下一次还价（玩家砍超了，村民只肯让到底线价）；等玩家在界面确认 */
+    public synchronized void setPendingCounter(String offerId, int counterPrice) {
+        pendingCounters.put(offerId, Math.max(1, counterPrice));
+    }
+
+    /** 取某商品的待确认还价；没有返回 null */
+    public synchronized Integer pendingCounter(String offerId) {
+        return pendingCounters.get(offerId);
+    }
+
+    /** 玩家接受/放弃还价后清除 */
+    public synchronized void clearPendingCounter(String offerId) {
+        pendingCounters.remove(offerId);
     }
 
     public synchronized String npcLine() {
