@@ -214,8 +214,13 @@ public final class VillagerState {
      */
     public java.util.List<org.bukkit.inventory.MerchantRecipe> buildCurrentRecipes() {
         java.util.List<org.bukkit.inventory.MerchantRecipe> recipes = new java.util.ArrayList<>();
-        for (org.bukkit.inventory.MerchantRecipe base : com.howard.mcai.ai.TradeRegistry.get(profession)) {
-            recipes.add(com.howard.mcai.ai.TradeRegistry.copyRecipe(base));
+        // 基础摊位：按村民抽货（ShopStocking 用村民 UUID 做固定种子）——同职业每个村民
+        // 卖的东西、数量、价格都不同，不再千人一面；价格由 PriceBook 按合成表推导。
+        for (com.howard.mcai.ai.ShopStocking.StockedItem s
+                : com.howard.mcai.ai.ShopStocking.stockFor(profession, getUniqueId())) {
+            recipes.add(s.buyBack()
+                    ? com.howard.mcai.ai.TradeRegistry.createBuy(s.item(), s.count(), s.priceEmeralds())
+                    : com.howard.mcai.ai.TradeRegistry.createOffer(s.item(), s.priceEmeralds(), s.count()));
         }
         // 附加 LLM 上架的额外商品（基础清单里没有的）—— 附魔商品用 createEnchantedOffer 重造
         for (var e : offeredItems.entrySet()) {

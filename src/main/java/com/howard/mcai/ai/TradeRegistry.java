@@ -38,13 +38,6 @@ public final class TradeRegistry {
 
     // ===== 便捷方法 =====
 
-    /** NPC 卖：绿宝石换物品（单槽绿宝石）。价格经 setEmeraldPrice，>64 自动拆槽 */
-    private static MerchantRecipe emeraldBuy(int emeralds, Material item, int count) {
-        MerchantRecipe recipe = new MerchantRecipe(new ItemStack(item, count), 999);
-        setEmeraldPrice(recipe, emeralds);
-        return recipe;
-    }
-
     /**
      * 设置配方的绿宝价格。
      * <p>
@@ -76,22 +69,6 @@ public final class TradeRegistry {
             copy.addIngredient(ing.clone());
         }
         return copy;
-    }
-
-    /** NPC 收：物品换绿宝石（反向交易，玩家卖原料给 NPC） */
-    private static MerchantRecipe emeraldSell(Material item, int count, int emeralds) {
-        MerchantRecipe recipe = new MerchantRecipe(new ItemStack(Material.EMERALD, emeralds), 999);
-        recipe.addIngredient(new ItemStack(item, count));
-        return recipe;
-    }
-
-    /** 双槽：绿宝石 + 原料换成品（NPC 加工） */
-    private static MerchantRecipe craft(int emeralds, Material ingredient, int ingCount,
-                                        Material result, int resCount) {
-        MerchantRecipe recipe = new MerchantRecipe(new ItemStack(result, resCount), 999);
-        recipe.addIngredient(new ItemStack(Material.EMERALD, emeralds));
-        recipe.addIngredient(new ItemStack(ingredient, ingCount));
-        return recipe;
     }
 
     // ===== 职业→配方 =====
@@ -248,11 +225,8 @@ public final class TradeRegistry {
      * CentralPlanner 里 action="offer" 时用——LLM 不能让农夫卖铁剑！
      */
     public static boolean professionCanSell(VillagerProfession profession, Material m) {
-        if (m == null) return false;
-        for (MerchantRecipe r : get(profession)) {
-            if (r.getResult() != null && r.getResult().getType() == m) return true;
-        }
-        return false;
+        // 售卖范围 = 职业货池（该职业能卖的所有东西；某个村民今天摊上有没有是抽货的事）
+        return ProfessionPools.canSell(profession, m);
     }
 
     /**
@@ -260,17 +234,7 @@ public final class TradeRegistry {
      * 给 NPC 加 offer(玩家可以卖给我) 时用。
      */
     public static boolean professionCanBuy(VillagerProfession profession, Material m) {
-        if (m == null) return false;
-        for (MerchantRecipe r : get(profession)) {
-            // buy 的 recipe 是 result=绿宝，ingredient=原料
-            // 检查 ingredient 里是否有这个 Material，且 result 是绿宝
-            if (r.getResult() != null && r.getResult().getType() == Material.EMERALD) {
-                for (ItemStack ing : r.getIngredients()) {
-                    if (ing != null && ing.getType() == m) return true;
-                }
-            }
-        }
-        return false;
+        return ProfessionPools.canBuy(profession, m);
     }
 
     /** 判断一条 recipe 的 result 是否是某个 Material（砍价时定位要改哪条） */
@@ -278,140 +242,18 @@ public final class TradeRegistry {
         return r != null && r.getResult() != null && r.getResult().getType() == m;
     }
 
+    /**
+     * 全池版基础配方（给原版交易注入等老消费者用）：职业货池全量，价格走 PriceBook 按合成表推导。
+     * 商店界面不用这份全量表——它走 VillagerState.buildCurrentRecipes 的按村民抽货
+     * （ShopStocking），同职业每个村民的摊子不同。
+     */
     private static List<MerchantRecipe> buildRecipes(VillagerProfession p) {
         List<MerchantRecipe> r = new ArrayList<>();
-        switch (p) {
-
-            case TOOLSMITH -> {
-                r.add(emeraldBuy(1, Material.IRON_INGOT, 1));
-                r.add(emeraldBuy(20, Material.IRON_BLOCK, 1));
-                r.add(emeraldBuy(3, Material.IRON_PICKAXE, 1));
-                r.add(emeraldBuy(5, Material.IRON_SWORD, 1));
-                r.add(emeraldBuy(30, Material.DIAMOND_PICKAXE, 1));
-                r.add(emeraldBuy(45, Material.DIAMOND_SWORD, 1));
-                r.add(emeraldBuy(30, Material.ANVIL, 1));
-                r.add(emeraldBuy(8, Material.FURNACE, 1));
-                r.add(emeraldBuy(4, Material.BLAST_FURNACE, 1));
-                r.add(emeraldSell(Material.COBBLESTONE, 10, 1));
-            }
-
-            case WEAPONSMITH -> {
-                r.add(emeraldBuy(5, Material.IRON_SWORD, 1));
-                r.add(emeraldBuy(6, Material.IRON_AXE, 1));
-                r.add(emeraldBuy(45, Material.DIAMOND_SWORD, 1));
-                r.add(emeraldBuy(50, Material.DIAMOND_AXE, 1));
-                r.add(emeraldBuy(20, Material.BOW, 1));
-                r.add(emeraldBuy(3, Material.ARROW, 16));
-                r.add(craft(1, Material.FLINT, 1, Material.ARROW, 4));
-                r.add(emeraldSell(Material.IRON_INGOT, 1, 2));
-            }
-
-            case ARMORER -> {
-                r.add(emeraldBuy(5, Material.IRON_HELMET, 1));
-                r.add(emeraldBuy(8, Material.IRON_CHESTPLATE, 1));
-                r.add(emeraldBuy(6, Material.IRON_LEGGINGS, 1));
-                r.add(emeraldBuy(4, Material.IRON_BOOTS, 1));
-                r.add(emeraldBuy(35, Material.DIAMOND_HELMET, 1));
-                r.add(emeraldBuy(50, Material.DIAMOND_CHESTPLATE, 1));
-                r.add(emeraldBuy(40, Material.DIAMOND_LEGGINGS, 1));
-                r.add(emeraldBuy(30, Material.DIAMOND_BOOTS, 1));
-                r.add(emeraldBuy(15, Material.SHIELD, 1));
-            }
-
-            case CLERIC -> {
-                r.add(emeraldBuy(45, Material.GOLDEN_APPLE, 1));
-                r.add(emeraldBuy(128, Material.ENCHANTING_TABLE, 1));
-                r.add(emeraldBuy(25, Material.EXPERIENCE_BOTTLE, 8));
-                r.add(emeraldBuy(15, Material.LAPIS_LAZULI, 8));
-                r.add(emeraldBuy(10, Material.ENDER_PEARL, 4));
-                // 128 绿宝 = 64+64 两槽，是交易 GUI 物理上限（单格最多64，共2槽）
-                r.add(emeraldBuy(128, Material.TOTEM_OF_UNDYING, 1));
-                r.add(emeraldSell(Material.BONE, 4, 1));
-                r.add(emeraldSell(Material.SLIME_BALL, 2, 2));
-            }
-
-            case FARMER -> {
-                r.add(emeraldBuy(1, Material.BREAD, 3));
-                r.add(emeraldBuy(1, Material.WHEAT, 20));
-                r.add(emeraldBuy(2, Material.APPLE, 4));
-                r.add(emeraldBuy(3, Material.BAKED_POTATO, 4));
-                r.add(emeraldBuy(8, Material.GOLDEN_CARROT, 1));
-                r.add(emeraldBuy(5, Material.CARROT, 16));
-                r.add(emeraldSell(Material.WHEAT, 20, 1));
-                r.add(emeraldSell(Material.APPLE, 8, 1));
-            }
-
-            case LIBRARIAN -> {
-                r.add(emeraldBuy(2, Material.BOOK, 1));
-                r.add(emeraldBuy(8, Material.CRAFTING_TABLE, 1));
-                r.add(emeraldBuy(128, Material.ENCHANTING_TABLE, 1));
-                r.add(emeraldBuy(3, Material.BOOKSHELF, 3));
-                r.add(emeraldBuy(1, Material.PAPER, 4));
-                r.add(emeraldSell(Material.PAPER, 1, 2));
-            }
-
-            case CARTOGRAPHER -> {
-                r.add(emeraldBuy(7, Material.COMPASS, 1));
-                r.add(emeraldBuy(10, Material.FILLED_MAP, 1));
-                r.add(emeraldBuy(4, Material.PAPER, 4));
-                r.add(emeraldSell(Material.PAPER, 2, 1));
-            }
-
-            case FLETCHER -> {
-                r.add(emeraldBuy(20, Material.BOW, 1));
-                r.add(emeraldBuy(1, Material.ARROW, 8));
-                r.add(emeraldBuy(3, Material.ARROW, 32));
-                r.add(emeraldBuy(4, Material.FISHING_ROD, 1));
-                r.add(craft(1, Material.FLINT, 1, Material.ARROW, 4));
-                r.add(emeraldSell(Material.FEATHER, 4, 1));
-                r.add(emeraldSell(Material.STRING, 2, 1));
-            }
-
-            case FISHERMAN -> {
-                r.add(emeraldBuy(1, Material.COD, 4));
-                r.add(emeraldBuy(2, Material.SALMON, 2));
-                r.add(emeraldBuy(4, Material.COOKED_COD, 4));
-                r.add(emeraldBuy(5, Material.COOKED_SALMON, 3));
-                r.add(emeraldBuy(4, Material.FISHING_ROD, 1));
-                r.add(emeraldBuy(1, Material.STRING, 2));
-            }
-
-            case BUTCHER -> {
-                r.add(emeraldBuy(2, Material.COOKED_BEEF, 4));
-                r.add(emeraldBuy(2, Material.COOKED_PORKCHOP, 4));
-                r.add(emeraldBuy(2, Material.COOKED_CHICKEN, 4));
-                r.add(emeraldBuy(2, Material.COOKED_MUTTON, 4));
-                r.add(emeraldBuy(1, Material.LEATHER, 2));
-                r.add(emeraldSell(Material.ROTTEN_FLESH, 8, 1));
-            }
-
-            case LEATHERWORKER -> {
-                r.add(emeraldBuy(4, Material.LEATHER_HELMET, 1));
-                r.add(emeraldBuy(7, Material.LEATHER_CHESTPLATE, 1));
-                r.add(emeraldBuy(5, Material.LEATHER_LEGGINGS, 1));
-                r.add(emeraldBuy(3, Material.LEATHER_BOOTS, 1));
-                r.add(emeraldBuy(3, Material.SADDLE, 1));
-                r.add(emeraldSell(Material.LEATHER, 2, 1));
-            }
-
-            case MASON -> {
-                r.add(emeraldBuy(1, Material.COBBLESTONE, 32));
-                r.add(emeraldBuy(2, Material.STONE, 16));
-                r.add(emeraldBuy(3, Material.BRICKS, 16));
-                r.add(emeraldBuy(6, Material.STONE_BRICKS, 16));
-                r.add(emeraldBuy(1, Material.STONE_SLAB, 16));
-                r.add(emeraldSell(Material.COBBLESTONE, 16, 1));
-                r.add(emeraldSell(Material.CLAY_BALL, 2, 1));
-            }
-
-            case SHEPHERD -> {
-                r.add(emeraldBuy(2, Material.WHITE_WOOL, 8));
-                r.add(emeraldBuy(3, Material.WHITE_BED, 1));
-                r.add(emeraldBuy(2, Material.SHEARS, 1));
-                r.add(emeraldSell(Material.WHITE_WOOL, 3, 1));
-            }
-
-            default -> {}  // NITWIT / NONE —— 傻子啥也不会
+        for (ProfessionPools.PoolItem e : ProfessionPools.sellPool(p)) {
+            r.add(createOffer(e.item(), PriceBook.sellPrice(e.item(), e.count()), e.count()));
+        }
+        for (ProfessionPools.PoolItem e : ProfessionPools.buyPool(p)) {
+            r.add(createBuy(e.item(), e.count(), PriceBook.buybackPrice(e.item(), e.count())));
         }
         return r;
     }
