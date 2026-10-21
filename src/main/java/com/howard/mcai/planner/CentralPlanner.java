@@ -113,8 +113,15 @@ public final class CentralPlanner extends BukkitRunnable {
     public void startFaceTask() {
         if (faceTask != null) return;
         faceTask = new BukkitRunnable() {
+            private int runs;
+
             @Override
             public void run() {
+                // 对话提示常驻（Fong 2026-10-21 要求）：动作栏本身几秒就淡出，光在发言时
+                // 亮一下不够——每 40 tick（2 秒）给进行中的对话补发一次，玩家不打字时
+                // 也一直看得见在跟谁聊。对话结束（interactingPlayer 清空）自动停发，
+                // 最后一帧让它自然淡出即可。
+                boolean refreshHint = (++runs % 20 == 0);
                 for (VillagerState vs : villagers.values()) {
                     UUID pid = vs.interactingPlayer();
                     if (pid == null) continue;
@@ -123,6 +130,7 @@ public final class CentralPlanner extends BukkitRunnable {
                     Player p = plugin.getServer().getPlayer(pid);
                     if (p == null || !p.isOnline() || p.isDead()) continue;
                     faceTowards(v, p.getLocation());
+                    if (refreshHint) showConversationHint(p, vs);
                 }
             }
         }.runTaskTimer(plugin, 2L, 2L);
