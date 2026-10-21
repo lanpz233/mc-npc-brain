@@ -29,6 +29,10 @@ public final class ShopIcons {
     public static final int PRICE = 1029;
     public static final int LOCK = 1030;
     public static final int BALANCE = 1031;
+    /** 红心（背包状态卡：情绪与好感） */
+    public static final int HEART = 1036;
+    /** 双人剪影（背包状态卡：社会关系） */
+    public static final int BOND = 1037;
     public static final int PREV = 1032;
     public static final int NEXT = 1033;
     public static final int MODE_BUY = 1034;

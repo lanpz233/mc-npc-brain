@@ -174,6 +174,30 @@ def gem_img():
 reg("lock", 1030, lock_img())
 reg("balance", 1031, gem_img())
 
+def heart_img():
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse([X(8), X(8), X(24), X(24)], fill=(239, 68, 68, 255))
+    d.ellipse([X(24), X(8), X(40), X(24)], fill=(239, 68, 68, 255))
+    d.polygon([(X(9), X(18)), (X(39), X(18)), (X(24), X(40))], fill=(239, 68, 68, 255))
+    d.ellipse([X(12), X(11), X(18), X(17)], fill=(252, 165, 165, 255))
+    return img
+
+
+def bond_img():
+    """两个人头剪影（一大一小，蓝 + 黄）：社会关系"""
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse([X(10), X(9), X(24), X(23)], fill=(125, 211, 252, 255))
+    d.pieslice([X(4), X(22), X(30), X(42)], start=180, end=360, fill=(125, 211, 252, 255))
+    d.ellipse([X(26), X(13), X(38), X(25)], fill=(253, 224, 71, 255))
+    d.pieslice([X(20), X(24), X(42), X(42)], start=180, end=360, fill=(253, 224, 71, 255))
+    return img
+
+
+reg("heart", 1036, heart_img())
+reg("bond", 1037, bond_img())
+
 # 写纹理（缩到 64x64）+ 模型 + paper overrides
 overrides = []
 for name, (cmd, img) in sorted(ICONS.items(), key=lambda kv: kv[1][0]):
