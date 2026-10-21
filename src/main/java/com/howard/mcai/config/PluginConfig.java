@@ -26,20 +26,6 @@ public record PluginConfig(
          */
         String llmKeepAlive,
 
-        // 行为模型配置（双模型架构：MiniCPM 只负责选动作，不负责说话）
-        // 全部留空时自动回退到上面的对话模型配置，单模型部署不会因为缺配置而失败
-        String llmBehaviorUrl,
-        String llmBehaviorApiKey,
-        String llmBehaviorModel,
-        int llmBehaviorMaxTokens,
-        /** 需求驱动的自主行动是否交给行为模型决策；false = 沿用原对话模型自主行动 */
-        boolean llmBehaviorAutonomyEnabled,
-        /**
-         * 候选模式：服务端预生成已校验的合法动作，模型只回序号。
-         * true = 适合 1B 小模型；false = 让模型自由生成工具名与参数（适合 2B 以上）。
-         */
-        boolean llmBehaviorCandidateMode,
-
         // Tick 配置
         int tickIntervalTicks,
         int socialIntervalTicks,
@@ -136,13 +122,6 @@ public record PluginConfig(
                 cfg.getInt("llm.max-tokens", 1024),
                 cfg.getString("llm.reasoning-effort", null),
                 cfg.getString("llm.keep-alive", "60m"),
-                // Behavior（留空 = 回退到对话模型，见 behaviorSettings()）
-                blankToNull(cfg.getString("llm.behavior.url", "")),
-                cfg.getString("llm.behavior.api-key", null),
-                blankToNull(cfg.getString("llm.behavior.model", "")),
-                cfg.getInt("llm.behavior.max-tokens", 256),
-                cfg.getBoolean("llm.behavior.autonomy-enabled", false),
-                cfg.getBoolean("llm.behavior.candidate-mode", true),
                 // Tick
                 cfg.getInt("tick.interval-ticks", 60),
                 cfg.getInt("tick.social-interval-ticks", 1200),
@@ -188,7 +167,7 @@ public record PluginConfig(
 
     // ===== LLM endpoint 工具 =====
 
-    /** 配置里的空串一律当作"未配置"，方便逐级回退 */
+    /** 配置里的空串一律当作"未配置" */
     private static String blankToNull(String s) {
         return s == null || s.isBlank() ? null : s.trim();
     }
@@ -197,23 +176,7 @@ public record PluginConfig(
     public LlmSettings dialogSettings() {
         return new LlmSettings("dialog", llmUrl, llmApiKey, llmModel,
                 connectTimeoutMs, readTimeoutMs, maxTokens,
-                reasoningEffort, llmKeepAlive, false);
-    }
-
-    /**
-     * 行为模型（MiniCPM）—— 只负责根据游戏状态选下一步动作。
-     * <p>
-     * 三个字段留空时逐个回退到对话模型：单模型部署不配 llm.behavior.* 也能工作。
-     * 行为模型不发送 reasoning_effort（该模型没有思考开关），并在本机 Ollama 上强制
-     * think:false —— 实测开启 thinking 时 1B 模型会把输出预算耗在思考上，正文为空。
-     */
-    public LlmSettings behaviorSettings() {
-        String url = llmBehaviorUrl != null ? llmBehaviorUrl : llmUrl;
-        String apiKey = llmBehaviorApiKey != null ? llmBehaviorApiKey : llmApiKey;
-        String model = llmBehaviorModel != null ? llmBehaviorModel : llmModel;
-        return new LlmSettings("behavior", url, apiKey, model,
-                connectTimeoutMs, readTimeoutMs, Math.max(64, llmBehaviorMaxTokens),
-                null, llmKeepAlive, true);
+                reasoningEffort, llmKeepAlive);
     }
 
     /**

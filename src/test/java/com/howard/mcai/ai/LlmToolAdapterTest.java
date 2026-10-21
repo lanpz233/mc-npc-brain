@@ -45,8 +45,8 @@ class LlmToolAdapterTest {
         LlmToolAdapter adapter = new LlmToolAdapter(new ToolRegistry());
 
         assertNull(adapter.toRequest(new ToolCall("npc.fly", new JsonObject()),
-                CallerType.BEHAVIOR_MODEL, "minicpm", UUID.randomUUID(), null));
-        assertNull(adapter.toRequest(null, CallerType.BEHAVIOR_MODEL, "minicpm",
+                CallerType.AUTONOMY, "autonomy", UUID.randomUUID(), null));
+        assertNull(adapter.toRequest(null, CallerType.AUTONOMY, "autonomy",
                 UUID.randomUUID(), null));
     }
 

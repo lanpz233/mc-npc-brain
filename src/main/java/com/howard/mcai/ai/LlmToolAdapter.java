@@ -11,7 +11,7 @@ import java.util.UUID;
 /**
  * 模型输出 → 统一工具请求的适配层。
  * <p>
- * 两种模型（Qwen 原生 tool_calls、MiniCPM 严格 JSON）最终都归一到 {@link ToolRequest}，
+ * 模型（Qwen 原生 tool_calls）与插件自主决策最终都归一到 {@link ToolRequest}，
  * 之后的参数校验、权限、幂等、任务生命周期完全一致 —— 模型不直接接触 Bukkit。
  * <p>
  * 这里只做"名字归一 + 请求包装"，不做权限判断：那是 {@code ToolPolicyService} 的职责，
@@ -29,7 +29,7 @@ public final class LlmToolAdapter {
      * 把一次模型工具调用转成统一请求。
      *
      * @param call       模型给出的调用（name 可能是 wire 名 npc_move_to，也可能是规范名 npc.move_to）
-     * @param callerType 调用来源（DIALOG_MODEL / BEHAVIOR_MODEL）
+     * @param callerType 调用来源（DIALOG_MODEL / AUTONOMY 等）
      * @param callerId   调用方标识（对话:玩家名；行为:模型名），用于幂等键与日志
      * @return 请求；工具未注册时返回 null（由调用方决定降级策略）
      */

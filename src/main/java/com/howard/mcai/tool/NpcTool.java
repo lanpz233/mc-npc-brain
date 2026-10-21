@@ -64,7 +64,7 @@ public interface NpcTool {
     default Set<CallerType> allowedCallers() {
         return EnumSet.of(
                 CallerType.DIALOG_MODEL,
-                CallerType.BEHAVIOR_MODEL,
+                CallerType.AUTONOMY,
                 CallerType.INTERNAL,
                 CallerType.PLUGIN,
                 CallerType.CONSOLE
