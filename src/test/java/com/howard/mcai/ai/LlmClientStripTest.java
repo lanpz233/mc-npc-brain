@@ -173,4 +173,22 @@ class LlmClientStripTest {
         String plain = "今天天气不错，你吃了没？";
         assertEquals(plain, LLMClient.stripToolCalls(plain));
     }
+
+    /**
+     * 实测误杀回归：台词末尾挂一个落单的 `say` 反引号尾巴时，只摘尾巴、保住整句。
+     * 旧版被残余代码守卫整行丢弃（日志「疑似代码残留，已整行丢弃」），村民当轮被禁言。
+     */
+    @Test
+    void keepsLineWithBacktickSayTail() {
+        String raw = "（眨巴 eyes）夜里怪安静，李超勇啊，你今儿个没出去溜达？\n`say`";
+        assertEquals("（眨巴 eyes）夜里怪安静，李超勇啊，你今儿个没出去溜达？",
+                LLMClient.stripToolCalls(raw));
+    }
+
+    /** 同类尾巴：句末的 `move_to` 标记 */
+    @Test
+    void keepsLineWithBacktickMoveTail() {
+        assertEquals("行，俺这就去。",
+                LLMClient.stripToolCalls("行，俺这就去。`move_to`"));
+    }
 }
