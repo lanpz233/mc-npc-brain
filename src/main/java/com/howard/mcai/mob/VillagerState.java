@@ -336,6 +336,13 @@ public final class VillagerState {
      */
     private boolean walletSeeded;
 
+    /**
+     * v0.1.3 收购钱包扩容是否已执行（一次性迁移标记）。
+     * 新村民出生时就按新标准带钱，所以构造后直接视为已扩容；旧存档没有
+     * 这个字段 → 读档时补足一次后置 true 落盘，避免每次重启重复送钱。
+     */
+    private boolean walletV013Boosted;
+
     /** 无关战利品池 —— 村民各处捡来的杂物，随机投放 1-3 种（与职业无关） */
     private static final String[] LOOT_POOL = {
             "ROTTEN_FLESH", "BONE", "SPIDER_EYE", "STRING", "GUNPOWDER", "ENDER_PEARL",
@@ -355,6 +362,7 @@ public final class VillagerState {
         this.inventorySeeded = true;
         seedWallet();
         this.walletSeeded = true;
+        this.walletV013Boosted = true;
     }
 
     public VillagerState(Villager entity, VillagerProfession profession) {
@@ -370,6 +378,7 @@ public final class VillagerState {
         this.inventorySeeded = true;
         seedWallet();
         this.walletSeeded = true;
+        this.walletV013Boosted = true;
     }
 
     /** 背包是否已按职业投放（MemoryStore 迁移守卫用） */
@@ -392,19 +401,40 @@ public final class VillagerState {
         this.walletSeeded = seeded;
     }
 
+    /** v0.1.3 收购钱包扩容是否已执行（MemoryStore 迁移守卫用） */
+    public boolean isWalletV013Boosted() {
+        return walletV013Boosted;
+    }
+
+    /** 标记 v0.1.3 收购钱包扩容已执行（迁移完成后由 MemoryStore 调用） */
+    public void setWalletV013Boosted(boolean boosted) {
+        this.walletV013Boosted = boosted;
+    }
+
     /**
      * 启动钱 —— 村民随身带的绿宝石（Fong 2026-10-21）。
      * 收购要从村民兜里真出钱：没有这笔种子钱，村民在卖出第一件货之前永远收不了
-     * 玩家的东西，村子里的买卖根本转不起来。有手艺的（能做买卖）带 12–30 块，
-     * 没职业/傻子带 3–10 块。只发一次（walletSeeded 落盘守卫），花光不补。
+     * 玩家的东西，村子里的买卖根本转不起来。v0.1.3 按 Fong 的要求把最终金额
+     * 提高到原来的 3 倍：有手艺的带 36–90 块，没职业/傻子带 9–30 块。
+     * 只发一次（walletSeeded 落盘守卫），花光不补。
      */
     public synchronized void seedWallet() {
-        java.util.Random rng = new java.util.Random();
-        boolean hasTrade = profession != null
-                && profession != VillagerProfession.NONE
-                && profession != VillagerProfession.NITWIT;
-        int amount = hasTrade ? 12 + rng.nextInt(19) : 3 + rng.nextInt(8);
+        int amount = WalletAmounts.seedAmount(profession, new java.util.Random());
         inventory.merge(org.bukkit.Material.EMERALD.name(), amount, Integer::sum);
+    }
+
+    /**
+     * v0.1.3 老村民钱包补足：按新标准抽一个目标余额，只补差额。
+     * 已经比目标更有钱的村民不扣钱；余额为 0 的村民也能重新有钱收购。
+     * 返回实际补入的绿宝石数量。
+     */
+    public synchronized int topUpWalletForV013() {
+        int current = inventory.getOrDefault(org.bukkit.Material.EMERALD.name(), 0);
+        int added = WalletAmounts.topUpAmount(profession, current, new java.util.Random());
+        if (added > 0) {
+            inventory.merge(org.bukkit.Material.EMERALD.name(), added, Integer::sum);
+        }
+        return added;
     }
 
     /**
