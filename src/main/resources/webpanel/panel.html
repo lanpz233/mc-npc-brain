@@ -78,6 +78,7 @@
   <button data-tab="prices">🪙 定价表</button>
   <button data-tab="pools">🧺 职业货池</button>
   <button data-tab="professions">🎭 职业设定</button>
+  <button data-tab="theftlines">🗣 偷窃台词</button>
   <button data-tab="raw">📄 原始数据</button>
   <button data-tab="backups">🗂️ 备份恢复</button>
 </nav>
@@ -156,6 +157,15 @@
       <p class="note">点开一个职业就能改他的卖出清单和收购清单（个数 = 每摊摆多少）。村民开摊时从清单里抽 6~8 样卖、2~3 样收，所以清单可以放心写长。某个职业<strong>全部清空 = 恢复插件默认清单</strong>。价格不在这里定，按定价表算。</p>
       <div class="toolbar"><span class="spacer"></span><button data-export-data="profession-pools.json">⬇ 导出</button><button data-import-data="profession-pools.json">⬆ 导入</button><button class="primary" data-save-data="profession-pools.json">保存职业货池</button></div>
       <div id="poolRows"></div>
+    </div>
+  </section>
+
+  <section id="tab-theftlines" hidden>
+    <div class="card">
+      <h2>偷窃台词（村民抓小偷时说什么）</h2>
+      <p class="note">上面两组是<b>被抓现行时骂人的话</b>，按初犯/惯犯分开；下面三组是他<b>察觉丢了东西、但没看清是谁</b>时的嘟囔，按当时是白天、夜里、下雨自动选组。一行一句、随机抽一句。可以用占位符 <strong>{物品}</strong>（被偷的东西）和 <strong>{玩家}</strong>。骂人的句子没写 {物品} 时，插件会自动在末尾补一句"（指你刚摸的X）"。某一组清空 = 用插件内置默认。另外：设置页里开了"被抓台词由模型现编"时，骂人优先让模型按性格现场说，模型忙或没开才用这两组词库。</p>
+      <div class="toolbar"><span class="spacer"></span><button data-export-data="theft-lines.json">⬇ 导出</button><button data-import-data="theft-lines.json">⬆ 导入</button><button class="primary" data-save-data="theft-lines.json">保存偷窃台词</button></div>
+      <div id="theftLineRows"></div>
     </div>
   </section>
 
@@ -413,6 +423,7 @@ function importDataDoc(name) {
     if (name === "profession-pools.json") renderPools();
     if (name === "prompts.json") renderPrompts();
     if (name === "professions.json") renderProfessions();
+    if (name === "theft-lines.json") renderTheftLines();
     if ($("#rawSelect").value === name) $("#rawText").value = rawContents[name];
     toast("已导入 " + name + "，检查没问题后点该页的保存按钮才会写进插件");
   });
@@ -770,6 +781,7 @@ async function saveData(name) {
     if (name === "profession-pools.json") collectPools();
     if (name === "prompts.json") collectPrompts();
     if (name === "professions.json") collectProfessions();
+    if (name === "theft-lines.json") collectTheftLines();
     const resp = await api("/api/data", {
       method: "POST",
       body: JSON.stringify({ name, content: JSON.stringify(docs[name], null, 2) })
@@ -864,6 +876,40 @@ function renderProfessions() {
     wrap.appendChild(box);
   }
 }
+const THEFT_LINE_GROUPS = [
+  ["first", "🗣 被抓骂人 · 初犯"],
+  ["repeat", "🗣 被抓骂人 · 惯犯（被抓多次/村里已经不信任他）"],
+  ["confused_day", "🌞 察觉丢东西 · 白天嘟囔"],
+  ["confused_night", "🌙 察觉丢东西 · 夜里嘟囔"],
+  ["confused_rain", "🌧 察觉丢东西 · 下雨嘟囔"]
+];
+function renderTheftLines() {
+  const doc = docs["theft-lines.json"] || {};
+  const wrap = $("#theftLineRows");
+  wrap.innerHTML = "";
+  for (const [key, label] of THEFT_LINE_GROUPS) {
+    const box = document.createElement("div");
+    box.style.margin = "14px 0";
+    const cap = document.createElement("div"); cap.className = "hint"; cap.textContent = label + "（一行一句，留空 = 用插件内置默认）";
+    const ta = document.createElement("textarea");
+    ta.rows = 4;
+    ta.value = (doc[key] || []).join("\n");
+    ta.dataset.theftKey = key;
+    ta.placeholder = "一行一句";
+    box.append(cap, ta);
+    wrap.appendChild(box);
+  }
+}
+function collectTheftLines() {
+  const out = {};
+  const meta = (docs["theft-lines.json"] || {})["_meta"];
+  if (meta) out["_meta"] = meta;
+  for (const ta of $$("#theftLineRows textarea")) {
+    out[ta.dataset.theftKey] = ta.value.split("\n").map(x => x.trim()).filter(x => x);
+  }
+  docs["theft-lines.json"] = out;
+}
+
 function collectProfessions() {
   const out = {};
   const meta = (docs["professions.json"] || {})["_meta"];
@@ -1166,6 +1212,7 @@ $$("[data-export-data]").forEach(btn => btn.addEventListener("click", () => {
     if (name === "profession-pools.json") collectPools();
     if (name === "prompts.json") collectPrompts();
     if (name === "professions.json") collectProfessions();
+    if (name === "theft-lines.json") collectTheftLines();
   } catch (e) { toast(e.message, true); return; }
   downloadJson(name, docs[name]);
   toast("已导出 " + name + "，在本地改好后用“导入”导回来");

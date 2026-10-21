@@ -35,12 +35,13 @@ public final class PanelDataFiles {
             new DataFile("prices.json", "定价表", "基础物品的公道价（绿宝石/个），合成品由插件按配方推导"),
             new DataFile("profession-pools.json", "职业货池", "每个职业的村民卖什么、收什么"),
             new DataFile("prompts.json", "提示词", "村民对话的约束词：身份、世界铁律、行为规矩等固定段落"),
-            new DataFile("professions.json", "职业设定", "各职业的人设一句话与说话风格（口头禅在这里改）")
+            new DataFile("professions.json", "职业设定", "各职业的人设一句话与说话风格（口头禅在这里改）"),
+            new DataFile("theft-lines.json", "偷窃台词", "被抓时骂人的话 + 察觉丢东西的嘟囔（按白天/夜里/下雨分开）")
     );
 
     private static final Set<String> NAMES = Set.of(
             "recipes.json", "personality_tags.json", "surnames.json", "given_names.json",
-            "prices.json", "profession-pools.json", "prompts.json", "professions.json");
+            "prices.json", "profession-pools.json", "prompts.json", "professions.json", "theft-lines.json");
 
     /** 职业枚举名（与 mob/VillagerProfession 对应；货池文件里的键只许是这些） */
     private static final Set<String> PROFESSIONS = Set.of(
@@ -92,6 +93,7 @@ public final class PanelDataFiles {
             case "profession-pools.json" -> validatePools(root);
             case "prompts.json" -> validatePrompts(root);
             case "professions.json" -> validateProfessions(root);
+            case "theft-lines.json" -> validateTheftLines(root);
             default -> throw new IllegalArgumentException("不认识的数据文件：" + name);
         }
         return new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(root) + "\n";
@@ -159,6 +161,27 @@ public final class PanelDataFiles {
             "backpack_rules");
 
     /** 职业设定：键只许是职业枚举名（或 _meta），值是 {persona, speech}，字段可缺省（缺了用内置默认） */
+    /** 偷窃台词：五个分组都必须是"字符串数组"，键只许这五个 + _meta */
+    private static void validateTheftLines(JsonObject root) {
+        java.util.Set<String> keys = java.util.Set.of(
+                "first", "repeat", "confused_day", "confused_night", "confused_rain");
+        for (java.util.Map.Entry<String, JsonElement> e : root.entrySet()) {
+            if (e.getKey().equals("_meta")) continue;
+            if (!keys.contains(e.getKey())) {
+                throw new IllegalArgumentException("偷窃台词里不认识的分组：" + e.getKey());
+            }
+            if (!e.getValue().isJsonArray()) {
+                throw new IllegalArgumentException("偷窃台词的 " + e.getKey() + " 必须是一组句子");
+            }
+            for (JsonElement el : e.getValue().getAsJsonArray()) {
+                if (!el.isJsonPrimitive() || !el.getAsJsonPrimitive().isString()
+                        || el.getAsString().isBlank()) {
+                    throw new IllegalArgumentException("偷窃台词的 " + e.getKey() + " 里有空句子或非文字内容");
+                }
+            }
+        }
+    }
+
     private static void validateProfessions(JsonObject root) {
         for (String key : root.keySet()) {
             if ("_meta".equals(key)) continue;

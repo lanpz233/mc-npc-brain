@@ -88,7 +88,9 @@ public final class ConfigPanelSchema {
             f("facts.ledger-retention-days", "事实与翻译", "天气账本保留（游戏日）", "村民记得几天内的下雨打雷；更早的压成一句话", Type.INT, 1.0, 30.0, 7, true),
             f("facts.followup-chance-pct", "事实与翻译", "直答后追问概率（%）", "报完时间/天气后，偶尔缀一句“怎么了，有什么打算吗”", Type.INT, 0.0, 100.0, 33, true),
             f("facts.approx-step-minutes", "事实与翻译", "报时取整粒度（分钟）", "越大越像随口估时（15 = 只报到一刻钟），越小越精确", Type.INT, 1.0, 30.0, 10, true),
-            f("facts.reminders-enabled", "事实与翻译", "主动提醒", "黄昏将至或雷暴来临时，附近村民主动提醒玩家", Type.BOOL, null, null, true, true)
+            f("facts.reminders-enabled", "事实与翻译", "主动提醒", "黄昏将至或雷暴来临时，附近村民主动提醒玩家", Type.BOOL, null, null, true, true),
+            // ===== 偷窃（v0.4.2）=====
+            f("theft.scold-by-model", "偷窃", "被抓台词由模型现编", "开 = 村民抓住小偷后骂的话由对话模型按性格现编；模型忙/失败/没开时自动退回「偷窃台词」词库。关 = 直接用词库", Type.BOOL, null, null, false, true)
     );
 
     public static final Map<String, Field> BY_PATH = new LinkedHashMap<>();

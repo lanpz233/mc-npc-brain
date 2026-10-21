@@ -47,9 +47,63 @@ public final class TheftService {
     /** “看着你”的判定半径与视野半角 */
     public static final double WATCH_RADIUS = 8.0;
     public static final double VIEW_HALF_ANGLE_DEG = 55.0;
-    /** 没跑掉时被抓概率 / 跑掉后仍被没收概率 */
+    /** 没跑掉时被抓概率 */
     public static final double CAUGHT_CHANCE = 0.85;
-    public static final double CONFISCATE_AFTER_ESCAPE_CHANCE = 0.10;
+    /** 跑掉后触发"他察觉丢了东西"的概率（东西归玩家，但他进入警觉期） */
+    public static final double ALERT_TRIGGER_CHANCE = 0.10;
+    /** 警觉期内跑掉仍被他认出来的概率（按被抓结算） */
+    public static final double RECOGNIZED_CHANCE = 0.50;
+    /** 警觉期长度：1 个游戏日（按世界时钟，睡一觉基本就过去了） */
+    public static final long ALERT_DURATION_TICKS = 24000L;
+
+    /** 警觉标记：哪个世界的时钟到几点为止 */
+    private record AlertMark(String worldName, long untilFullTime) {}
+
+    /** 村民 → 警觉期（内存态：他察觉丢了东西，正警醒着；重启即忘） */
+    private final java.util.Map<UUID, AlertMark> alerts = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** 他现在警醒着吗（警觉期内再下手，被发现概率大幅提高） */
+    public boolean isAlerted(VillagerState state) {
+        AlertMark m = alerts.get(state.getUniqueId());
+        if (m == null) return false;
+        Villager v = state.entity();
+        if (v == null || v.getWorld() == null) return false;
+        if (!m.worldName().equals(v.getWorld().getName())) return false;
+        if (v.getWorld().getFullTime() > m.untilFullTime()) {
+            alerts.remove(state.getUniqueId());
+            return false;
+        }
+        return true;
+    }
+
+    private void markAlerted(VillagerState state) {
+        Villager v = state.entity();
+        if (v == null || v.getWorld() == null) return;
+        alerts.put(state.getUniqueId(), new AlertMark(
+                v.getWorld().getName(), v.getWorld().getFullTime() + ALERT_DURATION_TICKS));
+    }
+
+    private void clearAlert(VillagerState state) {
+        alerts.remove(state.getUniqueId());
+    }
+
+    /** 四种结算结局 */
+    public enum Outcome {CAUGHT, RECOGNIZED, ALERTED, SUCCESS}
+
+    /**
+     * 结算判定（纯函数，供单测）—— roll ∈ [0,1)：
+     * 没跑掉：警觉时必抓（1.0）、平时 85%；
+     * 跑掉了：警觉时 50% 被认出（按被抓算），平时 10% 触发警觉（东西照样归玩家）。
+     */
+    public static Outcome decide(boolean exposed, boolean alerted, double roll) {
+        if (exposed) {
+            return roll < (alerted ? 1.0 : CAUGHT_CHANCE) ? Outcome.CAUGHT : Outcome.SUCCESS;
+        }
+        if (alerted) {
+            return roll < RECOGNIZED_CHANCE ? Outcome.RECOGNIZED : Outcome.SUCCESS;
+        }
+        return roll < ALERT_TRIGGER_CHANCE ? Outcome.ALERTED : Outcome.SUCCESS;
+    }
 
     private final McaiPlugin plugin;
     private final List<Pending> pendings = new ArrayList<>();
@@ -224,13 +278,20 @@ public final class TheftService {
         }
 
         boolean exposed = forcedCaught || isExposed(player, state, v);
+        boolean alerted = isAlerted(state);
         double roll = ThreadLocalRandom.current().nextDouble();
-        if (exposed && roll < CAUGHT_CHANCE) {
-            onCaught(player, state, v, p.mat);
-        } else if (!exposed && roll < CONFISCATE_AFTER_ESCAPE_CHANCE) {
-            onConfiscatedQuietly(player, state, v, p.mat);
-        } else {
-            onSuccess(player, state, p.mat);
+        Outcome outcome = forcedCaught ? Outcome.CAUGHT : decide(exposed, alerted, roll);
+        switch (outcome) {
+            case CAUGHT -> onCaught(player, state, v, p.mat, false);
+            case RECOGNIZED -> onCaught(player, state, v, p.mat, true);
+            case ALERTED -> onAlerted(player, state, v, p.mat);
+            case SUCCESS -> {
+                deliver(player, state, p.mat);
+                if (alerted) markAlerted(state);   // 警觉期内又得手 → 警觉续满
+                bar(player, exposed
+                        ? "§a得手——差一点就被 " + npcName(state) + " 抓住了"
+                        : "§a得手——从 " + npcName(state) + " 身上偷到了" + PromptBuilder.materialToZh(p.mat));
+            }
         }
         runCallback(p);
     }
@@ -259,8 +320,8 @@ public final class TheftService {
         return true;
     }
 
-    /** 成功：东西真从他包里进你包里 */
-    private void onSuccess(Player player, VillagerState state, Material mat) {
+    /** 交付赃物：东西真从他包里进你包里（成功/警觉两档共用） */
+    private void deliver(Player player, VillagerState state, Material mat) {
         if (!state.removeFromInventory(mat, 1)) return;
         var leftover = player.getInventory().addItem(new ItemStack(mat, 1));
         if (!leftover.isEmpty()) {
@@ -269,24 +330,51 @@ public final class TheftService {
         plugin.getMemoryStore().markDirty(state.getUniqueId());
         player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.25f, 0.8f);
         plugin.getLogger().info("[偷窃] " + player.getName() + " 从 " + npcName(state)
-                + " 包里偷走了 " + mat.name() + "，没被发现");
+                + " 包里偷走了 " + mat.name());
     }
 
-    /** 跑掉了仍被没收（10%）：他惊醒/回过神把东西抓回去，但没看清是谁 —— 不罚 */
-    private void onConfiscatedQuietly(Player player, VillagerState state, Villager v, Material mat) {
+    /**
+     * 跑掉了、东西到手，但他察觉丢了东西（10%）：惊醒嘟囔一句（按当时
+     * 白天/夜里/下雨换词）+ 进入警觉期。他没看清是谁——不扣好感、不记信任账；
+     * 但警觉期内（1 个游戏日）再对他下手，被发现概率大涨。
+     */
+    private void onAlerted(Player player, VillagerState state, Villager v, Material mat) {
+        deliver(player, state, mat);
+        markAlerted(state);
         if (v.isSleeping()) v.wakeup();
         String zh = PromptBuilder.materialToZh(mat);
-        plugin.getBubbleManager().showDialog(v, npcName(state), "（嗯？我的" + zh + "呢……）");
-        player.sendMessage("§e你刚摸到的东西被他一把抓回去了——他没看清是谁。");
+        var world = v.getWorld();
+        var kind = com.howard.mcai.ai.LocalWeather.resolve(world.getEnvironment().name(),
+                world.getBiome(v.getLocation()).name(), world.hasStorm(), world.isThundering());
+        boolean raining = com.howard.mcai.ai.LocalWeather.isPrecipitating(kind);
+        long tod = world.getTime();
+        boolean night = tod >= 11500 && tod < 24000;
+        String line = com.howard.mcai.ai.TheftLines.pickConfused(raining, night, zh, player.getName());
+        plugin.getBubbleManager().showDialog(v, npcName(state), "（" + line + "）");
+        bar(player, "§e得手了，但 " + npcName(state) + " 察觉丢了东西——最近他警醒着呢");
         plugin.getLogger().info("[偷窃] " + player.getName() + " 偷 " + npcName(state)
-                + " 的 " + mat.name() + " 被没收（跑掉后小概率），未被认出");
+                + " 的 " + mat.name() + " 得手，但对方已察觉（警觉期开始，未被认出）");
     }
 
-    /** 人赃并获：惊醒 + 骂人 + 好感按赃物价值掉 + 村庄信任记一笔 */
-    private void onCaught(Player player, VillagerState state, Villager v, Material mat) {
+    /** 底部动作栏一句话（与对话提示同一通道，Legacy 序列化拼装） */
+    private static void bar(Player player, String text) {
+        if (player == null || !player.isOnline()) return;
+        player.sendActionBar(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                .legacySection().deserialize(text));
+    }
+
+    /**
+     * 人赃并获：惊醒 + 红字提示 + 骂人 + 好感按赃物价值掉 + 村庄信任记一笔。
+     * recognized=true 是"跑掉了但被他认出"（警觉期内）——结算口径相同，只是提示不同。
+     */
+    private void onCaught(Player player, VillagerState state, Villager v, Material mat, boolean recognized) {
         if (v.isSleeping()) v.wakeup();
+        clearAlert(state);   // 都当面对质了，警觉期到此为止（账记在信任账上）
         String zh = PromptBuilder.materialToZh(mat);
         String name = npcName(state);
+        bar(player, recognized
+                ? "§c被 " + name + " 认出来了！偷的东西被没收"
+                : "§c被 " + name + " 抓了现行！偷的东西被没收");
 
         // 村庄信任：找村、记账（有醒着的同村村民在场 = 传得更快）
         Location loc = v.getLocation();
@@ -304,14 +392,65 @@ public final class TheftService {
         state.addFact(player.getName() + " 趁我不备偷我的" + zh + "，被我当场抓住了", player.getUniqueId());
         plugin.getMemoryStore().markDirty(state.getUniqueId());
 
-        // 骂人：插件按“是不是惯犯”选词（模型不参与裁决，也不用等它）
-        String line = scoldLine(zh, caughtCount, newScore);
-        plugin.getBubbleManager().showDialog(v, name, line);
-        player.sendMessage("§6[" + name + ">" + player.getName() + "] §f" + line);
-        player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 0.9f);
+        // 骂人：词从 theft-lines.json 词库按初犯/惯犯抽（面板可改）；
+        // 面板开关打开时改请模型按人设现编，模型忙/失败/没开自动退回词库这句
+        boolean repeat = caughtCount >= 2 || newScore < VillageTrust.CAUGHT_PENALTY + 10;
+        String canned = com.howard.mcai.ai.TheftLines.pick(repeat, zh, player.getName());
+        speakScold(player, state, v, name, zh, canned, repeat);
         plugin.getLogger().info("[偷窃] " + player.getName() + " 偷 " + name + " 的 " + mat.name()
-                + " 被抓现行（第 " + caughtCount + " 次，信任降到 " + newScore
+                + (recognized ? " 跑掉后被认出" : " 被抓现行")
+                + "（第 " + caughtCount + " 次，信任降到 " + newScore
                 + (witnessed ? "，有目击者" : "") + "）");
+    }
+
+    /** 把骂人话说出口：气泡 + 聊天行 + 一声村民否定音 */
+    private void deliverScold(Player player, VillagerState state, Villager v, String name, String line) {
+        plugin.getBubbleManager().showDialog(v, name, line);
+        if (player.isOnline()) {
+            player.sendMessage("§6[" + name + ">" + player.getName() + "] §f" + line);
+            player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 0.9f);
+        }
+    }
+
+    /**
+     * 骂人话的来源（v0.4.2 服主定）：面板开关「被抓台词由模型现编」关 → 直接用词库；
+     * 开 → 请对话模型按人设现场骂一句（案情与数字都喂死，它只许换说法不许改事实），
+     * 模型正忙（llmBusy）/失败/超时 8 秒/没开 → 退回词库那句，绝不让他哑巴。
+     * 罚与账都已在 onCaught 里落定，这条通道只有表达权。
+     */
+    private void speakScold(Player player, VillagerState state, Villager v, String name,
+                            String itemZh, String canned, boolean repeat) {
+        if (!plugin.getPluginConfig().theftScoldByModel() || state.llmBusy()) {
+            deliverScold(player, state, v, name, canned);
+            return;
+        }
+        var messages = java.util.List.of(
+                java.util.Map.of("role", "system", "content",
+                        com.howard.mcai.ai.PromptBuilder.buildVillagerSystemPrompt(
+                                state.profession(), name, state.personalityTagIds(), state)),
+                java.util.Map.of("role", "user", "content",
+                        "[场景] 你刚刚抓了个现行：旅者 " + player.getName() + " 趁你不备，偷了你包里的「"
+                                + itemZh + "」，被你当场抓住，东西已经没收。"
+                                + (repeat ? "这已经不是他第一次偷你了，村里对他的信任也很低。" : "这是他第一次被抓。")
+                                + "\n用你的口气骂他一句（不超过 30 个字），自然口语，只说话，不要解释、不要列表。"));
+        plugin.getLlmClient().chat(messages, java.util.List.of())
+                .orTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+                .whenComplete((resp, err) -> {
+                    String line = null;
+                    if (err == null && resp != null) {
+                        line = com.howard.mcai.ai.Smalltalk.stripToolCall(resp.content());
+                        if (line != null) {
+                            line = line.trim();
+                            if (line.length() > 40) line = line.substring(0, 40);
+                            if (line.isBlank()) line = null;
+                        }
+                    }
+                    String spoken = line;
+                    org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
+                        if (!v.isValid() || v.isDead()) return;
+                        deliverScold(player, state, v, name, spoken != null ? spoken : canned);
+                    });
+                });
     }
 
     /** 有没有别的村民醒着在附近（12 格内）——有的话事情传得更快 */
@@ -324,26 +463,6 @@ public final class TheftService {
             if (ov.getLocation().distanceSquared(v.getLocation()) <= 12 * 12) return true;
         }
         return false;
-    }
-
-    private static final String[] SCOLD_FIRST = {
-            "哎！你干嘛呢！手往哪儿伸！",
-            "好哇，偷到我头上来了？！",
-            "抓住你了！大半夜翻我包干嘛！",
-            "你你你……把东西放下！",
-    };
-    private static final String[] SCOLD_REPEAT = {
-            "又是你！村里都传遍了，你还敢来！",
-            "没完了是吧？这事儿我得让全村都知道！",
-            "你这名声在村里算是臭了，还敢伸手！",
-            "一而再再而三，当我是瞎子吗！",
-    };
-
-    private String scoldLine(String itemZh, int caughtCount, int trustScore) {
-        boolean repeat = caughtCount >= 2 || trustScore < VillageTrust.CAUGHT_PENALTY + 10;
-        String[] pool = repeat ? SCOLD_REPEAT : SCOLD_FIRST;
-        String base = pool[ThreadLocalRandom.current().nextInt(pool.length)];
-        return base + "（指你刚摸的" + itemZh + "）";
     }
 
     private static String npcName(VillagerState state) {
