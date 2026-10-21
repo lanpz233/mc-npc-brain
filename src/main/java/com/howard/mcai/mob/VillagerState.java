@@ -1172,6 +1172,56 @@ public final class VillagerState {
         }
     }
 
+    // ===== 稀有物品赠送日账（防刷，持久化） =====
+
+    /** 每位玩家上次从本 NPC 拿到稀有物品（价值≥100）的日期（yyyy-MM-dd，本地日期） */
+    private final Map<java.util.UUID, String> lastRareGiftDayByPlayer = new java.util.HashMap<>();
+
+    /** 该玩家今天是否已经从本 NPC 拿到过稀有物品 */
+    public synchronized boolean rareGiftGivenOn(java.util.UUID playerUuid, String dayKey) {
+        if (playerUuid == null || dayKey == null) return false;
+        return dayKey.equals(lastRareGiftDayByPlayer.get(playerUuid));
+    }
+
+    /** 记一笔：该玩家今天从本 NPC 拿到了稀有物品 */
+    public synchronized void markRareGift(java.util.UUID playerUuid, String dayKey) {
+        if (playerUuid == null || dayKey == null) return;
+        lastRareGiftDayByPlayer.put(playerUuid, dayKey);
+    }
+
+    /** lastRareGiftDayByPlayer 快照（MemoryStore 持久化用）：UUID字符串 → 日期 */
+    public synchronized Map<String, String> rareGiftDaysSnapshot() {
+        Map<String, String> out = new java.util.HashMap<>();
+        lastRareGiftDayByPlayer.forEach((k, v) -> out.put(k.toString(), v));
+        return out;
+    }
+
+    /** MemoryStore 从 JSON 恢复稀有赠送日账（覆盖式；非法键跳过） */
+    public synchronized void restoreRareGiftDays(Map<String, String> restored) {
+        lastRareGiftDayByPlayer.clear();
+        if (restored == null) return;
+        for (var e : restored.entrySet()) {
+            try {
+                if (e.getValue() != null && !e.getValue().isBlank()) {
+                    lastRareGiftDayByPlayer.put(java.util.UUID.fromString(e.getKey()), e.getValue());
+                }
+            } catch (IllegalArgumentException ignored) {
+                // 非法 UUID（旧档损坏）跳过
+            }
+        }
+    }
+
+    /** 当前库存里所有可食物品的总件数（送礼口粮保留线用；库存键是 Material 名） */
+    public synchronized int totalFoodStock() {
+        int total = 0;
+        for (var e : inventorySnapshot().entrySet()) {
+            if (e.getValue() == null || e.getValue() <= 0) continue;
+            org.bukkit.Material m = org.bukkit.Material.matchMaterial(e.getKey());
+            if (m != null && m.isEdible()) total += e.getValue();
+        }
+        return total;
+    }
+
     // ===== 聊天涨好感的节流（运行时，不持久化） =====
 
     /** 同一玩家跟同一 NPC 聊天涨好感的冷却：30 秒内只记一次，防刷屏刷好感 */
@@ -1221,8 +1271,15 @@ public final class VillagerState {
         return t != null && System.currentTimeMillis() - t < AUTO_GIVE_GUARD_MS;
     }
 
-    /** GUI 索要请求：玩家点某格要 N 个（代码层钉死数量，防模型自由发挥把"要 1 个"变成"给一整叠"） */
-    public record ItemRequest(org.bukkit.Material mat, int count, long atMs) {}
+    /**
+     * GUI 索要请求：玩家点某格要 N 个（代码层钉死数量，防模型自由发挥把"要 1 个"变成"给一整叠"）。
+     * <p>
+     * {@code pluginApproved} 是插件在登记当下按 {@code GiftPolicy} 算好的裁决（给/不给）：
+     * 登记之后模型只有表态权 —— 它答应了也只能在 approved=true 时真交货，
+     * 它想给 approved=false 的东西，交付环节会直接拦下（见 CentralPlanner 索要交付与
+     * NpcGiveItemTool）。旧版这里存的是掷骰子掷出来的"态度"，模型还能推翻，等于没定。
+     */
+    public record ItemRequest(org.bukkit.Material mat, int count, long atMs, boolean pluginApproved) {}
 
     /**
      * 索要请求的有效窗口。
@@ -1236,23 +1293,25 @@ public final class VillagerState {
     /** 待处理的索要请求（key=玩家 UUID） */
     private final Map<java.util.UUID, ItemRequest> itemRequests = new java.util.HashMap<>();
 
-    /** 记下这次 GUI 索要"要几个" */
-    public synchronized void setItemRequest(java.util.UUID playerUuid, org.bukkit.Material mat, int count) {
+    /** 记下这次索要"要几个"，以及插件按 GiftPolicy 裁决的给/不给 */
+    public synchronized void setItemRequest(java.util.UUID playerUuid, org.bukkit.Material mat, int count,
+                                            boolean pluginApproved) {
         if (playerUuid == null || mat == null || count <= 0) return;
-        itemRequests.put(playerUuid, new ItemRequest(mat, count, System.currentTimeMillis()));
+        itemRequests.put(playerUuid, new ItemRequest(mat, count, System.currentTimeMillis(), pluginApproved));
     }
 
     /**
-     * 取并清除该玩家对该物品的待处理索要数量（一次性）。
-     * 过期（超过 {@link #ITEM_REQUEST_WINDOW_MS}，说明那次索要早已结束）或物品对不上 → -1（不覆盖模型给的 count）。
+     * 取并清除该玩家对该物品的待处理索要（一次性）。
+     * 过期（超过 {@link #ITEM_REQUEST_WINDOW_MS}，说明那次索要早已结束）或物品对不上 → null
+     * （不覆盖模型给的 count，插件裁决也不再生效）。
      */
-    public synchronized int consumeItemRequest(java.util.UUID playerUuid, org.bukkit.Material mat) {
-        if (playerUuid == null || mat == null) return -1;
+    public synchronized ItemRequest consumeItemRequest(java.util.UUID playerUuid, org.bukkit.Material mat) {
+        if (playerUuid == null || mat == null) return null;
         ItemRequest r = itemRequests.get(playerUuid);
-        if (r == null || r.mat() != mat) return -1;
+        if (r == null || r.mat() != mat) return null;
         itemRequests.remove(playerUuid);
-        if (System.currentTimeMillis() - r.atMs() > ITEM_REQUEST_WINDOW_MS) return -1;
-        return r.count();
+        if (System.currentTimeMillis() - r.atMs() > ITEM_REQUEST_WINDOW_MS) return null;
+        return r;
     }
 
     /** 只读查看待处理索要（不消费）—— 模型没调 give_item 时，用它判断台词里的"给你"能不能兑现 */
