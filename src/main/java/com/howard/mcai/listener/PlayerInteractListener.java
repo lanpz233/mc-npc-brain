@@ -61,9 +61,15 @@ public final class PlayerInteractListener implements Listener {
         VillagerState state = villagers.get(villager.getUniqueId());
         if (state == null) return;
 
-        // 防止跟交易 GUI 冲突：shift+右键 正常打开原版交易界面（保留原版行为，不动）
+        // 下蹲+右键 = 直接打开自家商店（服主要求，2026-10-21：替换原来放行原版交易界面的行为）。
+        // 与聊天里 offer_trade 开的是同一家店、同一份会话（砍价进度互通、关窗不丢）；
+        // 必须 cancel，否则原版交易窗会跟着一起弹出来。
         Player player = event.getPlayer();
-        if (player.isSneaking()) return;
+        if (player.isSneaking()) {
+            event.setCancelled(true);
+            com.howard.mcai.gui.ShopGui.open(plugin, player, state);
+            return;
+        }
 
         // 取消 Paper 原生交互（不让原版交易界面弹出来）
         event.setCancelled(true);
