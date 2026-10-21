@@ -34,6 +34,7 @@ llm:
   max-tokens: 1024
   reasoning-effort: ''        # 关思考填 'none'（Qwen3.5/Ollama）；云端不支持的留空
   keep-alive: '60m'           # Ollama 专用（模型驻留时长）；只在 url 指向本机时才发送，云端自动跳过
+  max-dialogue-chars: 60      # 村民一句话的最长字数，超了在句号处收尾（面板里可调）
 
   # （v0.1.4 起）不再有行为模型：村民的自主行动由插件端按需求/距离/性格打分决策，
   # 本文件里若还留着旧的 behavior: 配置段会被直接忽略，不用特意删。

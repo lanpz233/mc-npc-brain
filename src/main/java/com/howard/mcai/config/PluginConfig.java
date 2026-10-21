@@ -25,6 +25,8 @@ public record PluginConfig(
          * 即使是本地 Ollama 值，也只在 endpoint 是本机时才会真正发出去 —— 见 LLMClient。
          */
         String llmKeepAlive,
+        /** 台词最长字数（出口硬上限，在句末标点处收尾；面板可调） */
+        int maxDialogueChars,
 
         // Tick 配置
         int tickIntervalTicks,
@@ -122,6 +124,7 @@ public record PluginConfig(
                 cfg.getInt("llm.max-tokens", 1024),
                 cfg.getString("llm.reasoning-effort", null),
                 cfg.getString("llm.keep-alive", "60m"),
+                Math.clamp(cfg.getInt("llm.max-dialogue-chars", 60), 30, 200),
                 // Tick
                 cfg.getInt("tick.interval-ticks", 60),
                 cfg.getInt("tick.social-interval-ticks", 1200),

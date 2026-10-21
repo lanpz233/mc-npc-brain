@@ -44,6 +44,7 @@ public final class ConfigPanelSchema {
             f("llm.model", "模型与对话", "模型名", "填 auto = 自动跟随 Ollama 当前加载的模型", Type.STRING, null, null, "Qwen3.5-9B-Uncensored-Q4_K_M:latest", true),
             f("llm.connect-timeout-ms", "模型与对话", "连接超时（毫秒）", "", Type.INT, 100.0, 60000.0, 5000, true),
             f("llm.read-timeout-ms", "模型与对话", "读取超时（毫秒）", "云端排队慢时可调大，如 60000", Type.INT, 1000.0, 300000.0, 30000, true),
+            f("llm.max-dialogue-chars", "模型与对话", "台词最长字数", "村民一句话的最长字数，超了自动在句号处收尾；嫌他话长就调小", Type.INT, 30.0, 200.0, 60, true),
             f("llm.max-tokens", "模型与对话", "单次回复长度上限", "越大村民越能说长句，也越慢", Type.INT, 64.0, 32768.0, 1024, true),
             f("llm.reasoning-effort", "模型与对话", "思考控制", "关思考填 none；不需要控制就留空", Type.STRING, null, null, "", true),
             f("llm.keep-alive", "模型与对话", "模型驻留时长", "Ollama 专用，如 60m；只对本机地址发送", Type.STRING, null, null, "60m", true),
