@@ -84,6 +84,9 @@ public final class ShopGui implements InventoryHolder {
         ShopGui gui = new ShopGui(plugin, viewer, state, session);
         gui.rebuild();
         viewer.openInventory(gui.inventory);
+        // 开店铃铛（素材阶段 2）：进门一声小铃。成交声与砍价答应/拒绝声（村民原声 YES/NO）
+        // 早已挂在 ShopSettlement 与砍价各节点，缺的只有这声开门铃。
+        viewer.playSound(viewer.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 0.8f, 1.1f);
     }
 
     @Override
