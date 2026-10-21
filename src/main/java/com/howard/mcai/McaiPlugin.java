@@ -487,6 +487,8 @@ public final class McaiPlugin extends JavaPlugin {
         // teleport / teleport_to 迁入统一柜（teleport_to 标 HIGH，策略层先卡神使）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcTeleportTool(this));
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcTeleportToTool(this));
+        // equip 迁入统一柜 —— 老后门世界交互动作至此全部迁完
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcEquipTool(this));
         getLogger().info("工具系统: 已注册 " + toolRegistry.size() + " 个工具");
     }
 
