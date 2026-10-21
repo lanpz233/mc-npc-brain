@@ -31,11 +31,24 @@ public final class PanelDataFiles {
             new DataFile("recipes.json", "配方表", "村民谈论合成时查的配方：材料与产出数量"),
             new DataFile("personality_tags.json", "性格标签库", "村民的性格底色：分类、中文名、言行提示"),
             new DataFile("surnames.json", "姓氏库", "村民姓氏与抽取权重"),
-            new DataFile("given_names.json", "名字用字库", "村民名字用字，按男女分开")
+            new DataFile("given_names.json", "名字用字库", "村民名字用字，按男女分开"),
+            new DataFile("prices.json", "定价表", "基础物品的公道价（绿宝石/个），合成品由插件按配方推导"),
+            new DataFile("profession-pools.json", "职业货池", "每个职业的村民卖什么、收什么"),
+            new DataFile("prompts.json", "提示词", "村民对话的约束词：身份、世界铁律、行为规矩等固定段落")
     );
 
     private static final Set<String> NAMES = Set.of(
-            "recipes.json", "personality_tags.json", "surnames.json", "given_names.json");
+            "recipes.json", "personality_tags.json", "surnames.json", "given_names.json",
+            "prices.json", "profession-pools.json", "prompts.json");
+
+    /** 职业枚举名（与 mob/VillagerProfession 对应；货池文件里的键只许是这些） */
+    private static final Set<String> PROFESSIONS = Set.of(
+            "TOOLSMITH", "WEAPONSMITH", "ARMORER", "CLERIC", "FARMER", "LIBRARIAN",
+            "CARTOGRAPHER", "FLETCHER", "FISHERMAN", "BUTCHER", "LEATHERWORKER",
+            "MASON", "SHEPHERD", "NITWIT", "NONE");
+
+    private static final java.util.regex.Pattern ITEM_ID =
+            java.util.regex.Pattern.compile("^minecraft:[a-z0-9_]+$");
 
     private static final Set<String> TAG_CATEGORIES = Set.of("core", "speech", "quirks", "romance");
 
@@ -74,9 +87,95 @@ public final class PanelDataFiles {
             case "personality_tags.json" -> validateTags(root);
             case "surnames.json" -> validateSurnames(root);
             case "given_names.json" -> validateGivenNames(root);
+            case "prices.json" -> validatePrices(root);
+            case "profession-pools.json" -> validatePools(root);
+            case "prompts.json" -> validatePrompts(root);
             default -> throw new IllegalArgumentException("不认识的数据文件：" + name);
         }
         return new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(root) + "\n";
+    }
+
+
+    private static void validatePrices(JsonObject root) {
+        JsonObject anchors = objectField(root, "anchors", "定价表");
+        if (anchors.isEmpty()) throw new IllegalArgumentException("定价表是空的，至少留一条");
+        for (var e : anchors.entrySet()) {
+            if (!ITEM_ID.matcher(e.getKey()).matches()) {
+                throw new IllegalArgumentException("定价表里有认不出的物品 ID：" + e.getKey());
+            }
+            if (!e.getValue().isJsonPrimitive() || !e.getValue().getAsJsonPrimitive().isNumber()) {
+                throw new IllegalArgumentException("定价表里 " + e.getKey() + " 的价格不是数字");
+            }
+            double v = e.getValue().getAsDouble();
+            if (!(v > 0) || v > 100000) {
+                throw new IllegalArgumentException("定价表里 " + e.getKey() + " 的价格要在 0 到 100000 之间");
+            }
+        }
+    }
+
+    private static void validatePools(JsonObject root) {
+        JsonObject professions = objectField(root, "professions", "职业货池");
+        if (professions.isEmpty()) throw new IllegalArgumentException("职业货池是空的，至少留一个职业");
+        for (var e : professions.entrySet()) {
+            if (!PROFESSIONS.contains(e.getKey())) {
+                throw new IllegalArgumentException("不认识的职业：" + e.getKey() + "（职业名是英文枚举，不要改）");
+            }
+            if (!e.getValue().isJsonObject()) {
+                throw new IllegalArgumentException("职业 " + e.getKey() + " 的内容应该是对象");
+            }
+            JsonObject o = e.getValue().getAsJsonObject();
+            if (o.has("sell")) validatePoolArray(o.get("sell"), e.getKey() + " 的卖出清单");
+            if (o.has("buy")) validatePoolArray(o.get("buy"), e.getKey() + " 的收购清单");
+        }
+        if (root.has("guest")) validatePoolArray(root.get("guest"), "杂货池");
+    }
+
+    private static void validatePoolArray(JsonElement el, String label) {
+        if (!el.isJsonArray()) throw new IllegalArgumentException(label + "应该是数组");
+        for (JsonElement pair : el.getAsJsonArray()) {
+            if (!pair.isJsonArray() || pair.getAsJsonArray().size() != 2) {
+                throw new IllegalArgumentException(label + "里每一项应该是 [物品, 个数]");
+            }
+            String id = pair.getAsJsonArray().get(0).isJsonPrimitive()
+                    ? pair.getAsJsonArray().get(0).getAsString() : "";
+            if (!ITEM_ID.matcher(id).matches()) {
+                throw new IllegalArgumentException(label + "里有认不出的物品 ID：" + id);
+            }
+            JsonElement count = pair.getAsJsonArray().get(1);
+            if (!count.isJsonPrimitive() || !count.getAsJsonPrimitive().isNumber()
+                    || count.getAsInt() < 1 || count.getAsDouble() != count.getAsInt()) {
+                throw new IllegalArgumentException(label + "里 " + id + " 的个数要是正整数");
+            }
+        }
+    }
+
+
+    /** 提示词段落键（与 ai/PromptTemplates.KEYS 对应，改键等于删段，不许） */
+    private static final Set<String> PROMPT_KEYS = Set.of(
+            "identity", "world_facts", "behavior_rules", "shop_rules", "knowledge",
+            "state_rules", "needs_rules", "perm_envoy", "perm_confidant", "perm_civilian",
+            "backpack_rules");
+
+    private static void validatePrompts(JsonObject root) {
+        JsonObject sections = objectField(root, "sections", "提示词");
+        for (String key : PROMPT_KEYS) {
+            if (!sections.has(key) || !sections.get(key).isJsonPrimitive()) {
+                throw new IllegalArgumentException("提示词少了「" + key + "」段（段落不能删，只能改内容）");
+            }
+            String v = sections.get(key).getAsString();
+            if (v == null || v.isBlank()) {
+                throw new IllegalArgumentException("提示词的「" + key + "」段是空的");
+            }
+            if (v.length() > 20000) {
+                throw new IllegalArgumentException("提示词的「" + key + "」段太长了（超过 2 万字）");
+            }
+        }
+        String identity = sections.get("identity").getAsString();
+        for (String ph : new String[]{"{name}", "{profession}", "{personality}", "{speech}"}) {
+            if (!identity.contains(ph)) {
+                throw new IllegalArgumentException("identity 段里的填空位 " + ph + " 不能删（插件要往这里填村民的名字/职业）");
+            }
+        }
     }
 
     private static void validateRecipes(JsonObject root) {

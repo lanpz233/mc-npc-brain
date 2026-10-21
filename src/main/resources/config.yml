@@ -92,11 +92,3 @@ shop:
 web-panel:
   enabled: true               # false = 不生成面板、不开管理服务
   port: 8767                  # 面板端口（只绑本机 127.0.0.1，外网进不来，也不要在路由器上放行它）；改后需重启
-
-villagers:
-  blacksmith:
-    name: '老王'
-    spawn-world: 'world'
-    spawn-x: 100
-    spawn-y: 64
-    spawn-z: 100

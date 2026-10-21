@@ -3,6 +3,7 @@ package com.howard.mcai.ai;
 import com.howard.mcai.mob.VillagerProfession;
 import org.bukkit.Material;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -196,16 +197,93 @@ public final class ProfessionPools {
             s(Material.CHEST, 1), s(Material.CRAFTING_TABLE, 1), s(Material.APPLE, 3),
             s(Material.GLASS_BOTTLE, 4));
 
+    // ===== 货池外置（profession-pools.json）：服主可在配置面板改每职业卖/收什么 =====
+
+    private static volatile Map<VillagerProfession, List<PoolItem>> activeSell;
+    private static volatile Map<VillagerProfession, List<PoolItem>> activeBuy;
+    private static volatile List<PoolItem> activeGuest;
+
+    /**
+     * 从数据文件夹加载 profession-pools.json（没有就把内置版拷过去再读）。
+     * 文件里没写的职业回退内置默认池；坏数据只记 -1，绝不让插件起不来。
+     */
+    public static synchronized int load(java.nio.file.Path dataFolder) {
+        java.nio.file.Path file = dataFolder.resolve("profession-pools.json");
+        try {
+            if (!java.nio.file.Files.exists(file)) {
+                try (java.io.InputStream is = ProfessionPools.class.getResourceAsStream("/profession-pools.json")) {
+                    if (is != null) {
+                        java.nio.file.Files.createDirectories(dataFolder);
+                        java.nio.file.Files.copy(is, file);
+                    }
+                }
+            }
+            if (!java.nio.file.Files.exists(file)) return -1;
+            String text = java.nio.file.Files.readString(file, java.nio.charset.StandardCharsets.UTF_8);
+            com.google.gson.JsonObject root = com.google.gson.JsonParser.parseString(text).getAsJsonObject();
+            Map<VillagerProfession, List<PoolItem>> sell = new EnumMap<>(VillagerProfession.class);
+            Map<VillagerProfession, List<PoolItem>> buy = new EnumMap<>(VillagerProfession.class);
+            if (root.has("professions") && root.get("professions").isJsonObject()) {
+                for (var e : root.getAsJsonObject("professions").entrySet()) {
+                    VillagerProfession prof;
+                    try {
+                        prof = VillagerProfession.valueOf(e.getKey());
+                    } catch (IllegalArgumentException ex) {
+                        continue;
+                    }
+                    if (!e.getValue().isJsonObject()) continue;
+                    com.google.gson.JsonObject o = e.getValue().getAsJsonObject();
+                    List<PoolItem> sl = parsePool(o, "sell");
+                    if (sl != null) sell.put(prof, sl);
+                    List<PoolItem> by = parsePool(o, "buy");
+                    if (by != null) buy.put(prof, by);
+                }
+            }
+            List<PoolItem> guest = root.has("guest") ? parsePoolArray(root.get("guest")) : null;
+            if (sell.isEmpty() && buy.isEmpty() && guest == null) return -1;
+            activeSell = sell;
+            activeBuy = buy;
+            // 杂货池清空 = 回退内置默认（与面板上的说明一致）
+            if (guest != null && !guest.isEmpty()) activeGuest = guest;
+            return sell.size() + buy.size();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    private static List<PoolItem> parsePool(com.google.gson.JsonObject o, String key) {
+        if (!o.has(key)) return null;
+        return parsePoolArray(o.get(key));
+    }
+
+    /** [[物品ID, 个数], ...] → PoolItem 列表；认不出的物品跳过 */
+    private static List<PoolItem> parsePoolArray(com.google.gson.JsonElement el) {
+        if (el == null || !el.isJsonArray()) return null;
+        List<PoolItem> out = new ArrayList<>();
+        for (com.google.gson.JsonElement pair : el.getAsJsonArray()) {
+            if (!pair.isJsonArray() || pair.getAsJsonArray().size() != 2) continue;
+            Material m = ItemIds.materialOf(pair.getAsJsonArray().get(0).getAsString());
+            int count = pair.getAsJsonArray().get(1).getAsInt();
+            if (m != null && count > 0) out.add(new PoolItem(m, count));
+        }
+        return List.copyOf(out);
+    }
+
     public static List<PoolItem> sellPool(VillagerProfession p) {
+        Map<VillagerProfession, List<PoolItem>> active = activeSell;
+        if (active != null && active.containsKey(p)) return active.get(p);
         return SELL.getOrDefault(p, List.of());
     }
 
     public static List<PoolItem> buyPool(VillagerProfession p) {
+        Map<VillagerProfession, List<PoolItem>> active = activeBuy;
+        if (active != null && active.containsKey(p)) return active.get(p);
         return BUY.getOrDefault(p, List.of());
     }
 
     public static List<PoolItem> guestPool() {
-        return GUEST;
+        List<PoolItem> active = activeGuest;
+        return active != null ? active : GUEST;
     }
 
     /** 该职业的售卖范围是否包含某物（给 LLM 提案把关用：农夫不能卖铁剑） */

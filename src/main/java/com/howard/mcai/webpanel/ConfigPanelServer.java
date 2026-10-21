@@ -97,6 +97,8 @@ public final class ConfigPanelServer {
             http.createContext("/api/data", ex -> handleApi(ex, this::saveData));
             http.createContext("/api/backups", ex -> handleApi(ex, this::listBackups));
             http.createContext("/api/restore", ex -> handleApi(ex, this::restore));
+            http.createContext("/api/items", ex -> handleApi(ex, this::items));
+            http.createContext("/api/icon/", this::handleIcon);
             http.setExecutor(Executors.newCachedThreadPool(r -> {
                 Thread t = new Thread(r, "mcai-config-panel");
                 t.setDaemon(true);
@@ -325,6 +327,70 @@ public final class ConfigPanelServer {
             return root.has(key) && root.get(key).isJsonArray() ? root.getAsJsonArray(key).size() : 0;
         } catch (RuntimeException e) {
             return 0;
+        }
+    }
+
+    private com.google.gson.JsonArray itemCatalogCache;
+
+    /** 物品目录（面板中文选物器用）：id + 官方中文名 + 有无小图标，构建一次后缓存 */
+    private JsonObject items(HttpExchange exchange) {
+        JsonObject out = ok("ok");
+        if (itemCatalogCache == null) {
+            var arr = new com.google.gson.JsonArray();
+            try (InputStream in = ConfigPanelServer.class.getResourceAsStream("/item-names-zh.tsv")) {
+                if (in != null) {
+                    String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                    for (String line : text.split("\n")) {
+                        if (line.startsWith("#") || !line.contains("\t")) continue;
+                        String[] parts = line.split("\t", 2);
+                        String path = parts[0].trim().toLowerCase();
+                        if (path.isEmpty() || path.equals("air")) continue;
+                        JsonObject o = new JsonObject();
+                        o.addProperty("id", "minecraft:" + path);
+                        o.addProperty("zh", parts[1].trim());
+                        if (ConfigPanelServer.class.getResource("/webpanel/icons/" + path + ".png") != null) {
+                            o.addProperty("icon", path);
+                        }
+                        arr.add(o);
+                    }
+                }
+            } catch (IOException e) {
+                host.logger().warning("[MC-AI] 物品目录读取失败: " + e.getMessage());
+            }
+            itemCatalogCache = arr;
+        }
+        out.add("items", itemCatalogCache);
+        return out;
+    }
+
+    /** 物品小图标（原版贴图）：地址里的名字只许小写字母/数字/下划线，密钥走查询参数（图片标签带不了请求头） */
+    private void handleIcon(HttpExchange exchange) throws IOException {
+        try {
+            String query = exchange.getRequestURI().getRawQuery();
+            if (query == null || !query.contains("token=" + token)) {
+                sendText(exchange, 403, "forbidden");
+                return;
+            }
+            String name = exchange.getRequestURI().getPath().substring("/api/icon/".length());
+            if (!name.matches("[a-z0-9_]{1,80}")) {
+                sendText(exchange, 404, "not found");
+                return;
+            }
+            try (InputStream in = ConfigPanelServer.class.getResourceAsStream("/webpanel/icons/" + name + ".png")) {
+                if (in == null) {
+                    sendText(exchange, 404, "not found");
+                    return;
+                }
+                byte[] bytes = in.readAllBytes();
+                exchange.getResponseHeaders().set("Content-Type", "image/png");
+                exchange.getResponseHeaders().set("Cache-Control", "max-age=86400");
+                exchange.sendResponseHeaders(200, bytes.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(bytes);
+                }
+            }
+        } catch (Exception e) {
+            sendText(exchange, 500, "icon error");
         }
     }
 

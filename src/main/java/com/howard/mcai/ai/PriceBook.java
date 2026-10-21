@@ -298,7 +298,7 @@ public final class PriceBook {
     }
 
     private static double compute(Material m, Set<Material> visiting) {
-        Double anchor = ANCHORS.get(m);
+        Double anchor = anchors().get(m);
         if (anchor != null) return anchor;
         List<Recipe> recipes = RECIPES.get(m);
         if (recipes == null || recipes.isEmpty() || !visiting.add(m)) {
@@ -314,6 +314,63 @@ public final class PriceBook {
         }
         visiting.remove(m);
         return best == Double.POSITIVE_INFINITY ? DEFAULT_VALUE : best;
+    }
+
+
+    // ===== 锚点外置（prices.json）：服主可在配置面板改基础价 =====
+
+    /** 当前生效的锚点表：load 过数据文件用文件的，没 load 用代码内置默认 */
+    private static volatile Map<Material, Double> activeAnchors;
+
+    public static Map<Material, Double> anchors() {
+        Map<Material, Double> a = activeAnchors;
+        return a != null ? a : ANCHORS;
+    }
+
+    /** 当前锚点（物品 ID → 公道价），给定价表编辑/外部接口用 */
+    public static Map<String, Double> anchorEntries() {
+        Map<String, Double> out = new java.util.TreeMap<>();
+        for (var e : anchors().entrySet()) {
+            out.put(ItemIds.idOf(e.getKey()), e.getValue());
+        }
+        return out;
+    }
+
+    /**
+     * 从数据文件夹加载 prices.json（没有就把内置版拷过去再读）。
+     * 坏数据/认不出的物品 ID 只跳过并记日志，绝不让插件起不来；失败时保留原锚点。
+     */
+    public static synchronized int load(java.nio.file.Path dataFolder) {
+        java.nio.file.Path file = dataFolder.resolve("prices.json");
+        try {
+            if (!java.nio.file.Files.exists(file)) {
+                try (java.io.InputStream is = PriceBook.class.getResourceAsStream("/prices.json")) {
+                    if (is != null) {
+                        java.nio.file.Files.createDirectories(dataFolder);
+                        java.nio.file.Files.copy(is, file);
+                    }
+                }
+            }
+            if (!java.nio.file.Files.exists(file)) return -1;
+            String text = java.nio.file.Files.readString(file, java.nio.charset.StandardCharsets.UTF_8);
+            com.google.gson.JsonObject root = com.google.gson.JsonParser.parseString(text).getAsJsonObject();
+            if (!root.has("anchors") || !root.get("anchors").isJsonObject()) return -1;
+            Map<Material, Double> parsed = new EnumMap<>(Material.class);
+            for (var e : root.getAsJsonObject("anchors").entrySet()) {
+                Material m = ItemIds.materialOf(e.getKey());
+                if (m == null || !e.getValue().isJsonPrimitive()) continue;
+                double v = e.getValue().getAsDouble();
+                if (v > 0 && Double.isFinite(v)) parsed.put(m, v);
+            }
+            if (parsed.isEmpty()) return -1;
+            activeAnchors = parsed;
+            synchronized (PriceBook.class) {
+                CACHE.clear();
+            }
+            return parsed.size();
+        } catch (Exception e) {
+            return -1;
+        }
     }
 
     /** 商店卖价（一堆 count 个）：公道价 × 1.2 向上取整，至少 1 */

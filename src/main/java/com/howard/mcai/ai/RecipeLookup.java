@@ -83,10 +83,33 @@ public final class RecipeLookup {
             java.util.Map.entry("minecraft:wooden_sword", "木剑")
     );
 
-    /** 把 item ID 翻成中文，映射不到就用简化英文 ID（防 NPE） */
+    /** 官方中文名全表（item-names-zh.tsv，与 ItemZhTable 同源），首次用时懒加载 */
+    private static volatile java.util.Map<String, String> zhById;
+
+    private static java.util.Map<String, String> zhById() {
+        if (zhById == null) {
+            java.util.Map<String, String> map = new java.util.HashMap<>();
+            try (InputStream in = RecipeLookup.class.getResourceAsStream("/item-names-zh.tsv")) {
+                if (in != null) {
+                    String text = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    for (String line : text.split("\n")) {
+                        if (line.startsWith("#") || !line.contains("\t")) continue;
+                        String[] parts = line.split("\t", 2);
+                        map.put("minecraft:" + parts[0].trim().toLowerCase(), parts[1].trim());
+                    }
+                }
+            } catch (IOException ignored) {
+            }
+            zhById = map;
+        }
+        return zhById;
+    }
+
+    /** 把 item ID 翻成中文：手写俗名优先 → 官方全表 → 简化英文 ID 兜底 */
     private static String materialToZh(String id) {
         if (MATERIAL_ZH.containsKey(id)) return MATERIAL_ZH.get(id);
-        // 去掉 minecraft: 前缀 + 下划线 → 空格
+        String zh = zhById().get(id);
+        if (zh != null) return zh;
         return id.replace("minecraft:", "").replace('_', ' ');
     }
 
@@ -112,8 +135,28 @@ public final class RecipeLookup {
                     root = JsonParser.parseReader(r).getAsJsonObject();
                     recipes = root.has("recipes") ? root.getAsJsonObject("recipes") : new JsonObject();
                     loaded = true;
-                    return;
                 }
+                // 一次性迁移（v0.2.0）：数据文件夹里若还是旧版手写小表（没有 _meta.count 标记
+                // 且条数远少于内置全量表），说明是内置版的历史副本而不是服主定制——
+                // 先把旧文件备份成 recipes.json.old.bak，再换成内置 1.21.1 全量表，
+                // 否则数据文件优先的加载顺序会让新表永远生效不了。
+                if (loaded && !hasFullTableMarker(root)) {
+                    JsonObject bundled = readBundledRoot();
+                    if (bundled != null) {
+                        JsonObject bundledRecipes = bundled.has("recipes")
+                                ? bundled.getAsJsonObject("recipes") : new JsonObject();
+                        if (bundledRecipes.size() > recipes.size() * 2) {
+                            Files.copy(file, dataFolder.resolve("recipes.json.old.bak"),
+                                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            Files.writeString(file, bundled.toString());
+                            root = bundled;
+                            recipes = bundledRecipes;
+                            System.out.println("[MC-AI] 配方表已从旧版小表升级为 1.21.1 全量表（"
+                                    + recipes.size() + " 条），旧文件备份在 recipes.json.old.bak");
+                        }
+                    }
+                }
+                if (loaded) return;
             }
             // 2. data folder 没有 → 从 jar resources copy 过来再读
             try (InputStream is = getClass().getClassLoader().getResourceAsStream("recipes.json")) {
@@ -132,6 +175,23 @@ public final class RecipeLookup {
             // 会把异常一路炸到 onEnable 导致插件起不来 —— 对齐 PersonalityTagLibrary 的写法，
             // 坏数据一律降级为"未加载"空表，PromptBuilder 侧已有 isLoaded() 判断兜底
             loaded = false;
+        }
+    }
+
+    /** 新版全量表的标记：_meta 里带 count（手写小表时代没有这个字段） */
+    private static boolean hasFullTableMarker(JsonObject root) {
+        return root.has("_meta") && root.get("_meta").isJsonObject()
+                && root.getAsJsonObject("_meta").has("count");
+    }
+
+    /** 读 jar 内置版 recipes.json 全文（迁移比对用）；读不到返回 null */
+    private static JsonObject readBundledRoot() {
+        try (InputStream is = RecipeLookup.class.getResourceAsStream("/recipes.json")) {
+            if (is == null) return null;
+            return JsonParser.parseString(
+                    new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -168,6 +228,25 @@ public final class RecipeLookup {
         return null;
     }
 
+    /** 结构化配方（给外部接口/其他插件用）：物品 ID → 材料 ID 与个数 */
+    public record RecipeInfo(String itemId, String nameZh, java.util.Map<String, Integer> materials, int yields) {
+    }
+
+    public RecipeInfo recipeInfo(String itemId) {
+        if (!loaded || itemId == null || !recipes.has(itemId)) return null;
+        JsonObject r = recipes.getAsJsonObject(itemId);
+        java.util.Map<String, Integer> mats = new java.util.LinkedHashMap<>();
+        if (r.has("materials") && r.get("materials").isJsonObject()) {
+            for (var e : r.getAsJsonObject("materials").entrySet()) {
+                mats.put(e.getKey(), e.getValue().getAsInt());
+            }
+        }
+        return new RecipeInfo(itemId,
+                r.has("name_zh") ? r.get("name_zh").getAsString() : itemId,
+                java.util.Collections.unmodifiableMap(mats),
+                r.has("yields") ? r.get("yields").getAsInt() : 1);
+    }
+
     /** 列出所有配方的中文名字（/ai lookup 调试用） */
     public List<String> listAllNames() {
         if (!loaded) return Collections.emptyList();
@@ -193,43 +272,76 @@ public final class RecipeLookup {
      * Items NOT listed here → say "这个我也不太懂" (never invent!).
      * </pre>
      */
+    /** 摘要最多整表注入的条数：小表（手写时代 ~40 条）全塞没问题；全量表改走 relevantFor 按需提供 */
+    private static final int FULL_INJECT_LIMIT = 60;
+
     public String buildPromptSummary() {
         if (!loaded || recipes.size() == 0) {
             return "## Knowledge: No crafting recipes loaded (use generic knowledge but never fabricate exact numbers).";
+        }
+        if (recipes.size() > FULL_INJECT_LIMIT) {
+            return "## Knowledge: Minecraft Crafting Recipes\n"
+                    + "（配方表共 " + recipes.size() + " 条。玩家聊到具体物品时，它的配方会单独出现在上下文里；"
+                    + "没有给出的物品就说「这个我也不太懂」，绝不许编数字。）\n";
         }
 
         StringBuilder sb = new StringBuilder();
         sb.append("## Knowledge: Minecraft Crafting Recipes (CRITICAL — NEVER fabricate numbers!)\n");
         sb.append("Use THESE exact materials when talking about crafting. For items NOT listed, say you don't know.\n");
-
-        // 高频物品优先（按工具类、装备类、基础物品分组）
-        // 先挑全部（当前 JSON 只有 ~40 个，全部塞 prompt 也才 ~1500 token）
         for (var entry : recipes.entrySet()) {
-            JsonObject r = entry.getValue().getAsJsonObject();
-            String zhName = r.has("name_zh") ? r.get("name_zh").getAsString() : entry.getKey();
-            sb.append("- ").append(zhName).append(" → ");
-
-            // materials: { "minecraft:iron_ingot": 2, "minecraft:stick": 1 }
-            // 缺 materials 字段（或类型不是对象）时 getAsJsonObject 返回 null → 直接 entrySet 会 NPE，
-            // 手改坏数据的玩家不该让整段 prompt 构建崩掉，缺了就标 "?" 占位
-            JsonObject mats = (r.has("materials") && r.get("materials").isJsonObject())
-                    ? r.getAsJsonObject("materials") : null;
-            List<String> parts = new ArrayList<>();
-            if (mats != null) {
-                for (var mat : mats.entrySet()) {
-                    parts.add(mat.getValue().getAsInt() + " " + materialToZh(mat.getKey()));
-                }
-            }
-            sb.append(parts.isEmpty() ? "?" : String.join(" + ", parts));
-
-            if (r.has("yields")) {
-                sb.append(" (yields ").append(r.get("yields").getAsInt()).append(")");
-            }
-            sb.append("\n");
+            sb.append(formatLine(entry.getKey(), entry.getValue().getAsJsonObject())).append("\n");
         }
-
         sb.append("RULE: If a player asks about an item NOT in this list, say \"这个我也不太懂\" — NEVER guess!\n");
         return sb.toString();
+    }
+
+    /**
+     * 按需查表：从一段文本（最近对话）里找出被提到的物品，返回它们的配方行。
+     * 全量表 791 条不可能整表塞进每次对话，改成聊到哪件给哪件。
+     */
+    public String relevantFor(String text, int max) {
+        if (!loaded || text == null || text.isBlank() || max <= 0) return "";
+        List<String[]> hits = new ArrayList<>();
+        for (var entry : recipes.entrySet()) {
+            JsonObject r = entry.getValue().getAsJsonObject();
+            String zhName = r.has("name_zh") ? r.get("name_zh").getAsString() : "";
+            boolean byZh = zhName.length() >= 2 && text.contains(zhName);
+            boolean byId = text.toLowerCase().contains(entry.getKey());
+            if (byZh || byId) {
+                hits.add(new String[]{zhName, formatLine(entry.getKey(), r)});
+            }
+        }
+        if (hits.isEmpty()) return "";
+        // 名字越长越具体（"铁胸甲" 优先于 "铁"），长的排前面，截断到 max 条
+        hits.sort((a, b) -> Integer.compare(b[0].length(), a[0].length()));
+        StringBuilder sb = new StringBuilder();
+        sb.append("## 相关配方（玩家刚聊到的物品，数字以这里为准）\n");
+        for (int i = 0; i < Math.min(max, hits.size()); i++) {
+            sb.append(hits.get(i)[1]).append("\n");
+        }
+        return sb.toString();
+    }
+
+    /** 一条配方 → 一行中文摘要（缺 materials 时标 "?"，手改坏数据不许把 prompt 构建弄崩） */
+    private static String formatLine(String key, JsonObject r) {
+        String zhName = r.has("name_zh") ? r.get("name_zh").getAsString() : key;
+        JsonObject mats = (r.has("materials") && r.get("materials").isJsonObject())
+                ? r.getAsJsonObject("materials") : null;
+        List<String> parts = new ArrayList<>();
+        if (mats != null) {
+            for (var mat : mats.entrySet()) {
+                parts.add(mat.getValue().getAsInt() + " " + materialToZh(mat.getKey()));
+            }
+        }
+        StringBuilder line = new StringBuilder();
+        line.append("- ").append(zhName).append(" → ").append(parts.isEmpty() ? "?" : String.join(" + ", parts));
+        if (r.has("yields")) {
+            line.append(" (yields ").append(r.get("yields").getAsInt()).append(")");
+        }
+        if (r.has("note")) {
+            line.append("（").append(r.get("note").getAsString()).append("）");
+        }
+        return line.toString();
     }
 
     /** 单条配方记录（/ai lookup 返回用） */
