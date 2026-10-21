@@ -650,6 +650,17 @@ public final class CentralPlanner extends BukkitRunnable {
      *         返回值供"承诺-执行一致性守卫"用：模型嘴上说"我记住了"但这里返回 false 时，
      *         那句承诺会被剥离，不再出现"答应了却没记住"的空头支票。
      */
+    /**
+     * 统一柜 NpcLearnTool 的入口：与对话路径共用同一套把关
+     * （世界观铁律/信任门槛/强制出处/截断），避免两条路学出两种结果。
+     *
+     * @return true = 知识真的入了永久记忆
+     */
+    public boolean learnViaTool(VillagerState vState, com.google.gson.JsonObject args, Player player) {
+        return handleLearn(vState,
+                new ToolCall("learn", args == null ? new com.google.gson.JsonObject() : args), player);
+    }
+
     private boolean handleLearn(VillagerState vState, ToolCall toolCall, Player nearPlayer) {
         String content = safeGetString(toolCall.arguments(), "content", null);
         if (content == null || content.isBlank()) {
@@ -1458,7 +1469,19 @@ public final class CentralPlanner extends BukkitRunnable {
                         gatedReject = swap.error();
                     }
                 }
-                case "learn" -> reallyLearned = handleLearn(vState, toolCall, nearPlayer);
+                case "learn" -> {
+                    // learn 已迁入统一柜：在第二步半经统一分发执行（把关与旧路径同一套，
+                    // 见 learnViaTool），结果带回给承诺守卫；注册表不可用时回退旧路径
+                    if (isUnifiedTool("learn")) {
+                        preUnifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
+                        reallyLearned = preUnifiedResult != null && preUnifiedResult.success()
+                                && preUnifiedResult.data() != null
+                                && preUnifiedResult.data().has("learned")
+                                && preUnifiedResult.data().get("learned").getAsBoolean();
+                    } else {
+                        reallyLearned = handleLearn(vState, toolCall, nearPlayer);
+                    }
+                }
                 default -> { /* 其余工具没有"会被静默拒绝"的门槛，仍走第三步正常执行 */ }
             }
             if (gatedReject != null) {
@@ -1578,48 +1601,10 @@ public final class CentralPlanner extends BukkitRunnable {
                         + "（站立不动约束·" + vState.profession().zhName + "）");
             }
             switch (toolCall.name()) {
-                case "say" -> {
-                    speak(vState, nearPlayer, dialogue);
-                }
-                case "flee" -> {
-                    // 对话中"站立不动"：逃跑动作只保留台词，不真的移动
-                    if (nearPlayer != null && vState.interactingPlayer() == null) {
-                        double dx = villager.getLocation().getX() - nearPlayer.getLocation().getX();
-                        double dz = villager.getLocation().getZ() - nearPlayer.getLocation().getZ();
-                        double dist = Math.sqrt(dx * dx + dz * dz);
-                        if (dist > 0) {
-                            villager.setVelocity(new org.bukkit.util.Vector(dx / dist * 2, 0.3, dz / dist * 2));
-                        }
-                    }
-                    vState.emotion().addFear(10);
-                    speak(vState, nearPlayer, dialogue);
-                }
-                // move_to / follow_player 已迁入统一柜（走上面的统一分发分支）：
-                // move_to 是 npc.move_to 的别名（寻路任务，替代朝坐标直线硬推）；
-                // follow_player 是 npc.follow_player 的别名（持续跟随任务，替代两步假跟随）。
-                // 对话中不可用由策略层 allowedWhileConversing=false 把关，与旧口径一致。
-                case "find_shelter" -> {
-                    // 对话中不跑去躲雨（站立不动约束）
-                    if (vState.interactingPlayer() == null) {
-                        // 找最近的遮雨处（方块上方 2 格有 solid block）
-                        org.bukkit.Location shelter = findNearestShelter(villager.getLocation(), 20);
-                        if (shelter != null) {
-                            moveEntityTowards(villager, shelter, 1.2);
-                            speak(vState, nearPlayer, dialogue);
-                        } else {
-                            speak(vState, nearPlayer, "（到处找遮雨的地方...）");
-                        }
-                    } else {
-                        speak(vState, nearPlayer, dialogue);
-                    }
-                }
-                case "look_at" -> {
-                    if (nearPlayer != null) {
-                        // 旋转实体看向玩家 —— setRotation（比 teleport 平滑，无闪烁）
-                        faceTowards(villager, nearPlayer.getLocation());
-                    }
-                    speak(vState, nearPlayer, dialogue);
-                }
+                // say / flee / find_shelter / look_at / move_to / follow_player 均已迁入统一柜
+                // （走上面的统一分发分支，本 switch 不再处理）：
+                // move_to=寻路任务、follow_player=跟随任务、flee/find_shelter/look_at 各有
+                // 自己的统一工具（内部仍守对话站立约束），say 是登记标记（台词由 speak 发出）。
                 case "offer_trade" -> {
                     if (nearPlayer != null) {
                         // === 动态交易：LLM 参数驱动增删改配方 ===
@@ -1743,14 +1728,9 @@ public final class CentralPlanner extends BukkitRunnable {
                     }
                     speak(vState, nearPlayer, dialogue);
                 }
-                case "learn" -> {
-                    // 学习已在"第二步半"提前执行过（是否真记住决定"我记住了"这句能不能留），这里只说话
-                    speak(vState, nearPlayer, dialogue);
-                }
-                case "wave", "shake_head", "nod" -> {
-                    // 肢体动作已在 playGesture 里做（起跳/左右跳/前跳），这里只说话
-                    speak(vState, nearPlayer, dialogue);
-                }
+                // learn / wave / shake_head / nod / idle 也已迁入统一柜：
+                // learn 在"第二步半"经统一分发提前执行（是否真记住决定"我记住了"能不能留）；
+                // 手势的可见动作仍由 playGesture 按工具名统一触发，统一工具只做登记。
                 case "give_item" -> {
                     // 给物品已在"第二步半"提前执行过（门槛放不放行直接决定台词里能不能许诺），
                     // 这里绝不能再调一次 execute —— 否则同一件东西会被送出两份
@@ -1760,11 +1740,8 @@ public final class CentralPlanner extends BukkitRunnable {
                     // 交换也已在"第二步半"执行完（双方物品一次性转移），这里只说话
                     speak(vState, nearPlayer, dialogue);
                 }
-                // equip 已迁入统一柜（走上面的统一分发分支），老后门世界交互到此全部退役
-                case "idle" -> {
-                    // idle：只说台词，不做额外动作
-                    speak(vState, nearPlayer, dialogue);
-                }
+                // equip 已迁入统一柜（走上面的统一分发分支），老后门世界交互到此全部退役。
+                // 本 switch 如今只剩 offer_trade（交易将随日后独立交易 UI 一起重做）与兜底。
                 default -> {
                     // 未知 tool → 只显示台词（不要崩溃）
                     speak(vState, nearPlayer, dialogue);
@@ -1986,7 +1963,8 @@ public final class CentralPlanner extends BukkitRunnable {
      * 扫描策略：以起点为中心，半径递增（1,2,3...）查每个水平位置，
      * 找到第一个满足条件的就返回。O(radius²)，20 格内≈1200 次 Block 检查，很快。
      */
-    private org.bukkit.Location findNearestShelter(org.bukkit.Location start, int radius) {
+    /** 找最近的遮雨处（统一柜 NpcFindShelterTool 共用同一份实现） */
+    public org.bukkit.Location findNearestShelter(org.bukkit.Location start, int radius) {
         org.bukkit.World world = start.getWorld();
         int sx = start.getBlockX();
         int sy = start.getBlockY();
