@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MC-AI 配置面板</title>
+<style>
+  :root { --green:#2e7d32; --green-dark:#1b5e20; --bg:#f4f1ea; --card:#fff; --line:#ddd6c4; --text:#2b2b26; --muted:#7a7466; --warn:#b26a00; --bad:#b3261e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { position:sticky; top:0; z-index:10; background:var(--green-dark); color:#fff; padding:12px 20px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+  header h1 { font-size:19px; margin:0 12px 0 0; }
+  header .ver { opacity:.75; font-size:12px; }
+  #status { font-size:13px; background:rgba(255,255,255,.15); padding:4px 10px; border-radius:20px; }
+  #status.dirty { background:#e65100; }
+  header input[type=search] { flex:1; min-width:160px; padding:8px 12px; border:none; border-radius:8px; font-size:14px; }
+  button { cursor:pointer; border:1px solid var(--line); background:#fff; color:var(--text); padding:7px 14px; border-radius:8px; font-size:14px; }
+  button:hover { border-color:var(--green); }
+  button.primary { background:var(--green); border-color:var(--green); color:#fff; font-weight:600; }
+  button.primary:disabled { background:#a5b8a5; border-color:#a5b8a5; cursor:default; }
+  button.danger { color:var(--bad); }
+  button.small { padding:3px 10px; font-size:13px; }
+  nav { display:flex; gap:6px; padding:12px 20px 0; flex-wrap:wrap; }
+  nav button { border-bottom-left-radius:0; border-bottom-right-radius:0; border-bottom:none; background:#e9e4d6; }
+  nav button.active { background:var(--card); font-weight:700; color:var(--green-dark); }
+  main { padding:0 20px 40px; max-width:1120px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-top:14px; }
+  .card h2 { margin:2px 0 10px; font-size:16px; color:var(--green-dark); }
+  .field { display:grid; grid-template-columns: 1fr 260px; gap:6px 16px; padding:10px 0; border-top:1px dashed var(--line); align-items:center; }
+  .field:first-of-type { border-top:none; }
+  .field label { font-weight:600; font-size:14px; }
+  .field .hint { color:var(--muted); font-size:12px; margin-top:2px; }
+  .badge { font-size:11px; padding:1px 7px; border-radius:10px; margin-left:8px; vertical-align:middle; }
+  .badge.live { background:#e0f0e0; color:var(--green-dark); }
+  .badge.restart { background:#fdeed3; color:var(--warn); }
+  .field input[type=text], .field input[type=password], .field input[type=number], .field select { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  .field input[type=checkbox] { width:22px; height:22px; accent-color:var(--green); justify-self:start; }
+  .pwdwrap { display:flex; gap:6px; } .pwdwrap input { flex:1; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { border-top:1px solid var(--line); padding:7px 8px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:13px; }
+  td input, td select, td textarea { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font-size:13px; font-family:inherit; }
+  textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; font-family: Consolas, "Courier New", monospace; font-size:13px; line-height:1.5; }
+  textarea.code { min-height:420px; }
+  .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:10px 0; }
+  .toolbar .spacer { flex:1; }
+  .note { color:var(--muted); font-size:13px; line-height:1.6; }
+  #toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); background:#263238; color:#fff; padding:11px 20px; border-radius:10px; font-size:14px; opacity:0; pointer-events:none; transition:.25s; max-width:88vw; box-shadow:0 6px 18px rgba(0,0,0,.3); }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  #toast.err { background:var(--bad); }
+  @media (max-width: 720px) { .field { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>⛏️ MC-AI 配置面板 <span class="ver">v{{VERSION}} · 第一期</span></h1>
+  <span id="status">正在连接插件…</span>
+  <input type="search" id="search" placeholder="搜索设置（名字、说明都行）">
+  <button class="primary" id="saveConfigBtn" disabled>保存设置</button>
+</header>
+<nav id="tabs">
+  <button data-tab="settings" class="active">⚙️ 常规设置</button>
+  <button data-tab="recipes">🧪 配方表</button>
+  <button data-tab="tags">🎭 性格标签</button>
+  <button data-tab="names">📛 名字库</button>
+  <button data-tab="raw">📄 原始数据</button>
+  <button data-tab="backups">🗂️ 备份恢复</button>
+</nav>
+<main>
+  <section id="tab-settings"></section>
+
+  <section id="tab-recipes" hidden>
+    <div class="card">
+      <h2>配方表（recipes.json）</h2>
+      <p class="note">村民谈论合成时查的就是这张表。材料写法：一行一个，格式是 <b>物品ID=数量</b>，比如 <b>minecraft:iron_ingot=3</b>。改完点保存，插件会先检查一遍，写错了不会落盘。</p>
+      <div class="toolbar"><button id="addRecipeBtn">＋ 新增配方</button><span class="spacer"></span><button class="primary" data-save-data="recipes.json">保存配方表</button></div>
+      <div id="recipeRows"></div>
+    </div>
+  </section>
+
+  <section id="tab-tags" hidden>
+    <div class="card">
+      <h2>性格标签库（personality_tags.json）</h2>
+      <p class="note">每个村民会被抽中几个标签当性格底色。“言行提示”就是写给村民看的性格说明；traits 是性格数值微调（JSON 小对象，不懂可以留空）。</p>
+      <div class="toolbar"><button id="addTagBtn">＋ 新增标签</button><span class="spacer"></span><button class="primary" data-save-data="personality_tags.json">保存性格标签</button></div>
+      <div id="tagRows"></div>
+    </div>
+  </section>
+
+  <section id="tab-names" hidden>
+    <div class="card">
+      <h2>姓氏库（surnames.json）</h2>
+      <p class="note">权重越大，这个姓在村里越常见。</p>
+      <div class="toolbar"><button id="addSurnameBtn">＋ 新增姓氏</button><span class="spacer"></span><button class="primary" data-save-data="surnames.json">保存姓氏库</button></div>
+      <div id="surnameRows"></div>
+    </div>
+    <div class="card">
+      <h2>名字用字库（given_names.json）</h2>
+      <p class="note">一行一个字，村民的名字就从这些字里拼。</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+        <div><b>女名用字</b><textarea id="femaleChars" rows="12" style="margin-top:6px;"></textarea></div>
+        <div><b>男名用字</b><textarea id="maleChars" rows="12" style="margin-top:6px;"></textarea></div>
+      </div>
+      <div class="toolbar"><span class="spacer"></span><button class="primary" data-save-data="given_names.json">保存名字用字</button></div>
+    </div>
+  </section>
+
+  <section id="tab-raw" hidden>
+    <div class="card">
+      <h2>原始数据（直接改文件内容）</h2>
+      <p class="note">表格里没覆盖到的边角字段（比如文件开头的 _meta 说明）在这里改。保存前插件会做完整检查，格式坏了不会落盘；每次保存都会先自动备份。</p>
+      <div class="toolbar">
+        <select id="rawSelect"></select>
+        <button id="rawFormatBtn">整理格式</button>
+        <span class="spacer"></span>
+        <button class="primary" id="rawSaveBtn">保存这个文件</button>
+      </div>
+      <textarea class="code" id="rawText" spellcheck="false"></textarea>
+    </div>
+  </section>
+
+  <section id="tab-backups" hidden>
+    <div class="card">
+      <h2>备份恢复</h2>
+      <p class="note">面板每次保存前都会把旧文件备份到这里。改坏了就点“恢复”回到那一份；恢复前当前文件也会先备份一份，不会越恢复越丢。</p>
+      <div class="toolbar"><button id="refreshBackupsBtn">刷新列表</button></div>
+      <div id="backupRows" class="note">加载中…</div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const API_BASE = "{{API_BASE}}";
+const TOKEN = "{{TOKEN}}";
+const API = API_BASE.startsWith("http") ? API_BASE : window.location.origin;
+
+let state = null;              // /api/state 的完整返回
+const dirtyConfig = new Map(); // path -> 新值
+const docs = {};               // 文件名 -> 已解析的数据对象（结构化编辑用）
+const rawContents = {};        // 文件名 -> 最新文本（原始数据页用）
+
+const $ = (sel, el) => (el || document).querySelector(sel);
+const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
+
+function toast(msg, isErr) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "show" + (isErr ? " err" : "");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.className = "", 3400);
+}
+
+async function api(path, options) {
+  const opts = Object.assign({ headers: { "X-MCAI-Panel-Token": TOKEN } }, options || {});
+  if (opts.body) opts.headers["Content-Type"] = "application/json";
+  let resp;
+  try {
+    resp = await fetch(API + path, opts);
+  } catch (e) {
+    throw new Error("连不上插件的配置服务——服务器没开，或者面板端口被占用了");
+  }
+  let data = null;
+  try { data = await resp.json(); } catch (e) { /* 非 JSON 响应 */ }
+  if (!resp.ok || !data || data.ok === false) {
+    throw new Error((data && data.error) || ("插件返回了错误（" + resp.status + "）"));
+  }
+  return data;
+}
+
+function setStatus(text, dirty) {
+  const s = $("#status");
+  s.textContent = text;
+  s.className = dirty ? "dirty" : "";
+  $("#saveConfigBtn").disabled = !dirty;
+}
+
+// ================= 常规设置 =================
+function renderSettings() {
+  const wrap = $("#tab-settings");
+  wrap.innerHTML = "";
+  const sections = new Map();
+  for (const field of state.fields) {
+    if (!sections.has(field.section)) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = "<h2></h2>";
+      card.querySelector("h2").textContent = field.section;
+      wrap.appendChild(card);
+      sections.set(field.section, card);
+    }
+    const card = sections.get(field.section);
+    const row = document.createElement("div");
+    row.className = "field";
+    row.dataset.search = (field.section + " " + field.label + " " + field.path + " " + (field.hint || "")).toLowerCase();
+
+    const left = document.createElement("div");
+    const lab = document.createElement("label");
+    lab.textContent = field.label;
+    const badge = document.createElement("span");
+    badge.className = "badge " + (field.live ? "live" : "restart");
+    badge.textContent = field.live ? "保存后生效" : "需重启服务器";
+    lab.appendChild(badge);
+    left.appendChild(lab);
+    if (field.hint) {
+      const hint = document.createElement("div");
+      hint.className = "hint";
+      hint.textContent = field.hint;
+      left.appendChild(hint);
+    }
+    row.appendChild(left);
+
+    const right = document.createElement("div");
+    const value = state.values[field.path];
+    let input;
+    if (field.type === "BOOL") {
+      input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = !!value;
+      input.addEventListener("change", () => markDirty(field, input.checked));
+    } else if (field.type === "INT" || field.type === "DOUBLE") {
+      input = document.createElement("input");
+      input.type = "number";
+      input.value = value;
+      if (field.min != null) input.min = field.min;
+      if (field.max != null) input.max = field.max;
+      input.step = field.type === "INT" ? "1" : "0.1";
+      input.addEventListener("input", () => {
+        const raw = input.value.trim();
+        markDirty(field, raw === "" ? null : Number(raw));
+      });
+    } else {
+      input = document.createElement("input");
+      input.type = field.type === "PASSWORD" ? "password" : "text";
+      input.value = value == null ? "" : value;
+      input.addEventListener("input", () => markDirty(field, input.value));
+      if (field.type === "PASSWORD") {
+        const wrapPwd = document.createElement("div");
+        wrapPwd.className = "pwdwrap";
+        wrapPwd.appendChild(input);
+        const show = document.createElement("button");
+        show.type = "button";
+        show.textContent = "显示";
+        show.addEventListener("click", () => {
+          input.type = input.type === "password" ? "text" : "password";
+          show.textContent = input.type === "password" ? "显示" : "隐藏";
+        });
+        wrapPwd.appendChild(show);
+        right.appendChild(wrapPwd);
+        row.appendChild(right);
+        card.appendChild(row);
+        return;
+      }
+    }
+    right.appendChild(input);
+    row.appendChild(right);
+    card.appendChild(row);
+  }
+}
+
+function markDirty(field, value) {
+  if (value === null || (typeof value === "number" && Number.isNaN(value))) {
+    toast(field.label + " 还没填完", true);
+    return;
+  }
+  const original = state.values[field.path];
+  if (value === original) dirtyConfig.delete(field.path);
+  else dirtyConfig.set(field.path, value);
+  if (dirtyConfig.size > 0) setStatus("有 " + dirtyConfig.size + " 项设置改了，还没保存", true);
+  else setStatus("已连接 · 没有未保存的修改", false);
+}
+
+async function saveConfig() {
+  if (dirtyConfig.size === 0) return;
+  const btn = $("#saveConfigBtn");
+  btn.disabled = true;
+  btn.textContent = "保存中…";
+  try {
+    const values = {};
+    for (const [k, v] of dirtyConfig) values[k] = v;
+    const resp = await api("/api/config", { method: "POST", body: JSON.stringify({ values }) });
+    toast(resp.message || "设置已保存");
+    await loadState(false);
+  } catch (e) {
+    toast(e.message, true);
+    btn.disabled = false;
+  } finally {
+    btn.textContent = "保存设置";
+  }
+}
+
+// ================= 数据文件：结构化编辑 =================
+function materialsToText(materials) {
+  return Object.entries(materials || {}).map(([k, v]) => k + "=" + v).join("\n");
+}
+function textToMaterials(text, ownerLabel) {
+  const out = {};
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const eq = t.lastIndexOf("=");
+    if (eq <= 0) throw new Error(ownerLabel + " 的材料写法不对，一行一个：物品ID=数量");
+    const id = t.substring(0, eq).trim();
+    const n = Number(t.substring(eq + 1).trim());
+    if (!id || !(n > 0)) throw new Error(ownerLabel + " 的材料数量必须是正数：" + t);
+    out[id] = n;
+  }
+  return out;
+}
+
+function detailsRow(summaryText) {
+  const d = document.createElement("details");
+  d.style.borderTop = "1px solid var(--line)";
+  d.style.padding = "8px 0";
+  const s = document.createElement("summary");
+  s.style.cursor = "pointer";
+  s.style.fontWeight = "600";
+  s.textContent = summaryText;
+  d.appendChild(s);
+  return d;
+}
+function labeledInput(labelText, input) {
+  const wrap = document.createElement("div");
+  wrap.style.margin = "8px 0";
+  const lab = document.createElement("div");
+  lab.className = "hint";
+  lab.style.color = "var(--muted)";
+  lab.style.fontSize = "12px";
+  lab.textContent = labelText;
+  wrap.appendChild(lab);
+  wrap.appendChild(input);
+  return wrap;
+}
+function textInput(value) {
+  const i = document.createElement("input");
+  i.type = "text";
+  i.value = value == null ? "" : value;
+  i.style.width = "100%";
+  i.style.padding = "6px 8px";
+  i.style.border = "1px solid var(--line)";
+  i.style.borderRadius = "6px";
+  return i;
+}
+
+function renderRecipes() {
+  const doc = docs["recipes.json"];
+  const wrap = $("#recipeRows");
+  wrap.innerHTML = "";
+  for (const [id, recipe] of Object.entries(doc.recipes || {})) {
+    const row = detailsRow(((recipe.name_zh || id) + "（" + id + "）"));
+    const idIn = textInput(id);
+    const nameIn = textInput(recipe.name_zh || "");
+    const yieldIn = document.createElement("input");
+    yieldIn.type = "number"; yieldIn.min = "1"; yieldIn.value = recipe.yields || 1;
+    yieldIn.style.cssText = "width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;";
+    const matTa = document.createElement("textarea");
+    matTa.rows = 4; matTa.value = materialsToText(recipe.materials);
+    const del = document.createElement("button");
+    del.className = "danger small"; del.textContent = "删除这条配方";
+    del.addEventListener("click", () => { row.remove(); });
+    row.append(labeledInput("物品 ID", idIn), labeledInput("中文名", nameIn),
+      labeledInput("一次产出几个", yieldIn), labeledInput("材料（一行一个：物品ID=数量）", matTa), del);
+    row._collect = () => {
+      const newId = idIn.value.trim();
+      if (!newId) throw new Error("有配方的物品 ID 是空的");
+      const r = Object.assign({}, recipe);
+      r.name_zh = nameIn.value.trim();
+      const y = Number(yieldIn.value);
+      if (y > 0) r.yields = y; else delete r.yields;
+      r.materials = textToMaterials(matTa.value, newId);
+      return [newId, r];
+    };
+    wrap.appendChild(row);
+  }
+}
+function collectRecipes() {
+  const out = {};
+  for (const row of $$("#recipeRows details")) {
+    const [id, r] = row._collect();
+    if (out[id]) throw new Error("配方 ID 重复了：" + id);
+    out[id] = r;
+  }
+  docs["recipes.json"].recipes = out;
+}
+
+function renderTags() {
+  const doc = docs["personality_tags.json"];
+  const wrap = $("#tagRows");
+  wrap.innerHTML = "";
+  const cats = ["core", "speech", "quirks", "romance"];
+  const catZh = { core: "核心人格", speech: "说话风格", quirks: "习性怪癖", romance: "情感倾向" };
+  for (const [id, tag] of Object.entries(doc.tags || {})) {
+    const row = detailsRow(((tag.name_zh || id) + "（" + id + " · " + (catZh[tag.category] || tag.category) + "）"));
+    const idIn = textInput(id);
+    const catSel = document.createElement("select");
+    catSel.style.cssText = "width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;";
+    for (const c of cats) {
+      const o = document.createElement("option");
+      o.value = c; o.textContent = catZh[c] + "（" + c + "）";
+      if (tag.category === c) o.selected = true;
+      catSel.appendChild(o);
+    }
+    const nameIn = textInput(tag.name_zh || "");
+    const promptTa = document.createElement("textarea");
+    promptTa.rows = 3; promptTa.value = tag.prompt || "";
+    const traitsTa = document.createElement("textarea");
+    traitsTa.rows = 2;
+    traitsTa.value = tag.traits ? JSON.stringify(tag.traits) : "";
+    traitsTa.placeholder = '可留空。例：{"open_mindedness": -0.3}';
+    const del = document.createElement("button");
+    del.className = "danger small"; del.textContent = "删除这个标签";
+    del.addEventListener("click", () => { row.remove(); });
+    row.append(labeledInput("标签 ID（英文，村民身上记的就是它）", idIn), labeledInput("分类", catSel),
+      labeledInput("中文名", nameIn), labeledInput("言行提示（写给村民的性格说明）", promptTa),
+      labeledInput("traits 性格数值（JSON，可留空）", traitsTa), del);
+    row._collect = () => {
+      const newId = idIn.value.trim();
+      if (!newId) throw new Error("有标签的 ID 是空的");
+      const t = Object.assign({}, tag);
+      t.category = catSel.value;
+      t.name_zh = nameIn.value.trim();
+      t.prompt = promptTa.value.trim();
+      const traitsText = traitsTa.value.trim();
+      if (traitsText) {
+        try { t.traits = JSON.parse(traitsText); }
+        catch (e) { throw new Error("标签 " + newId + " 的 traits 不是合法 JSON"); }
+      } else delete t.traits;
+      return [newId, t];
+    };
+    wrap.appendChild(row);
+  }
+}
+function collectTags() {
+  const out = {};
+  for (const row of $$("#tagRows details")) {
+    const [id, t] = row._collect();
+    if (out[id]) throw new Error("标签 ID 重复了：" + id);
+    out[id] = t;
+  }
+  docs["personality_tags.json"].tags = out;
+}
+
+function renderNames() {
+  const surnames = docs["surnames.json"];
+  const wrap = $("#surnameRows");
+  wrap.innerHTML = "";
+  const table = document.createElement("table");
+  table.innerHTML = "<tr><th style='width:45%'>姓氏</th><th style='width:35%'>权重</th><th></th></tr>";
+  for (const item of surnames.surnames || []) {
+    const tr = document.createElement("tr");
+    const nameIn = textInput(item.name || "");
+    const weightIn = document.createElement("input");
+    weightIn.type = "number"; weightIn.min = "1"; weightIn.value = item.weight || 1;
+    const del = document.createElement("button");
+    del.className = "danger small"; del.textContent = "删";
+    del.addEventListener("click", () => tr.remove());
+    const td1 = document.createElement("td"); td1.appendChild(nameIn);
+    const td2 = document.createElement("td"); td2.appendChild(weightIn);
+    const td3 = document.createElement("td"); td3.appendChild(del);
+    tr.append(td1, td2, td3);
+    tr._collect = () => {
+      const extra = Object.assign({}, item);
+      extra.name = nameIn.value.trim();
+      const w = Number(weightIn.value);
+      extra.weight = w > 0 ? w : 1;
+      return extra;
+    };
+    table.appendChild(tr);
+  }
+  wrap.appendChild(table);
+  const given = docs["given_names.json"];
+  $("#femaleChars").value = (given.female || []).join("\n");
+  $("#maleChars").value = (given.male || []).join("\n");
+}
+function collectSurnames() {
+  const out = [];
+  for (const tr of $$("#surnameRows tr")) {
+    if (tr._collect) out.push(tr._collect());
+  }
+  docs["surnames.json"].surnames = out;
+}
+function collectGivenNames() {
+  const parse = (text) => text.split("\n").map(s => s.trim()).filter(Boolean);
+  docs["given_names.json"].female = parse($("#femaleChars").value);
+  docs["given_names.json"].male = parse($("#maleChars").value);
+}
+
+async function saveData(name) {
+  try {
+    if (name === "recipes.json") collectRecipes();
+    if (name === "personality_tags.json") collectTags();
+    if (name === "surnames.json") collectSurnames();
+    if (name === "given_names.json") collectGivenNames();
+    const resp = await api("/api/data", {
+      method: "POST",
+      body: JSON.stringify({ name, content: JSON.stringify(docs[name], null, 2) })
+    });
+    toast(resp.message || "已保存");
+    await loadState(false);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// ================= 原始数据 =================
+function renderRawSelect() {
+  const sel = $("#rawSelect");
+  sel.innerHTML = "";
+  for (const f of state.files) {
+    const o = document.createElement("option");
+    o.value = f.name;
+    o.textContent = f.label + "（" + f.name + "）";
+    sel.appendChild(o);
+  }
+  $("#rawText").value = rawContents[sel.value] || "";
+}
+
+// ================= 备份 =================
+async function renderBackups() {
+  const wrap = $("#backupRows");
+  try {
+    const data = await api("/api/backups");
+    if (!data.backups || data.backups.length === 0) {
+      wrap.textContent = "还没有备份。第一次保存设置或数据时会自动生成。";
+      return;
+    }
+    const table = document.createElement("table");
+    table.innerHTML = "<tr><th>备份的是</th><th>时间</th><th></th></tr>";
+    for (const b of data.backups) {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td"); td1.textContent = b.target;
+      const td2 = document.createElement("td"); td2.textContent = b.time;
+      const td3 = document.createElement("td");
+      const btn = document.createElement("button");
+      btn.className = "small"; btn.textContent = "恢复这一份";
+      btn.addEventListener("click", async () => {
+        if (!confirm("确定恢复 " + b.target + " 的这份备份？当前的会先再备份一份。")) return;
+        try {
+          const resp = await api("/api/restore", { method: "POST", body: JSON.stringify({ id: b.id }) });
+          toast(resp.message || "已恢复");
+          await loadState(false);
+          await renderBackups();
+        } catch (e) { toast(e.message, true); }
+      });
+      td3.appendChild(btn);
+      tr.append(td1, td2, td3);
+      table.appendChild(tr);
+    }
+    wrap.innerHTML = "";
+    wrap.appendChild(table);
+  } catch (e) {
+    wrap.textContent = "备份列表读取失败：" + e.message;
+  }
+}
+
+// ================= 加载与导航 =================
+async function loadState(announce) {
+  state = await api("/api/state");
+  dirtyConfig.clear();
+  for (const f of state.files) {
+    rawContents[f.name] = f.content;
+    docs[f.name] = JSON.parse(f.content);
+  }
+  renderSettings();
+  renderRecipes();
+  renderTags();
+  renderNames();
+  renderRawSelect();
+  setStatus("已连接 · 没有未保存的修改", false);
+  if (announce) toast("已连上插件，设置和数据都加载好了");
+}
+
+$$("#tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    $$("#tabs button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    for (const name of ["settings", "recipes", "tags", "names", "raw", "backups"]) {
+      $("#tab-" + name).hidden = name !== btn.dataset.tab;
+    }
+    if (btn.dataset.tab === "backups") renderBackups();
+  });
+});
+$("#saveConfigBtn").addEventListener("click", saveConfig);
+$$("[data-save-data]").forEach(btn => btn.addEventListener("click", () => saveData(btn.dataset.saveData)));
+$("#addRecipeBtn").addEventListener("click", () => {
+  docs["recipes.json"].recipes = docs["recipes.json"].recipes || {};
+  docs["recipes.json"].recipes["minecraft:new_item"] = { name_zh: "新物品", materials: { "minecraft:stick": 1 }, yields: 1 };
+  renderRecipes();
+  toast("已加一条空配方，展开改好后记得保存");
+});
+$("#addTagBtn").addEventListener("click", () => {
+  docs["personality_tags.json"].tags = docs["personality_tags.json"].tags || {};
+  docs["personality_tags.json"].tags["new_tag"] = { category: "quirks", name_zh: "新标签", prompt: "在这里写这个性格的表现。" };
+  renderTags();
+  toast("已加一个空标签，展开改好后记得保存");
+});
+$("#addSurnameBtn").addEventListener("click", () => {
+  docs["surnames.json"].surnames = docs["surnames.json"].surnames || [];
+  docs["surnames.json"].surnames.push({ name: "新", weight: 1 });
+  renderNames();
+});
+$("#rawSelect").addEventListener("change", () => { $("#rawText").value = rawContents[$("#rawSelect").value] || ""; });
+$("#rawFormatBtn").addEventListener("click", () => {
+  try {
+    $("#rawText").value = JSON.stringify(JSON.parse($("#rawText").value), null, 2);
+  } catch (e) { toast("这份内容不是合法 JSON：" + e.message, true); }
+});
+$("#rawSaveBtn").addEventListener("click", async () => {
+  const name = $("#rawSelect").value;
+  try {
+    const resp = await api("/api/data", { method: "POST", body: JSON.stringify({ name, content: $("#rawText").value }) });
+    toast(resp.message || "已保存");
+    await loadState(false);
+  } catch (e) { toast(e.message, true); }
+});
+$("#refreshBackupsBtn").addEventListener("click", renderBackups);
+$("#search").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  $$("#tab-settings .field").forEach(row => {
+    row.style.display = !q || row.dataset.search.includes(q) ? "" : "none";
+  });
+  $$("#tab-settings .card").forEach(card => {
+    const any = $$(".field", card).some(r => r.style.display !== "none");
+    card.style.display = any ? "" : "none";
+  });
+});
+
+loadState(true).catch(e => {
+  setStatus("连接失败", false);
+  toast(e.message, true);
+});
+</script>
+</body>
+</html>

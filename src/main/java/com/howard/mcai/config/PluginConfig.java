@@ -101,7 +101,14 @@ public record PluginConfig(
         int resourcePackPort,
 
         /** 发包地址的主机名覆盖（null = 按每个玩家连进来的地址自动推导；内网穿透/代理时才需要填） */
-        String resourcePackHost
+        String resourcePackHost,
+
+        // 网页配置面板（第一期）
+        /** 是否启用网页配置面板（本机管理服务 + 数据文件夹里生成面板 HTML） */
+        boolean webPanelEnabled,
+
+        /** 配置面板的本机端口（只绑 127.0.0.1，改后需重启） */
+        int webPanelPort
 ) {
 
     /**
@@ -161,7 +168,10 @@ public record PluginConfig(
                 // Shop
                 cfg.getBoolean("shop.resource-pack-skin", false),
                 cfg.getInt("shop.resource-pack-port", 8765),
-                blankToNull(cfg.getString("shop.resource-pack-host", ""))
+                blankToNull(cfg.getString("shop.resource-pack-host", "")),
+                // Web panel（第一期）
+                cfg.getBoolean("web-panel.enabled", true),
+                cfg.getInt("web-panel.port", 8767)
         );
     }
 

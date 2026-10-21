@@ -89,6 +89,10 @@ public final class McaiPlugin extends JavaPlugin {
     /** 气泡管理器（TextDisplay riding villager） */
     private BubbleManager bubbleManager;
     private com.howard.mcai.resourcepack.PackServer packServer;
+    /** 网页配置面板（第一期）的本机管理服务 */
+    private com.howard.mcai.webpanel.ConfigPanelServer configPanelServer;
+    /** 资源包服务当前实际在用的端口（-1 = 没在跑）；面板改了皮肤开关/发包端口时据此决定要不要重启发包服务 */
+    private int packServerPort = -1;
 
     /** 记忆存储（debounce flush + JSON 持久化） */
     private MemoryStore memoryStore;
@@ -282,10 +286,7 @@ public final class McaiPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.VillagerInventoryListener(), this);
         Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.ShopGuiListener(), this);
         // 商店资源包自动发送（进服发包 + 结果日志）；发不发由监听内部按皮肤开关/服务状态把关
-        packServer = new com.howard.mcai.resourcepack.PackServer(this);
-        if (config.shopSkinEnabled()) {
-            packServer.start(config.resourcePackPort());
-        }
+        syncPackServer();
         Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.ResourcePackListener(this), this);
         // 交易成交 → 好感 +1（玩家照顾 NPC 生意也是互动，让"关系够不够好"能靠日常攒起来）
         Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.VillagerTradeListener(this), this);
@@ -310,6 +311,26 @@ public final class McaiPlugin extends JavaPlugin {
         getLogger().info(" 记忆目录: " + getDataFolder().getAbsolutePath() + "/memory");
         getLogger().info("========================================");
         getLogger().info("MC-AI enabled! /ai test 验证 LLM，/ai reload 重载配置。");
+
+        // 8.5 网页配置面板（第一期）：本机管理服务 + 在数据文件夹生成面板 HTML。
+        //     失败只警告不拦启动（同资源包服务的降级原则）。
+        if (config.webPanelEnabled()) {
+            configPanelServer = new com.howard.mcai.webpanel.ConfigPanelServer(
+                    new com.howard.mcai.webpanel.ConfigPanelServer.Host() {
+                        @Override public java.nio.file.Path dataFolder() { return getDataFolder().toPath(); }
+                        @Override public java.util.logging.Logger logger() { return getLogger(); }
+                        @Override public String version() { return getDescription().getVersion(); }
+                        @Override public java.util.concurrent.CompletableFuture<String> reload() { return reloadFromPanel(); }
+                    });
+            if (configPanelServer.start(config.webPanelPort())) {
+                try {
+                    java.nio.file.Path panelFile = configPanelServer.writePanelFile();
+                    getLogger().info("[MC-AI] 配置面板文件已生成: " + panelFile + "（双击打开就能改设置）");
+                } catch (Exception e) {
+                    getLogger().warning("[MC-AI] 配置面板文件生成失败: " + e.getMessage());
+                }
+            }
+        }
 
         // 9. 全局扫一遍所有已加载 chunks → 把自然 spawn 的原版村民也注册进 AI 管理
         // （ChunkLoadEvent 只对新加载的 chunk 触发，已加载的需要手动扫）
@@ -370,6 +391,10 @@ public final class McaiPlugin extends JavaPlugin {
         if (packServer != null) {
             packServer.stop();
             packServer = null;
+        }
+        if (configPanelServer != null) {
+            configPanelServer.stop();
+            configPanelServer = null;
         }
 
         // 1. cancel tick loop（防止关服时还在跑）
@@ -1134,25 +1159,67 @@ public final class McaiPlugin extends JavaPlugin {
     }
 
     private void handleReload(CommandSender sender) {
+        sender.sendMessage("§a" + applyConfigReload());
+    }
+
+    /** 配置 + 数据重载的实际动作（/ai reload 与网页配置面板共用），返回一行人话摘要 */
+    public String applyConfigReload() {
         reloadConfig();
         config = PluginConfig.load(getConfig());
         llmClient = new LLMClient(config);
         // 新 config 对象要同步给静态镜像，否则压缩阈值永远是启动时的旧值
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
+        // 职业徽章开关同理（商店皮肤在面板里开关时要跟着变）
+        com.howard.mcai.ai.ProfessionBadge.setEnabled(config.shopSkinEnabled());
+        // 资源包发包服务按新开关/新端口对齐（面板里改了商店皮肤或发包端口也能即时生效）
+        syncPackServer();
         // 顺带 reload 配方表 + 人格标签库（用户可能编辑了）
         recipeLookup.load(getDataFolder().toPath());
         PromptBuilder.setRecipeLookup(recipeLookup);
         PersonalityTagLibrary.load(getDataFolder().toPath());
         NameLibrary.load(getDataFolder().toPath());
-        sender.sendMessage("§a配置 + 配方 + 人格标签 + 名字库已重载 — 模型: " + config.llmModel()
-                + " §7@ §f" + config.llmUrl()
-                + " §7(recipes=" + (recipeLookup.isLoaded() ? recipeLookup.size() : 0)
+        String summary = "配置 + 配方 + 人格标签 + 名字库已重载 — 模型: " + config.llmModel()
+                + " @ " + config.llmUrl()
+                + " (recipes=" + (recipeLookup.isLoaded() ? recipeLookup.size() : 0)
                 + ", tags=" + (PersonalityTagLibrary.isLoaded() ? PersonalityTagLibrary.size() : 0)
-                + ", names=" + (NameLibrary.isLoaded() ? NameLibrary.surnameCount() : 0) + ")");
+                + ", names=" + (NameLibrary.isLoaded() ? NameLibrary.surnameCount() : 0) + ")";
         getLogger().info("Config + recipes + personality tags + names reloaded. model=" + config.llmModel()
                 + " recipes=" + (recipeLookup.isLoaded() ? recipeLookup.size() : 0)
                 + " tags=" + (PersonalityTagLibrary.isLoaded() ? PersonalityTagLibrary.size() : 0)
                 + " names=" + (NameLibrary.isLoaded() ? NameLibrary.surnameCount() : 0));
+        return summary;
+    }
+
+    /** 网页配置面板保存后的重载入口：切回主线程执行，面板那边等结果 */
+    public java.util.concurrent.CompletableFuture<String> reloadFromPanel() {
+        java.util.concurrent.CompletableFuture<String> future = new java.util.concurrent.CompletableFuture<>();
+        Bukkit.getScheduler().runTask(this, () -> {
+            try {
+                future.complete(applyConfigReload());
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+        });
+        return future;
+    }
+
+    /** 让资源包发包服务与当前配置对齐：该开则开（端口变了先停再启），该关则关 */
+    private void syncPackServer() {
+        boolean want = config.shopSkinEnabled();
+        int wantPort = config.resourcePackPort();
+        boolean running = packServer != null && packServer.available();
+        if (want && running && packServerPort == wantPort) return;
+        if (packServer != null) {
+            packServer.stop();
+            packServer = null;
+        }
+        packServerPort = -1;
+        if (want) {
+            packServer = new com.howard.mcai.resourcepack.PackServer(this);
+            if (packServer.start(wantPort)) {
+                packServerPort = wantPort;
+            }
+        }
     }
 
     /**
