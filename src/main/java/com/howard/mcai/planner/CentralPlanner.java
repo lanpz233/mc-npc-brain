@@ -1546,9 +1546,12 @@ public final class CentralPlanner extends BukkitRunnable {
             if (unifiedResult == null) {
                 unifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
                 // 本轮新分发的动作类工具若失败，把原因同步给玩家（与老后门口径一致：
-                // 权限拒绝这类系统事实进玩家聊天框 + 控制台，不冒 NPC 气泡）
+                // 权限拒绝这类系统事实进玩家聊天框 + 控制台，不冒 NPC 气泡）。
+                // 例外：移动类（move_to/follow_player 等）在对话中被策略层拦下、或已有任务在跑，
+                // 旧口径只记日志不打扰玩家——保持一致，避免聊天时刷系统提示。
                 if (unifiedResult != null && !unifiedResult.success()
-                        && unifiedResult.errorMessage() != null && isActionTool(toolCall.name())) {
+                        && unifiedResult.errorMessage() != null && isActionTool(toolCall.name())
+                        && !MOVEMENT_TOOLS.contains(toolCall.name())) {
                     String feedback = "§e" + unifiedResult.errorMessage();
                     if (nearPlayer != null && nearPlayer.isOnline()) {
                         nearPlayer.sendMessage(feedback);
@@ -1591,39 +1594,10 @@ public final class CentralPlanner extends BukkitRunnable {
                     vState.emotion().addFear(10);
                     speak(vState, nearPlayer, dialogue);
                 }
-                case "move_to" -> {
-                    // 对话中不移动（站立不动约束）；只在非对话状态才走路
-                    if (vState.interactingPlayer() == null) {
-                        // 从 tool arguments 读 x,y,z —— LLM 应该会按 schema 生成坐标
-                        double tx = safeGetDouble(toolCall.arguments(), "x", villager.getLocation().getX());
-                        double ty = safeGetDouble(toolCall.arguments(), "y", villager.getLocation().getY());
-                        double tz = safeGetDouble(toolCall.arguments(), "z", villager.getLocation().getZ());
-                        org.bukkit.Location target = new org.bukkit.Location(villager.getWorld(), tx, ty, tz);
-                        // Paper API 没有 pathfind() —— 用 setVelocity 给一个朝目标方向的速度向量
-                        moveEntityTowards(villager, target, 1.0);
-                    }
-                    speak(vState, nearPlayer, dialogue);
-                }
-                case "follow_player" -> {
-                    // 对话中"站立不动"：不跟随（玩家正面对面聊天，NPC 乱跑很怪）
-                    if (nearPlayer != null && vState.interactingPlayer() == null) {
-                        // 让 NPC 持续跟随玩家 —— 每 20 tick 走一步（简化版）
-                        moveEntityTowards(villager, nearPlayer.getLocation(), 0.8);
-                        speak(vState, nearPlayer, dialogue);
-                        // 1 秒后再走一步（让跟随持续，但只续一次避免无限递归）
-                        VillagerState capturedState = vState;
-                        Player capturedPlayer = nearPlayer;
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            if (capturedState.entity().isValid() && capturedPlayer.isOnline()
-                                    && capturedState.entity().getLocation().distance(capturedPlayer.getLocation()) < 15
-                                    && capturedState.interactingPlayer() == null) {
-                                moveEntityTowards(capturedState.entity(), capturedPlayer.getLocation(), 0.8);
-                            }
-                        }, 20L);
-                    } else {
-                        speak(vState, nearPlayer, dialogue);
-                    }
-                }
+                // move_to / follow_player 已迁入统一柜（走上面的统一分发分支）：
+                // move_to 是 npc.move_to 的别名（寻路任务，替代朝坐标直线硬推）；
+                // follow_player 是 npc.follow_player 的别名（持续跟随任务，替代两步假跟随）。
+                // 对话中不可用由策略层 allowedWhileConversing=false 把关，与旧口径一致。
                 case "find_shelter" -> {
                     // 对话中不跑去躲雨（站立不动约束）
                     if (vState.interactingPlayer() == null) {
