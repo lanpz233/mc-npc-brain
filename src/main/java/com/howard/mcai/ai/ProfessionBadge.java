@@ -1,6 +1,8 @@
 package com.howard.mcai.ai;
 
 import com.howard.mcai.mob.VillagerProfession;
+import net.kyori.adventure.key.Key;
+import net.kyori.adventure.text.Component;
 
 /**
  * 职业徽章（素材阶段 5）—— 聊天台词与对话提示里村民名字前的小牌匾：
@@ -45,5 +47,22 @@ public final class ProfessionBadge {
             case NITWIT -> "\uE12E";
             default -> "\uE120";
         };
+    }
+
+    /**
+     * 把徽章拼到一段内容前面 —— 必须平级拼装：徽章与内容各自作为子组件挂到一个
+     * 无样式的空根下。<b>绝不能</b>把内容 append 到徽章组件上：游戏的组件样式会
+     * 从父传给子，徽章的 mcai_shop 字体会把整段内容一起染掉——那套字体只有牌匾
+     * 字形、没有汉字，整句台词会变成满屏方块（2026-10-21 实测事故）。
+     *
+     * @param content 原内容组件（字体保持原样，通常是默认字体）
+     * @param p       说话村民的职业
+     * @return [徽章（mcai_shop 字体）, 空格, 原内容] 三个平级子组件组成的根组件
+     */
+    public static Component prependBadge(Component content, VillagerProfession p) {
+        return Component.empty()
+                .append(Component.text(badgeOf(p)).font(Key.key("minecraft", "mcai_shop")))
+                .append(Component.space())
+                .append(content);
     }
 }

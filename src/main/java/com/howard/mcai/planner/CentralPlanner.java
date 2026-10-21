@@ -229,17 +229,11 @@ public final class CentralPlanner extends BukkitRunnable {
         net.kyori.adventure.text.Component bar = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
                 .legacySection().deserialize(text);
         // 开了资源包皮肤 → 名字前挂职业徽章（与他商店招牌同图，素材阶段 5）
+        // 必须走 prependBadge 平级拼装：把内容 append 到徽章组件上会让整段继承徽章字体 → 满屏方块
         if (com.howard.mcai.ai.ProfessionBadge.enabled()) {
-            bar = badgeComponent(vState).append(net.kyori.adventure.text.Component.space()).append(bar);
+            bar = com.howard.mcai.ai.ProfessionBadge.prependBadge(bar, vState.profession());
         }
         player.sendActionBar(bar);
-    }
-
-    /** 职业徽章组件（mcai_shop 字体字形）；调用方先确认 ProfessionBadge.enabled() */
-    private static net.kyori.adventure.text.Component badgeComponent(VillagerState vState) {
-        return net.kyori.adventure.text.Component
-                .text(com.howard.mcai.ai.ProfessionBadge.badgeOf(vState.profession()))
-                .font(net.kyori.adventure.key.Key.key("minecraft", "mcai_shop"));
     }
 
     /** 清掉动作栏提示（结束对话时） */
@@ -1878,10 +1872,10 @@ public final class CentralPlanner extends BukkitRunnable {
             String line = "§6[" + name + ">" + listenerName + "] §f" + dialogue;
             if (com.howard.mcai.ai.ProfessionBadge.enabled()) {
                 // 开了资源包皮肤 → 台词前挂职业徽章（与他商店招牌同图，素材阶段 5）
-                nearPlayer.sendMessage(badgeComponent(vState)
-                        .append(net.kyori.adventure.text.Component.space())
-                        .append(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
-                                .legacySection().deserialize(line)));
+                // 必须走 prependBadge 平级拼装：把台词 append 到徽章组件上会让整句继承徽章字体 → 满屏方块
+                nearPlayer.sendMessage(com.howard.mcai.ai.ProfessionBadge.prependBadge(
+                        net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                                .legacySection().deserialize(line), vState.profession()));
             } else {
                 nearPlayer.sendMessage(line);
             }
