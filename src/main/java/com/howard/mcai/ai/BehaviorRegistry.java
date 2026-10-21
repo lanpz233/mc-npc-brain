@@ -99,7 +99,7 @@ public final class BehaviorRegistry {
                 这个函数可以动态改你的商店：
                 - action="open"：只打开商店（用当前配置，不传参数时默认）
                 - action="offer"：上架一件商品（item 中文名，price 绿宝价格，count 给几个）
-                - action="offer" + price=0：**免费送**（东西会直接放进对方背包，不进商店）
+                - action="offer" + price=0：**免费送**（东西会直接放进对方背包，不进商店；但必须从你库存里出——没有库存就送不了，不许凭空变出来）
                 - action="discount"：砍价降价（item 降为新 price）
                 - action="remove"：下架商品（item）
                 """,

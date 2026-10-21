@@ -154,6 +154,61 @@ public final class WorldInteractionService {
         return null;
     }
 
+    // ===== 免费赠送（offer_trade 的 price=0 路径）—— 必须出库存，禁止凭空造物 =====
+
+    /** 免费赠送单次上限（与旧实现一致，只是不再凭空生成） */
+    public static final int FREE_GIFT_MAX = 16;
+
+    /**
+     * 免费送实际能给出的数量 —— 纯函数，供单测。
+     * 非神使：库存有多少最多给多少（库存 0 = 一个都不给）；神使：可凭空补足（调用方记审计）。
+     */
+    static int freeGiftAmount(int requested, int stock, boolean envoy) {
+        int want = Math.max(0, Math.min(FREE_GIFT_MAX, requested));
+        if (envoy) return want;
+        return Math.min(want, Math.max(0, stock));
+    }
+
+    /**
+     * 执行一次免费赠送（主线程）：东西必须从 NPC 真实库存出（神使除外，凭空部分记审计）。
+     * <p>
+     * 背景：旧实现 price=0 时直接把物品塞进玩家背包、完全不扣库存，等于印钞口——
+     * 模型一句话就能凭空变出最多 16 个任意物品（设计决策文档 2026-10-21 第 6 节已定取消）。
+     * 现在与 give_item 同规：平民/亲信只出库存，没有就是没有；交付后标记防重，
+     * 避免模型同轮再走 give_item 送出第二份。
+     *
+     * @return 实际交付的数量（0 = 没给成，调用方不要再宣称送过了）
+     */
+    public int deliverFreeGift(VillagerState vs, Player player, Material mat, int requestedCount) {
+        if (vs == null || player == null || mat == null || mat.isAir() || requestedCount <= 0) return 0;
+        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
+        boolean envoy = permissions.rankOf(vs, player.getUniqueId()) == NpcRank.ENVOY;
+        int stock = vs.stockOf(mat);
+        int give = freeGiftAmount(requestedCount, stock, envoy);
+        if (give <= 0) {
+            plugin.getLogger().info("§c[MC-AI] 免费赠送拦截: " + npcName + " 库存没有 "
+                    + mat.name() + "，不能凭空送（已取消凭空造物）");
+            return 0;
+        }
+        int fromStock = Math.min(give, stock);
+        if (fromStock > 0) vs.removeFromInventory(mat, fromStock);
+        if (give > fromStock) {
+            // 神使凭空补足的部分必须审计（与 give_item 神使刷物品同规）
+            auditLog.log(npcName, vs.getUniqueId(), "offer_trade_free_gift",
+                    "item=" + mat.name() + ",spawned=" + (give - fromStock)
+                            + ",target=" + player.getName(), "OK");
+        }
+        var leftover = player.getInventory().addItem(new ItemStack(mat, give));
+        if (!leftover.isEmpty()) {
+            player.getWorld().dropItemNaturally(player.getLocation(), leftover.values().iterator().next());
+        }
+        vs.markAutoGiven(mat);
+        plugin.getMemoryStore().markDirty(vs.getUniqueId());
+        plugin.getLogger().info("§b[MC-AI] 免费赠送(出库存): " + npcName + " → " + player.getName()
+                + " " + mat.name() + " x" + give + (give > fromStock ? "（神使凭空补 " + (give - fromStock) + "，已审计）" : ""));
+        return give;
+    }
+
     // ===== 右键交换：玩家主手物品 ↔ NPC 库存物品（模型同意后才执行） =====
 
     /**
