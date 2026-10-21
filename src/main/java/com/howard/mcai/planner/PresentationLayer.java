@@ -159,7 +159,13 @@ public final class PresentationLayer extends TickLayer {
         for (VillagerState vState : villagers.values()) {
             if (!vState.entity().isValid()) continue;
             // 对话超时按真实游戏 tick 累计（每轮 +intervalTicks，而不是按运行次数 +1）
+            java.util.UUID talkingTo = vState.interactingPlayer();
             vState.tickConversationTimeout(plugin.getPluginConfig().tickIntervalTicks());
+            // 超时结束对话时 endConversation 已记下结束时间 —— 标脏让它落盘，
+            // 否则玩家重启服务器后回来会被当成“没有上次记录”。
+            if (talkingTo != null && vState.interactingPlayer() == null) {
+                plugin.getMemoryStore().markDirty(vState.getUniqueId());
+            }
             // 恐惧随时间缓慢消退（-1/轮≈-1/3秒，100 降到 0 约需 5 分钟）
             vState.emotion().decayFear();
             // 附近有僵尸 → 恐惧上涨 + 记一条"害怕"心情（僵尸不走就持续压过衰减）
