@@ -77,6 +77,7 @@
   <button data-tab="prompts">💬 提示词</button>
   <button data-tab="prices">🪙 定价表</button>
   <button data-tab="pools">🧺 职业货池</button>
+  <button data-tab="professions">🎭 职业设定</button>
   <button data-tab="raw">📄 原始数据</button>
   <button data-tab="backups">🗂️ 备份恢复</button>
 </nav>
@@ -155,6 +156,15 @@
       <p class="note">点开一个职业就能改他的卖出清单和收购清单（个数 = 每摊摆多少）。村民开摊时从清单里抽 6~8 样卖、2~3 样收，所以清单可以放心写长。某个职业<strong>全部清空 = 恢复插件默认清单</strong>。价格不在这里定，按定价表算。</p>
       <div class="toolbar"><span class="spacer"></span><button data-export-data="profession-pools.json">⬇ 导出</button><button data-import-data="profession-pools.json">⬆ 导入</button><button class="primary" data-save-data="profession-pools.json">保存职业货池</button></div>
       <div id="poolRows"></div>
+    </div>
+  </section>
+
+  <section id="tab-professions" hidden>
+    <div class="card">
+      <h2>职业设定（每个人设一句话 + 说话风格）</h2>
+      <p class="note">每个职业的村民“是什么样的人、怎么说话”都在这里。<strong>口头禅就写在人设和说话风格里</strong>（比如铁匠的“叮当”）——想换就在对应职业里改了保存，马上生效。某个职业两栏都清空 = 恢复插件内置默认。</p>
+      <div class="toolbar"><span class="spacer"></span><button data-export-data="professions.json">⬇ 导出</button><button data-import-data="professions.json">⬆ 导入</button><button class="primary" data-save-data="professions.json">保存职业设定</button></div>
+      <div id="professionRows"></div>
     </div>
   </section>
 
@@ -402,6 +412,7 @@ function importDataDoc(name) {
     if (name === "prices.json") renderPrices();
     if (name === "profession-pools.json") renderPools();
     if (name === "prompts.json") renderPrompts();
+    if (name === "professions.json") renderProfessions();
     if ($("#rawSelect").value === name) $("#rawText").value = rawContents[name];
     toast("已导入 " + name + "，检查没问题后点该页的保存按钮才会写进插件");
   });
@@ -758,6 +769,7 @@ async function saveData(name) {
     if (name === "prices.json") collectPrices();
     if (name === "profession-pools.json") collectPools();
     if (name === "prompts.json") collectPrompts();
+    if (name === "professions.json") collectProfessions();
     const resp = await api("/api/data", {
       method: "POST",
       body: JSON.stringify({ name, content: JSON.stringify(docs[name], null, 2) })
@@ -814,6 +826,62 @@ function collectPrompts() {
   }
   docs["prompts.json"] = docs["prompts.json"] || {};
   docs["prompts.json"].sections = sections;
+}
+
+// ================= 职业设定 =================
+const PROFESSION_LABELS = {
+  TOOLSMITH: "铁匠", WEAPONSMITH: "武器匠", ARMORER: "盔甲匠", CLERIC: "牧师",
+  FARMER: "农夫", LIBRARIAN: "图书管理员", CARTOGRAPHER: "制图师", FLETCHER: "制箭师",
+  FISHERMAN: "渔夫", BUTCHER: "屠夫", LEATHERWORKER: "皮匠", MASON: "石匠",
+  SHEPHERD: "牧羊人", NITWIT: "傻子", NONE: "无业"
+};
+function renderProfessions() {
+  const doc = docs["professions.json"] || {};
+  const wrap = $("#professionRows");
+  wrap.innerHTML = "";
+  for (const [key, label] of Object.entries(PROFESSION_LABELS)) {
+    const entry = doc[key] || {};
+    const box = document.createElement("div");
+    box.style.margin = "14px 0";
+    const head = document.createElement("div");
+    head.innerHTML = "<b></b>";
+    head.querySelector("b").textContent = label + "（" + key + "）";
+    const persona = document.createElement("textarea");
+    persona.rows = 3;
+    persona.value = entry.persona || "";
+    persona.dataset.profKey = key;
+    persona.dataset.profField = "persona";
+    persona.placeholder = "人设一句话（留空 = 用插件内置默认）";
+    const speech = document.createElement("textarea");
+    speech.rows = 2;
+    speech.value = entry.speech || "";
+    speech.dataset.profKey = key;
+    speech.dataset.profField = "speech";
+    speech.placeholder = "说话风格（留空 = 用插件内置默认）";
+    const cap1 = document.createElement("div"); cap1.className = "hint"; cap1.textContent = "人设";
+    const cap2 = document.createElement("div"); cap2.className = "hint"; cap2.textContent = "说话风格 / 口头禅";
+    box.append(head, cap1, persona, cap2, speech);
+    wrap.appendChild(box);
+  }
+}
+function collectProfessions() {
+  const out = {};
+  const meta = (docs["professions.json"] || {})["_meta"];
+  if (meta) out["_meta"] = meta;
+  for (const ta of $$("#professionRows textarea")) {
+    const key = ta.dataset.profKey;
+    out[key] = out[key] || {};
+    out[key][ta.dataset.profField] = ta.value.trim();
+  }
+  for (const key of Object.keys(out)) {
+    if (key === "_meta") continue;
+    if (!out[key].persona && !out[key].speech) delete out[key];
+    else {
+      if (!out[key].persona) delete out[key].persona;
+      if (!out[key].speech) delete out[key].speech;
+    }
+  }
+  docs["professions.json"] = out;
 }
 
 // ================= 定价表 =================
@@ -999,6 +1067,7 @@ async function loadState(announce) {
   renderPrices();
   renderPools();
   renderPrompts();
+  renderProfessions();
   renderRawSelect();
   setStatus("已连接 · 没有未保存的修改", false);
   if (announce) toast("已连上插件，设置和数据都加载好了");
@@ -1096,6 +1165,7 @@ $$("[data-export-data]").forEach(btn => btn.addEventListener("click", () => {
     if (name === "prices.json") collectPrices();
     if (name === "profession-pools.json") collectPools();
     if (name === "prompts.json") collectPrompts();
+    if (name === "professions.json") collectProfessions();
   } catch (e) { toast(e.message, true); return; }
   downloadJson(name, docs[name]);
   toast("已导出 " + name + "，在本地改好后用“导入”导回来");

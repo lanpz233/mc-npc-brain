@@ -26,14 +26,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * <pre>
  * 2026-10-21 全部迁入统一工具柜（tool/tools/*Tool），本类只留执行体：
  * give_item    → NpcGiveItemTool（裁决 GiftPolicy）
- * accept_swap  → NpcAcceptSwapTool（裁决 SwapPolicy，转移走 swapWithPlayer）
  * break_block  → NpcBreakBlockTool（执行体 breakBlockAt）
  * place_block  → NpcPlaceBlockTool（执行体 placeBlockAt）
  * teleport     → NpcTeleportTool（执行体 teleportSelfTo）
  * teleport_to  → NpcTeleportToTool（执行体 teleportToTarget；确认走 consumeTeleportConfirm）
  * equip        → NpcEquipTool（执行体 equipItem）
- * 外加代码层直达通道：handOverFromStock（索要交付）、deliverFreeGift（免费送出库存）、
- * takeFromPlayer（玩家确认后收礼）、swapWithPlayer（交换转移）。
+ * 外加代码层直达通道：deliverFreeGift（免费送出库存）、takeFromPlayer（玩家确认后收礼）。
  * </pre>
  * <p>
  * 线程模型：所有执行体只在 Paper 主线程调用（统一分发器保证），
@@ -100,45 +98,9 @@ public final class WorldInteractionService {
 
     // ===== 主入口（已退役） =====
     // 旧的 execute(ToolCall) 分发入口于 2026-10-21 随 equip 迁柜一并删除：
-    // 全部世界交互动作（give_item / accept_swap / break_block / place_block /
+    // 全部世界交互动作（give_item / break_block / place_block /
     // teleport / teleport_to / equip）都已迁入统一工具柜，本类只保留各动作的
     // 执行体（公开方法）与代码层直达通道（索要交付、收礼、传送确认等）。
-
-    // ===== 代码层直接交付（玩家索要物品时由决策层调用，不依赖模型是否真的调 give_item） =====
-
-    /**
-     * 当场把 {@code count} 个 {@code mat} 从 NPC 库存交给玩家（主线程）。
-     * <p>
-     * 为什么要有这条路：索要物品的交付原先只靠"提示模型去调 give_item"，实测模型经常只在台词里
-     * 写 {@code [动作:give_item 面包]} 当纯文本（被 sanitizeDialogue 剥掉，工具根本没被调用），
-     * 于是它嘴上说"给你 1 个"、玩家背包里却什么都没有 —— 台词与实际结果对不上。
-     * 现在"给不给"完全由决策层拍板并当场出货，再把"已经给过了"作为事实注入回话要求，
-     * 与砍价同一套思路（代码层拍板 + 注入硬性成交事实）。
-     * <p>
-     * 出货后 8 秒内标记防重：模型同款 {@code give_item}（统一柜 NpcGiveItemTool）会静默跳过。
-     *
-     * @return null = 已交付（或本就无可交付）；非 null = 给玩家看的失败原因（库存已空）
-     */
-    public String handOverFromStock(VillagerState vs, Player player, Material mat, int count) {
-        if (vs == null || player == null || mat == null || mat.isAir() || count <= 0) return null;
-        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
-        int stock = vs.stockOf(mat);
-        if (stock <= 0) {
-            return "§e" + npcName + "的背包里已经没有 "
-                    + com.howard.mcai.ai.PromptBuilder.materialToZh(mat) + " 了";
-        }
-        int give = Math.min(count, stock);          // 实际能给的只有库存那么多，不凭空变出
-        vs.removeFromInventory(mat, give);
-        var leftover = player.getInventory().addItem(new ItemStack(mat, give));
-        if (!leftover.isEmpty()) {                  // 玩家背包塞不下 → 溢出部分掉在脚下（与 giveItem 一致）
-            player.getWorld().dropItemNaturally(player.getLocation(), leftover.values().iterator().next());
-        }
-        vs.markAutoGiven(mat);
-        plugin.getMemoryStore().markDirty(vs.getUniqueId());
-        plugin.getLogger().info("§b[MC-AI] 索要交付(代码层): " + npcName + " → " + player.getName()
-                + " " + mat.name() + " x" + give + "（出库存）");
-        return null;
-    }
 
     // ===== 免费赠送（offer_trade 的 price=0 路径）—— 必须出库存，禁止凭空造物 =====
 
@@ -193,75 +155,6 @@ public final class WorldInteractionService {
         plugin.getLogger().info("§b[MC-AI] 免费赠送(出库存): " + npcName + " → " + player.getName()
                 + " " + mat.name() + " x" + give + (give > fromStock ? "（神使凭空补 " + (give - fromStock) + "，已审计）" : ""));
         return give;
-    }
-
-    // ===== 右键交换：玩家主手物品 ↔ NPC 库存物品（模型同意后才执行） =====
-
-    /**
-     * 交换结果。
-     *
-     * @param success true = 双方物品都已实际转移
-     * @param error   非 null 才需要展示给玩家（没有待确认交换属于静默忽略，不打扰玩家）
-     */
-    public record SwapResult(boolean success, String error) {}
-
-    /**
-     * 执行一笔已登记的交换（主线程）。
-     * <p>
-     * 谁值不值得由插件 {@code SwapPolicy} 裁决、模型只有表态权：统一柜
-     * {@code NpcAcceptSwapTool} 裁决划算后才走到这里。
-     * 物品与数量都以点击时登记的快照为准，执行前重新校验玩家主手 ——
-     * 玩家在等待模型回复期间换了手持物品就取消，避免拿错东西。
-     * <p>
-     * 一次性完成四步：扣玩家主手 → 扣 NPC 库存 → NPC 物品进玩家背包 → 玩家物品进 NPC 库存。
-     * 任一步校验失败都在转移前返回，不会出现"只扣了一边"的半执行。
-     */
-    public SwapResult swapWithPlayer(VillagerState vs, Player player) {
-        if (vs == null || player == null) return new SwapResult(false, null);
-        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
-        VillagerState.PendingSwap swap = vs.consumePendingSwap(player.getUniqueId());
-        if (swap == null) {
-            plugin.getLogger().info("§7[MC-AI] accept_swap 忽略: 没有待确认的交换");
-            return new SwapResult(false, null);
-        }
-        var inv = player.getInventory();
-        ItemStack hand = inv.getItemInMainHand();
-        if (hand == null || hand.getType().isAir()) {
-            return new SwapResult(false, "§e你手上已经没有东西了，交换取消");
-        }
-        if (hand.getType() != swap.offerMat() || hand.getAmount() < swap.offerCount()) {
-            return new SwapResult(false, "§e你主手的物品变了（需要 "
-                    + com.howard.mcai.ai.PromptBuilder.materialToZh(swap.offerMat())
-                    + " ×" + swap.offerCount() + "），交换取消");
-        }
-        if (vs.stockOf(swap.npcMat()) < swap.npcCount()) {
-            return new SwapResult(false, "§e" + npcName + "的库存里已经没有 "
-                    + com.howard.mcai.ai.PromptBuilder.materialToZh(swap.npcMat()) + " 了");
-        }
-
-        // 先扣玩家主手（同材质才走到这里，不会拿错）
-        int remain = hand.getAmount() - swap.offerCount();
-        if (remain > 0) {
-            ItemStack left = hand.clone();
-            left.setAmount(remain);
-            inv.setItemInMainHand(left);
-        } else {
-            inv.setItemInMainHand(null);
-        }
-        // 再扣 NPC 库存并发货
-        vs.removeFromInventory(swap.npcMat(), swap.npcCount());
-        var leftover = inv.addItem(new ItemStack(swap.npcMat(), swap.npcCount()));
-        if (!leftover.isEmpty()) {
-            player.getWorld().dropItemNaturally(player.getLocation(), leftover.values().iterator().next());
-        }
-        // 玩家给出的东西进 NPC 库存 —— 交换不是单向送礼
-        vs.addToInventory(swap.offerMat(), swap.offerCount());
-        plugin.getMemoryStore().markDirty(vs.getUniqueId());
-
-        plugin.getLogger().info("§b[MC-AI] 交换成功: " + player.getName() + " 的 "
-                + swap.offerMat().name() + " x" + swap.offerCount() + " ↔ " + npcName + " 的 "
-                + swap.npcMat().name() + " x" + swap.npcCount());
-        return new SwapResult(true, null);
     }
 
     // ===== 从玩家身上收东西（只有"玩家亲口确认"一条路，模型不许直接扣货） =====

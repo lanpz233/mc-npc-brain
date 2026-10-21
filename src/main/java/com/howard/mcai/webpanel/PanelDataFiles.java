@@ -34,12 +34,13 @@ public final class PanelDataFiles {
             new DataFile("given_names.json", "名字用字库", "村民名字用字，按男女分开"),
             new DataFile("prices.json", "定价表", "基础物品的公道价（绿宝石/个），合成品由插件按配方推导"),
             new DataFile("profession-pools.json", "职业货池", "每个职业的村民卖什么、收什么"),
-            new DataFile("prompts.json", "提示词", "村民对话的约束词：身份、世界铁律、行为规矩等固定段落")
+            new DataFile("prompts.json", "提示词", "村民对话的约束词：身份、世界铁律、行为规矩等固定段落"),
+            new DataFile("professions.json", "职业设定", "各职业的人设一句话与说话风格（口头禅在这里改）")
     );
 
     private static final Set<String> NAMES = Set.of(
             "recipes.json", "personality_tags.json", "surnames.json", "given_names.json",
-            "prices.json", "profession-pools.json", "prompts.json");
+            "prices.json", "profession-pools.json", "prompts.json", "professions.json");
 
     /** 职业枚举名（与 mob/VillagerProfession 对应；货池文件里的键只许是这些） */
     private static final Set<String> PROFESSIONS = Set.of(
@@ -90,6 +91,7 @@ public final class PanelDataFiles {
             case "prices.json" -> validatePrices(root);
             case "profession-pools.json" -> validatePools(root);
             case "prompts.json" -> validatePrompts(root);
+            case "professions.json" -> validateProfessions(root);
             default -> throw new IllegalArgumentException("不认识的数据文件：" + name);
         }
         return new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(root) + "\n";
@@ -155,6 +157,25 @@ public final class PanelDataFiles {
             "identity", "world_facts", "behavior_rules", "shop_rules", "knowledge",
             "state_rules", "needs_rules", "perm_envoy", "perm_confidant", "perm_civilian",
             "backpack_rules");
+
+    /** 职业设定：键只许是职业枚举名（或 _meta），值是 {persona, speech}，字段可缺省（缺了用内置默认） */
+    private static void validateProfessions(JsonObject root) {
+        for (String key : root.keySet()) {
+            if ("_meta".equals(key)) continue;
+            if (!PROFESSIONS.contains(key)) {
+                throw new IllegalArgumentException("不认识的职业：" + key);
+            }
+            if (!root.get(key).isJsonObject()) {
+                throw new IllegalArgumentException(key + " 的设定必须是一个对象 {persona, speech}");
+            }
+            JsonObject o = root.getAsJsonObject(key);
+            for (String field : new String[]{"persona", "speech"}) {
+                if (o.has(field) && (!o.get(field).isJsonPrimitive() || o.get(field).getAsString().isBlank())) {
+                    throw new IllegalArgumentException(key + " 的 " + field + " 必须是非空文字（不想改就删掉这个字段）");
+                }
+            }
+        }
+    }
 
     private static void validatePrompts(JsonObject root) {
         JsonObject sections = objectField(root, "sections", "提示词");

@@ -1328,66 +1328,6 @@ public final class VillagerState {
         return t != null && System.currentTimeMillis() - t < AUTO_GIVE_GUARD_MS;
     }
 
-    /**
-     * GUI 索要请求：玩家点某格要 N 个（代码层钉死数量，防模型自由发挥把"要 1 个"变成"给一整叠"）。
-     * <p>
-     * {@code pluginApproved} 是插件在登记当下按 {@code GiftPolicy} 算好的裁决（给/不给）：
-     * 登记之后模型只有表态权 —— 它答应了也只能在 approved=true 时真交货，
-     * 它想给 approved=false 的东西，交付环节会直接拦下（见 CentralPlanner 索要交付与
-     * NpcGiveItemTool）。旧版这里存的是掷骰子掷出来的"态度"，模型还能推翻，等于没定。
-     */
-    public record ItemRequest(org.bukkit.Material mat, int count, long atMs, boolean pluginApproved) {}
-
-    /**
-     * 索要请求的有效窗口。
-     * <p>
-     * 交付时机已从"点击当下立即给"改为"等模型回复后再按它的表态给"，
-     * 所以窗口必须覆盖一次完整 LLM 调用（含冷启动加载模型），不能再按 15 秒卡死，
-     * 否则慢响应时请求先过期，模型明明答应了却交不出货。
-     */
-    private static final long ITEM_REQUEST_WINDOW_MS = 180_000L;
-
-    /** 待处理的索要请求（key=玩家 UUID） */
-    private final Map<java.util.UUID, ItemRequest> itemRequests = new java.util.HashMap<>();
-
-    /** 记下这次索要"要几个"，以及插件按 GiftPolicy 裁决的给/不给 */
-    public synchronized void setItemRequest(java.util.UUID playerUuid, org.bukkit.Material mat, int count,
-                                            boolean pluginApproved) {
-        if (playerUuid == null || mat == null || count <= 0) return;
-        itemRequests.put(playerUuid, new ItemRequest(mat, count, System.currentTimeMillis(), pluginApproved));
-    }
-
-    /**
-     * 取并清除该玩家对该物品的待处理索要（一次性）。
-     * 过期（超过 {@link #ITEM_REQUEST_WINDOW_MS}，说明那次索要早已结束）或物品对不上 → null
-     * （不覆盖模型给的 count，插件裁决也不再生效）。
-     */
-    public synchronized ItemRequest consumeItemRequest(java.util.UUID playerUuid, org.bukkit.Material mat) {
-        if (playerUuid == null || mat == null) return null;
-        ItemRequest r = itemRequests.get(playerUuid);
-        if (r == null || r.mat() != mat) return null;
-        itemRequests.remove(playerUuid);
-        if (System.currentTimeMillis() - r.atMs() > ITEM_REQUEST_WINDOW_MS) return null;
-        return r;
-    }
-
-    /** 只读查看待处理索要（不消费）—— 模型没调 give_item 时，用它判断台词里的"给你"能不能兑现 */
-    public synchronized ItemRequest peekItemRequest(java.util.UUID playerUuid) {
-        if (playerUuid == null) return null;
-        ItemRequest r = itemRequests.get(playerUuid);
-        if (r == null) return null;
-        if (System.currentTimeMillis() - r.atMs() > ITEM_REQUEST_WINDOW_MS) {
-            itemRequests.remove(playerUuid);
-            return null;
-        }
-        return r;
-    }
-
-    /** 本轮回复处理完仍未交付 → 清掉，避免旧索要污染后续对话 */
-    public synchronized void clearItemRequest(java.util.UUID playerUuid) {
-        if (playerUuid != null) itemRequests.remove(playerUuid);
-    }
-
     // ===== 自主移动的两本账（仅内存，不落盘：都是短期经验） =====
 
     /** 上次自主移动失败的目标点 —— 短期内选点要避开这片，免得对着同一面墙反复撞 */
@@ -1425,63 +1365,6 @@ public final class VillagerState {
         String n = pendingNeedSatisfy;
         pendingNeedSatisfy = null;
         return n;
-    }
-
-    // ===== GUI 右键交换（玩家手持物品 ↔ NPC 点击格物品）=====
-
-    /**
-     * 待确认的交换 —— 只登记，不转移任何物品。
-     * <p>
-     * 谁值不值由插件 SwapPolicy 裁决（登记时算好并写入对话提示，执行时再复核）：
-     * 模型调用 {@code accept_swap} 且裁决划算，才由代码层同时执行
-     * "扣玩家手持 + 扣 NPC 库存 + 给玩家 NPC 物品 + 把玩家物品收进 NPC 库存"，
-     * 模型不表态就什么都不发生。这样台词说"换吧"和实际交换不会脱节。
-     *
-     * @param npcMat     NPC 被点击格子的物品
-     * @param npcCount   NPC 给出数量（当前固定 1）
-     * @param offerMat   玩家主手物品材质
-     * @param offerCount 玩家主手这一组的数量（整组作为交换物）
-     */
-    public record PendingSwap(org.bukkit.Material npcMat, int npcCount,
-                              org.bukkit.Material offerMat, int offerCount, long atMs) {}
-
-    /** 交换确认窗口：同样要覆盖一次模型调用 */
-    private static final long SWAP_REQUEST_WINDOW_MS = 180_000L;
-
-    private final Map<java.util.UUID, PendingSwap> pendingSwaps = new java.util.HashMap<>();
-
-    /** 登记一笔待模型表态的交换（覆盖同一玩家的旧请求） */
-    public synchronized void setPendingSwap(java.util.UUID playerUuid, org.bukkit.Material npcMat, int npcCount,
-                                            org.bukkit.Material offerMat, int offerCount) {
-        if (playerUuid == null || npcMat == null || offerMat == null || npcCount <= 0 || offerCount <= 0) return;
-        pendingSwaps.put(playerUuid, new PendingSwap(npcMat, npcCount, offerMat, offerCount,
-                System.currentTimeMillis()));
-    }
-
-    /** 只读查看待确认交换（不消费）—— 执行方先算「值不值」再决定要不要真换 */
-    public synchronized PendingSwap peekPendingSwap(java.util.UUID playerUuid) {
-        if (playerUuid == null) return null;
-        PendingSwap s = pendingSwaps.get(playerUuid);
-        if (s == null) return null;
-        if (System.currentTimeMillis() - s.atMs() > SWAP_REQUEST_WINDOW_MS) {
-            pendingSwaps.remove(playerUuid);
-            return null;
-        }
-        return s;
-    }
-
-    /** 取并清除交换请求（一次性）；没有或已过期 → null */
-    public synchronized PendingSwap consumePendingSwap(java.util.UUID playerUuid) {
-        if (playerUuid == null) return null;
-        PendingSwap s = pendingSwaps.remove(playerUuid);
-        if (s == null) return null;
-        if (System.currentTimeMillis() - s.atMs() > SWAP_REQUEST_WINDOW_MS) return null;
-        return s;
-    }
-
-    /** 本轮没同意交换 → 直接作废，避免下一轮被一句无关的"换"触发 */
-    public synchronized void clearPendingSwap(java.util.UUID playerUuid) {
-        if (playerUuid != null) pendingSwaps.remove(playerUuid);
     }
 
     // ===== 玩家送礼（必须玩家亲口确认，代码层绝不擅自没收）=====
@@ -1523,35 +1406,6 @@ public final class VillagerState {
     /** 作废该玩家待确认的送礼（玩家没答应 / 已经处理完） */
     public synchronized void clearPendingGift(java.util.UUID playerUuid) {
         if (playerUuid != null) pendingGifts.remove(playerUuid);
-    }
-
-    // ===== 礼物回收窗（"东西本来就他的"，要回去不该看好感）=====
-
-    /** 回收窗口 —— 刚送出去的东西 3 分钟内可以要回去，不再卡好感门槛 */
-    private static final long GIFT_RECLAIM_WINDOW_MS = 180_000L;
-
-    /** 玩家 UUID → (物品 → 收下时间)，只保留内存、不落盘 */
-    private final Map<java.util.UUID, Map<org.bukkit.Material, Long>> giftsTakenFrom = new java.util.HashMap<>();
-
-    /** 记下"刚从这位玩家手里收下了这件东西"（收下时调用） */
-    public synchronized void markGiftedFrom(java.util.UUID playerUuid, org.bukkit.Material mat) {
-        if (playerUuid == null || mat == null) return;
-        giftsTakenFrom.computeIfAbsent(playerUuid, k -> new java.util.HashMap<>()).put(mat, System.currentTimeMillis());
-    }
-
-    /**
-     * 取用回收资格（一次性）：这位玩家在回收窗内送过这件东西、现在想要回去 → 允许，
-     * 并立刻销掉这条记录（同一件东西只能无条件要回一次）。
-     */
-    public synchronized boolean consumeReclaim(java.util.UUID playerUuid, org.bukkit.Material mat) {
-        if (playerUuid == null || mat == null) return false;
-        Map<org.bukkit.Material, Long> m = giftsTakenFrom.get(playerUuid);
-        if (m == null) return false;
-        Long t = m.get(mat);
-        if (t == null || System.currentTimeMillis() - t > GIFT_RECLAIM_WINDOW_MS) return false;
-        m.remove(mat);
-        if (m.isEmpty()) giftsTakenFrom.remove(playerUuid);
-        return true;
     }
 
     public synchronized void restoreDynamicPrices(Map<String, Integer> restored) {

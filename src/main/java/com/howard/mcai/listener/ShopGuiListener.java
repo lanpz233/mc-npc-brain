@@ -22,7 +22,7 @@ public final class ShopGuiListener implements Listener {
             event.setCancelled(true);
             // 只认点在顶层窗口里的格子（点自己背包只拦不处理）
             if (event.getClickedInventory() == top) {
-                gui.handleClick(event.getSlot());
+                gui.handleClick(event.getSlot(), event.isRightClick());
             }
             return;
         }
