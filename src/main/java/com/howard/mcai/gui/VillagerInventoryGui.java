@@ -513,9 +513,10 @@ public final class VillagerInventoryGui implements InventoryHolder {
     /**
      * 右键交换（主线程）—— 用玩家主手物品换 NPC 点击格的 1 个物品。
      * <p>
-     * 只登记一笔待确认交换，不提前转移任何物品；把双方物品和数量写进对话提示，
-     * 由 NPC 的模型判断"值不值得"：值得就调用 {@code accept_swap}，代码层再一次性完成
-     * 扣玩家手持、扣 NPC 库存、把 NPC 物品给玩家、把玩家物品收进 NPC 库存。
+     * 只登记一笔待确认交换，不提前转移任何物品；「值不值」由插件按 SwapPolicy
+     * 当场算好并写进对话提示，模型只有表态权：它调用 {@code accept_swap} 且裁决
+     * 划算时，统一柜再一次性完成扣玩家手持、扣 NPC 库存、把 NPC 物品给玩家、
+     * 把玩家物品收进 NPC 库存（执行前复核，不半执行）。
      */
     public void requestSwap(Player player, Material npcMat) {
         String npcZh = PromptBuilder.materialToZh(npcMat);
@@ -544,14 +545,26 @@ public final class VillagerInventoryGui implements InventoryHolder {
         planner.switchConversation(player, state);
         plugin.getBubbleManager().showDialog(villager, displayName(), "（思考中...）");
 
+        // 值不值由插件先算好（SwapPolicy：双方总价值 + 好感折让），模型只需表态
+        long offerValue = (long) com.howard.mcai.security.PermissionManager.valueOf(offerMat) * offerCount;
+        long npcValue = com.howard.mcai.security.PermissionManager.valueOf(npcMat);
+        boolean fair = com.howard.mcai.security.SwapPolicy.isFair(offerValue, npcValue,
+                state.emotion().favor(player.getUniqueId()),
+                plugin.getPermissionManager().rankOf(state, player.getUniqueId())
+                        == com.howard.mcai.security.NpcRank.ENVOY);
         String note = "（玩家 " + player.getName() + " 在你的背包界面右键点击了「" + npcZh
                 + "」，想用他主手的「" + offerZh + "」×" + offerCount + " 换你的 1 个「" + npcZh + "」。"
-                + "玩家手上确实拿着这 " + offerCount + " 个。请你按物品的稀有度、用途和你自己的需求判断值不值得："
-                + "值得就调用 accept_swap，并在 message 参数里说一句中文台词，系统会完成双方物品转移；"
-                + "不值得就用一句中文台词拒绝，不要调用 accept_swap，也不要口头承诺交换。）";
+                + "玩家手上确实拿着这 " + offerCount + " 个。系统已经按双方价值和你们的交情算过账："
+                + (fair
+                        ? "这笔交换划算，你可以答应。答应就调用 accept_swap，并在 message 参数里说一句中文台词，系统会完成双方物品转移；"
+                          + "你若有别的顾虑也可以用台词婉拒，但不要口头答应了却不调用工具。"
+                        : "这笔交换不划算（他出的东西比不上你的），系统不会同意执行。请用一句中文台词婉拒，"
+                          + "不要调用 accept_swap，也不要口头承诺交换。")
+                + "）";
         plugin.getLogger().info("§b[MC-AI] 交换请求: " + player.getName() + " → " + displayName()
-                + " 以 " + offerMat.name() + " x" + offerCount + " 换 " + npcMat.name() + " x1"
-                + " → 等模型审核");
+                + " 以 " + offerMat.name() + " x" + offerCount + "（价值 " + offerValue + "）换 "
+                + npcMat.name() + " x1（价值 " + npcValue + "）"
+                + " → 插件裁决 " + (fair ? "划算，等模型表态" : "不划算"));
         planner.onPlayerMessage(state, player, note, true);
     }
 }
