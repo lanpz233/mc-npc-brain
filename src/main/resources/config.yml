@@ -95,7 +95,9 @@ debug:
 
 # 商店界面（路线二）
 shop:
-  resource-pack-skin: false     # true = 商店窗口挂资源包背景图（木柜台）。需玩家装了配套资源包 MCAI-Shop（见仓库 resourcepack/），没装包标题会是方框字，先别开
+  resource-pack-skin: false     # true = 商店窗口挂资源包背景图（木柜台），且玩家进服时自动发送配套资源包（见下两项）。没收到包的玩家标题会是方框字
+  resource-pack-port: 8765      # 资源包内置下载服务的端口。玩家从外网进服时，路由器/防火墙要像游戏端口一样放行它；局域网/组网玩家不用管
+  resource-pack-host: ''        # 发包地址的主机名（留空 = 按每个玩家连进来的地址自动推导）。用了内网穿透/代理导致推导不对时，填玩家实际用的域名或 IP
 
 villagers:
   blacksmith:

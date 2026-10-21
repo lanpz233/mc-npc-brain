@@ -90,6 +90,7 @@ public final class McaiPlugin extends JavaPlugin {
 
     /** 气泡管理器（TextDisplay riding villager） */
     private BubbleManager bubbleManager;
+    private com.howard.mcai.resourcepack.PackServer packServer;
 
     /** 记忆存储（debounce flush + JSON 持久化） */
     private MemoryStore memoryStore;
@@ -154,10 +155,35 @@ public final class McaiPlugin extends JavaPlugin {
         return System.currentTimeMillis() - lastGroupReplyAtMs < GROUP_REPLY_GUARD_MS;
     }
 
+    /**
+     * 把 jar 内最新版 config.yml 补进服主的旧配置文件。
+     * <p>
+     * saveDefaultConfig 只在文件不存在时生成——老服主升级插件后，旧 config.yml
+     * 永远缺新加的设置段（实测：商店段整段不存在，服主按说明找 resource-pack-skin 找不到）。
+     * 这里把内置配置设为默认值来源并写回一次：缺的键自动补上，已有的值一字不改。
+     * 失败只警告不拦启动（大不了退回"缺键走代码默认值"的旧行为）。
+     */
+    private void mergeBundledConfigDefaults() {
+        try {
+            java.io.InputStream bundled = getResource("config.yml");
+            if (bundled == null) return;
+            org.bukkit.configuration.file.YamlConfiguration defaults;
+            try (var reader = new java.io.InputStreamReader(bundled, java.nio.charset.StandardCharsets.UTF_8)) {
+                defaults = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(reader);
+            }
+            getConfig().setDefaults(defaults);
+            getConfig().options().copyDefaults(true);
+            saveConfig();
+        } catch (Exception e) {
+            getLogger().warning("[MC-AI] 配置文件自动补全失败（不影响启动）: " + e.getMessage());
+        }
+    }
+
     @Override
     public void onEnable() {
         // 1. 加载配置 + LLM 客户端
         saveDefaultConfig();
+        mergeBundledConfigDefaults();
         reloadConfig();
         config = PluginConfig.load(getConfig());
         llmClient = new LLMClient(config);
@@ -259,6 +285,12 @@ public final class McaiPlugin extends JavaPlugin {
         // NPC 背包 GUI 拦截（按 F 打开、点击索要；所有点击/拖拽 cancel，索要转成一次对话）
         Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.VillagerInventoryListener(), this);
         Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.ShopGuiListener(), this);
+        // 商店资源包自动发送（进服发包 + 结果日志）；发不发由监听内部按皮肤开关/服务状态把关
+        packServer = new com.howard.mcai.resourcepack.PackServer(this);
+        if (config.shopSkinEnabled()) {
+            packServer.start(config.resourcePackPort());
+        }
+        Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.ResourcePackListener(this), this);
         // 交易成交 → 好感 +1（玩家照顾 NPC 生意也是互动，让"关系够不够好"能靠日常攒起来）
         Bukkit.getPluginManager().registerEvents(new com.howard.mcai.listener.VillagerTradeListener(this), this);
 
@@ -339,6 +371,10 @@ public final class McaiPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         getLogger().info("MC-AI shutting down...");
+        if (packServer != null) {
+            packServer.stop();
+            packServer = null;
+        }
 
         // 1. cancel tick loop（防止关服时还在跑）
         if (plannerTask != null) {
@@ -1530,6 +1566,7 @@ public final class McaiPlugin extends JavaPlugin {
     // ===== Getters =====
 
     public PluginConfig getPluginConfig() { return config; }
+    public com.howard.mcai.resourcepack.PackServer getPackServer() { return packServer; }
     public LLMClient getLlmClient() { return llmClient; }
     public BubbleManager getBubbleManager() { return bubbleManager; }
     public MemoryStore getMemoryStore() { return memoryStore; }
