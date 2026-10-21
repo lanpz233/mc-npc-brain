@@ -221,7 +221,8 @@ public final class WorldInteractionService {
     /**
      * 执行一笔已登记的交换（主线程）。
      * <p>
-     * 谁值不值得由模型判断：模型调用 {@code accept_swap} 才走到这里。
+     * 谁值不值得由插件 {@code SwapPolicy} 裁决、模型只有表态权：统一柜
+     * {@code NpcAcceptSwapTool} 裁决划算后才走到这里。
      * 物品与数量都以点击时登记的快照为准，执行前重新校验玩家主手 ——
      * 玩家在等待模型回复期间换了手持物品就取消，避免拿错东西。
      * <p>

@@ -1431,11 +1431,23 @@ public final class CentralPlanner extends BukkitRunnable {
                     }
                 }
                 case "accept_swap" -> {
-                    // 玩家在背包界面右键发起的交换：模型同意才真正转移双方物品。
-                    // 参数（双方物品/数量）在点击时已由代码层登记，模型只负责"值不值得"的表态。
-                    var swap = plugin.getWorldInteraction().swapWithPlayer(vState, nearPlayer);
-                    reallyGave = swap.success();
-                    gatedReject = swap.error();
+                    // 玩家在背包界面右键发起的交换：双方物品/数量在点击时已由代码层登记。
+                    // 已迁入统一柜：值不值由 SwapPolicy 裁决，模型只有表态权；结果带回给承诺守卫。
+                    if (isUnifiedTool("accept_swap")) {
+                        preUnifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
+                        reallyGave = preUnifiedResult != null && preUnifiedResult.success()
+                                && preUnifiedResult.data() != null
+                                && preUnifiedResult.data().has("swapped")
+                                && preUnifiedResult.data().get("swapped").getAsBoolean();
+                        gatedReject = (preUnifiedResult != null && !preUnifiedResult.success())
+                                ? "§e" + (preUnifiedResult.errorMessage() != null
+                                        ? preUnifiedResult.errorMessage() : "交换没能完成")
+                                : null;
+                    } else {
+                        var swap = plugin.getWorldInteraction().swapWithPlayer(vState, nearPlayer);
+                        reallyGave = swap.success();
+                        gatedReject = swap.error();
+                    }
                 }
                 case "learn" -> reallyLearned = handleLearn(vState, toolCall, nearPlayer);
                 default -> { /* 其余工具没有"会被静默拒绝"的门槛，仍走第三步正常执行 */ }

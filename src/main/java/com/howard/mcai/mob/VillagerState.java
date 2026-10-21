@@ -1336,9 +1336,10 @@ public final class VillagerState {
     /**
      * 待确认的交换 —— 只登记，不转移任何物品。
      * <p>
-     * 谁值不值由 NPC 的模型判断：模型调用 {@code accept_swap} 才由代码层同时执行
+     * 谁值不值由插件 SwapPolicy 裁决（登记时算好并写入对话提示，执行时再复核）：
+     * 模型调用 {@code accept_swap} 且裁决划算，才由代码层同时执行
      * "扣玩家手持 + 扣 NPC 库存 + 给玩家 NPC 物品 + 把玩家物品收进 NPC 库存"，
-     * 模型拒绝就什么都不发生。这样台词说"换吧"和实际交换不会脱节。
+     * 模型不表态就什么都不发生。这样台词说"换吧"和实际交换不会脱节。
      *
      * @param npcMat     NPC 被点击格子的物品
      * @param npcCount   NPC 给出数量（当前固定 1）
@@ -1359,6 +1360,18 @@ public final class VillagerState {
         if (playerUuid == null || npcMat == null || offerMat == null || npcCount <= 0 || offerCount <= 0) return;
         pendingSwaps.put(playerUuid, new PendingSwap(npcMat, npcCount, offerMat, offerCount,
                 System.currentTimeMillis()));
+    }
+
+    /** 只读查看待确认交换（不消费）—— 执行方先算「值不值」再决定要不要真换 */
+    public synchronized PendingSwap peekPendingSwap(java.util.UUID playerUuid) {
+        if (playerUuid == null) return null;
+        PendingSwap s = pendingSwaps.get(playerUuid);
+        if (s == null) return null;
+        if (System.currentTimeMillis() - s.atMs() > SWAP_REQUEST_WINDOW_MS) {
+            pendingSwaps.remove(playerUuid);
+            return null;
+        }
+        return s;
     }
 
     /** 取并清除交换请求（一次性）；没有或已过期 → null */
