@@ -34,12 +34,19 @@ public final class NpcMarkerTool implements NpcTool {
         this.schema = schema;
     }
 
-    /** 只说话：npc.say（message 必填，与模型菜单一致） */
+    /**
+     * 只说话：npc.say（message 可缺省）。
+     * <p>
+     * 台词实际走对话正文由 speak 发出，本工具只是登记标记、不消费 message。
+     * 模型常把台词放正文、say 只发空参数 —— 若把 message 设成必填，每轮对话都会
+     * 校验失败，失败标记还会污染对话历史（实测：玩家聊天框漏出「缺少必填参数」
+     * 黄字、模型把历史里的「（未成功）」学成台词）。故此处不设必填。
+     */
     public static NpcMarkerTool say() {
         return new NpcMarkerTool("npc.say", "say",
                 "说一句话给玩家听。台词由对话管线统一发出，本工具只做登记。",
                 ToolSchema.builder()
-                        .param("message", ToolSchema.Param.string("要对玩家说的中文台词").maxLength(120), true)
+                        .param("message", ToolSchema.Param.string("要对玩家说的中文台词").maxLength(120), false)
                         .build());
     }
 
