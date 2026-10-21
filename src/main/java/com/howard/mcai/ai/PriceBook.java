@@ -323,6 +323,17 @@ public final class PriceBook {
     }
 
     /**
+     * 外部报价过账 —— 模型谈出来的价、旧存档里留下的动态价，都不能直接进店：
+     * 夹在 [1, 本账卖价 × 3] 内（插件定规矩，模型只有表达权）。
+     * 2026-10-21 事故：旧价目表时代存进村民存档的动态价（铁块 20）会盖住本账新价，
+     * 价格改革对老村民全部落空——构建商店时所有外部价一律先过这道账。
+     */
+    public static int clampNegotiatedPrice(Material m, int count, int proposed) {
+        int cap = Math.max(1, sellPrice(m, count) * 3);
+        return Math.max(1, Math.min(proposed, cap));
+    }
+
+    /**
      * 商店收购价（一堆 count 个）：公道价 × 0.8 向下取整，至少 1，
      * 且永不高于同堆卖价（防套利）。
      */

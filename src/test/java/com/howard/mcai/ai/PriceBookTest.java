@@ -62,6 +62,21 @@ class PriceBookTest {
     }
 
     @Test
+    void negotiatedPricesAreClampedToTheBook() {
+        // 旧存档动态价「铁块 20」必须被夹回合理带（本账卖价 4 → 上限 12）
+        int clamped = PriceBook.clampNegotiatedPrice(Material.IRON_BLOCK, 1, 20);
+        assertTrue(clamped <= PriceBook.sellPrice(Material.IRON_BLOCK, 1) * 3,
+                "外部报价不得超过本账卖价 3 倍，实际 " + clamped);
+        // 合理报价原样放行
+        assertEquals(2, PriceBook.clampNegotiatedPrice(Material.BREAD, 6, 2));
+        // 非法报价（0/负数）抬回 1
+        assertEquals(1, PriceBook.clampNegotiatedPrice(Material.BREAD, 6, 0));
+        // 附魔台的 128 遗毒也进不了店
+        assertTrue(PriceBook.clampNegotiatedPrice(Material.ENCHANTING_TABLE, 1, 128)
+                <= PriceBook.sellPrice(Material.ENCHANTING_TABLE, 1) * 3);
+    }
+
+    @Test
     void noArbitrageAcrossAllPools() {
         for (VillagerProfession p : VillagerProfession.values()) {
             for (var e : ProfessionPools.sellPool(p)) assertNoArbitrage(e);
