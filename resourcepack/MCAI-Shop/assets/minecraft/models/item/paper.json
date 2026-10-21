@@ -1,0 +1,218 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "item/paper"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "custom_model_data": 1001
+      },
+      "model": "mcai:icon/cut_1"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1002
+      },
+      "model": "mcai:icon/cut_2"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1003
+      },
+      "model": "mcai:icon/cut_3"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1004
+      },
+      "model": "mcai:icon/cut_4"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1005
+      },
+      "model": "mcai:icon/cut_5"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1006
+      },
+      "model": "mcai:icon/cut_6"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1007
+      },
+      "model": "mcai:icon/cut_7"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1008
+      },
+      "model": "mcai:icon/cut_8"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1009
+      },
+      "model": "mcai:icon/cut_9"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1010
+      },
+      "model": "mcai:icon/cut_10"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1011
+      },
+      "model": "mcai:icon/raise_1"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1012
+      },
+      "model": "mcai:icon/raise_2"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1013
+      },
+      "model": "mcai:icon/raise_3"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1014
+      },
+      "model": "mcai:icon/raise_4"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1015
+      },
+      "model": "mcai:icon/raise_5"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1016
+      },
+      "model": "mcai:icon/raise_6"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1017
+      },
+      "model": "mcai:icon/raise_7"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1018
+      },
+      "model": "mcai:icon/raise_8"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1019
+      },
+      "model": "mcai:icon/raise_9"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1020
+      },
+      "model": "mcai:icon/raise_10"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1021
+      },
+      "model": "mcai:icon/tag_cut"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1022
+      },
+      "model": "mcai:icon/tag_raise"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1023
+      },
+      "model": "mcai:icon/buy"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1024
+      },
+      "model": "mcai:icon/sell"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1025
+      },
+      "model": "mcai:icon/accept"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1026
+      },
+      "model": "mcai:icon/reject"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1027
+      },
+      "model": "mcai:icon/back"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1028
+      },
+      "model": "mcai:icon/close"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1029
+      },
+      "model": "mcai:icon/price"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1030
+      },
+      "model": "mcai:icon/lock"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1031
+      },
+      "model": "mcai:icon/balance"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1032
+      },
+      "model": "mcai:icon/prev"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1033
+      },
+      "model": "mcai:icon/next"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1034
+      },
+      "model": "mcai:icon/mode_buy"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1035
+      },
+      "model": "mcai:icon/mode_sell"
+    }
+  ]
+}

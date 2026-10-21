@@ -145,14 +145,14 @@ public final class ShopGui implements InventoryHolder {
         }
         // 底部控制行
         if (hasBuyBack) {
-            inventory.setItem(45, button(buyMode ? Material.CHEST : Material.HOPPER,
+            inventory.setItem(45, ShopIcons.button(buyMode ? ShopIcons.MODE_BUY : ShopIcons.MODE_SELL,
                     buyMode ? "§e看商品" : "§e收购：把你的东西卖给他",
                     List.of("§7点一下切换")));
         }
         inventory.setItem(47, balanceCard());
-        if (page > 0) inventory.setItem(48, button(Material.ARROW, "§f上一页", List.of()));
-        if (page < pages - 1) inventory.setItem(50, button(Material.ARROW, "§f下一页", List.of()));
-        inventory.setItem(53, button(Material.BARRIER, "§c关店", List.of("§7关上窗口也能回来，进度不丢")));
+        if (page > 0) inventory.setItem(48, ShopIcons.button(ShopIcons.PREV, "§f上一页", List.of()));
+        if (page < pages - 1) inventory.setItem(50, ShopIcons.button(ShopIcons.NEXT, "§f下一页", List.of()));
+        inventory.setItem(53, ShopIcons.button(ShopIcons.CLOSE, "§c关店", List.of("§7关上窗口也能回来，进度不丢")));
     }
 
     private void renderDetail(ShopCatalog.Offer o) {
@@ -163,19 +163,19 @@ public final class ShopGui implements InventoryHolder {
         }
         inventory.setItem(22, detailItem(o));
         Integer counter = session.pendingCounter(o.id());
-        inventory.setItem(38, button(Material.ARROW, "§f回商品列表", List.of()));
+        inventory.setItem(38, ShopIcons.button(ShopIcons.BACK, "§f回商品列表", List.of()));
         if (counter != null) {
             // 村民已还价，等玩家拍板：接受才落定，不接受就清掉还价
-            inventory.setItem(40, button(Material.EMERALD_BLOCK,
+            inventory.setItem(40, ShopIcons.button(ShopIcons.ACCEPT,
                     "§a就按 " + counter + " 块成交", List.of("§7接受村民的还价，谈好的价记下")));
-            inventory.setItem(42, button(Material.BARRIER,
+            inventory.setItem(42, ShopIcons.button(ShopIcons.REJECT,
                     "§c不接受，算了", List.of("§7不按这个价，回头再说")));
             return;
         }
         if (o.buyBack()) {
             int reward = session.effectivePay(o.id(), o.emeraldPrice());
             int funds = state.stockOf(Material.EMERALD);
-            inventory.setItem(40, button(Material.GOLD_BLOCK,
+            inventory.setItem(40, ShopIcons.button(ShopIcons.SELL,
                     "§a卖给他 · 得 " + reward + " 块绿宝石",
                     session.agreedPay(o.id()) != null
                             ? List.of("§7这是你们谈好的价", "§7他手头现有 " + funds + " 块绿宝石")
@@ -183,11 +183,11 @@ public final class ShopGui implements InventoryHolder {
             int cap = Math.min(BargainPolicy.maxPay(o.emeraldPrice(),
                     state.emotion().favor(viewer.getUniqueId())), funds);
             if (reward >= cap) {
-                inventory.setItem(42, button(Material.GRAY_STAINED_GLASS_PANE,
+                inventory.setItem(42, ShopIcons.button(ShopIcons.LOCK,
                         "§7他出到顶啦",
                         List.of(funds <= reward ? "§7他兜里就这么多绿宝石了" : "§7交情到顶，他最多出这么多")));
             } else {
-                inventory.setItem(42, button(Material.ANVIL,
+                inventory.setItem(42, ShopIcons.button(ShopIcons.TAG_RAISE,
                         "§e抬价 · 自己选抬多少",
                         session.agreedPay(o.id()) != null
                                 ? List.of("§7已经谈到 " + reward + " 块，还想再抬就点这儿")
@@ -195,7 +195,7 @@ public final class ShopGui implements InventoryHolder {
             }
         } else {
             int price = session.effectivePrice(o.id(), o.emeraldPrice());
-            inventory.setItem(40, button(Material.EMERALD_BLOCK,
+            inventory.setItem(40, ShopIcons.button(ShopIcons.BUY,
                     "§a买下它 · " + price + " 块绿宝石",
                     session.hasBargained(o.id())
                             ? List.of("§7这是你们谈好的价")
@@ -203,10 +203,10 @@ public final class ShopGui implements InventoryHolder {
             int floor = BargainPolicy.floorPrice(o.emeraldPrice(),
                     state.emotion().favor(viewer.getUniqueId()));
             if (price <= floor) {
-                inventory.setItem(42, button(Material.GRAY_STAINED_GLASS_PANE,
+                inventory.setItem(42, ShopIcons.button(ShopIcons.LOCK,
                         "§7已经到底价啦", List.of("§7交情再好也不能低于这个价")));
             } else {
-                inventory.setItem(42, button(Material.ANVIL,
+                inventory.setItem(42, ShopIcons.button(ShopIcons.TAG_CUT,
                         "§e砍价 · 自己选砍多少",
                         session.hasBargained(o.id())
                                 ? List.of("§7已经谈到 " + price + " 块，还想再砍就点这儿")
@@ -231,16 +231,16 @@ public final class ShopGui implements InventoryHolder {
         int floor = BargainPolicy.floorPrice(list, state.emotion().favor(viewer.getUniqueId()));
         inventory.setItem(22, detailItem(o));
         if (current <= floor) {
-            inventory.setItem(31, button(Material.GRAY_STAINED_GLASS_PANE,
+            inventory.setItem(31, ShopIcons.button(ShopIcons.LOCK,
                     "§7已经到底价了", List.of("§7现在就是 " + current + " 块，再砍他也不让了")));
         } else {
             // 砍幅按钮 1~10 两排摆开（Fong 2026-10-21 要求）：上排 1–5、下排 6–10
             for (int i = 0; i < 5; i++) inventory.setItem(28 + i, cutButton(i + 1, current));
             for (int i = 0; i < 5; i++) inventory.setItem(37 + i, cutButton(i + 6, current));
-            inventory.setItem(49, button(Material.ANVIL,
+            inventory.setItem(49, ShopIcons.button(ShopIcons.PRICE,
                     "§e自己出价 · 输入总价", List.of("§7打开小输入框，填你想出的总价（整数）")));
         }
-        inventory.setItem(45, button(Material.ARROW, "§f回商品页", List.of()));
+        inventory.setItem(45, ShopIcons.button(ShopIcons.BACK, "§f回商品页", List.of()));
     }
 
     /** 抬价面板（卖货方向）：与砍价面板同布局，按钮是「抬 N 块」，上限受交情与他的钱包双重限制 */
@@ -251,7 +251,7 @@ public final class ShopGui implements InventoryHolder {
         int cap = Math.min(BargainPolicy.maxPay(listPay, state.emotion().favor(viewer.getUniqueId())), funds);
         inventory.setItem(22, detailItem(o));
         if (current >= cap) {
-            inventory.setItem(31, button(Material.GRAY_STAINED_GLASS_PANE,
+            inventory.setItem(31, ShopIcons.button(ShopIcons.LOCK,
                     "§7他出到顶啦",
                     List.of(funds <= current
                             ? "§7他兜里就 " + funds + " 块绿宝石，抬不动了"
@@ -260,14 +260,14 @@ public final class ShopGui implements InventoryHolder {
             // 抬幅按钮 1~10 两排摆开，与砍价面板一致
             for (int i = 0; i < 5; i++) inventory.setItem(28 + i, raiseButton(i + 1, current));
             for (int i = 0; i < 5; i++) inventory.setItem(37 + i, raiseButton(i + 6, current));
-            inventory.setItem(49, button(Material.ANVIL,
+            inventory.setItem(49, ShopIcons.button(ShopIcons.PRICE,
                     "§e自己出价 · 输入总价", List.of("§7打开小输入框，填你想让他出的总价（整数）")));
         }
-        inventory.setItem(45, button(Material.ARROW, "§f回商品页", List.of()));
+        inventory.setItem(45, ShopIcons.button(ShopIcons.BACK, "§f回商品页", List.of()));
     }
 
     private ItemStack raiseButton(int raise, int currentPay) {
-        return button(Material.GOLD_INGOT, "§e抬 " + raise + " 块",
+        return ShopIcons.button(ShopIcons.raise(raise), "§e抬 " + raise + " 块",
                 List.of("§7现在他出 " + currentPay + " 块，抬完想让他出 " + (currentPay + raise) + " 块，点一下试试"));
     }
 
@@ -276,7 +276,7 @@ public final class ShopGui implements InventoryHolder {
             return button(Material.GRAY_STAINED_GLASS_PANE, "§7砍 " + cut + " 块",
                     List.of("§7现在总共才 " + currentPrice + " 块，砍不了这么多"));
         }
-        return button(Material.GOLD_INGOT, "§e砍 " + cut + " 块",
+        return ShopIcons.button(ShopIcons.cut(cut), "§e砍 " + cut + " 块",
                 List.of("§7现在 " + currentPrice + " 块，砍完想按 " + (currentPrice - cut) + " 块买，点一下试试"));
     }
 
@@ -348,7 +348,7 @@ public final class ShopGui implements InventoryHolder {
 
     private ItemStack balanceCard() {
         int have = ShopSettlement.countItem(viewer.getInventory(), Material.EMERALD);
-        return button(Material.EMERALD, "§a你身上有 " + have + " 块绿宝石",
+        return ShopIcons.button(ShopIcons.BALANCE, "§a你身上有 " + have + " 块绿宝石",
                 List.of("§7买东西就从这里扣"));
     }
 
