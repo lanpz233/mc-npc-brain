@@ -222,6 +222,18 @@ public final class MemoryStore {
             }
             state.restoreMetPlayers(met);
         }
+        // 上次对话结束时间（开场说明定档用）—— 旧档无此字段 → 空表，下次对话结束时补记
+        if (data.has("lastConversationEnds") && data.get("lastConversationEnds").isJsonObject()) {
+            Map<String, Long> ends = new HashMap<>();
+            for (var e : data.getAsJsonObject("lastConversationEnds").entrySet()) {
+                try {
+                    ends.put(e.getKey(), e.getValue().getAsLong());
+                } catch (RuntimeException ignored) {
+                    // 单条脏数据跳过，不连累整档
+                }
+            }
+            state.restoreLastConversationEnds(ends);
+        }
     }
 
     /** 序列化 VillagerState → JSON。state 是真源，每次写入都实时构建，杜绝脏缓存 */
@@ -315,6 +327,10 @@ public final class MemoryStore {
         JsonObject met = new JsonObject();
         state.metPlayersSnapshot().forEach(met::addProperty);
         root.add("metPlayers", met);
+        // 每位玩家上次对话结束的时刻（开场说明定档用，UUID字符串→毫秒时间戳）
+        JsonObject lastEnds = new JsonObject();
+        state.lastConversationEndsSnapshot().forEach(lastEnds::addProperty);
+        root.add("lastConversationEnds", lastEnds);
 
         return root;
     }

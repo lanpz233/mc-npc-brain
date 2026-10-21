@@ -997,6 +997,11 @@ public final class VillagerState {
     }
 
     public void startConversation(UUID playerUuid) {
+        // 被顶替的上一位对话者也算“对话结束”——记一笔结束时间，
+        // 否则他下次回来会被误判成“没有上次记录”。
+        if (this.interactingPlayer != null && !this.interactingPlayer.equals(playerUuid)) {
+            recordConversationEnd(this.interactingPlayer);
+        }
         this.interactingPlayer = playerUuid;
         this.idleElapsedTicks = 0;
         // 对话期间冻结原版 AI：村民不再自己乱逛，保持"站定和玩家聊"的观感。
@@ -1008,6 +1013,11 @@ public final class VillagerState {
     }
 
     public void endConversation() {
+        // 记住这次对话什么时候结束的（按玩家分开记）——下次开始对话时，
+        // 开场说明靠它区分“刚聊完又回来”与“好久没见”，见 ai/ConversationOpening。
+        if (this.interactingPlayer != null) {
+            recordConversationEnd(this.interactingPlayer);
+        }
         this.interactingPlayer = null;
         // 恢复原版 AI，让村民重新正常生活（闲逛/回家/作息）
         if (entity != null && entity.isValid()) {
@@ -1117,6 +1127,45 @@ public final class VillagerState {
         for (var e : restored.entrySet()) {
             try {
                 metPlayers.put(java.util.UUID.fromString(e.getKey()), e.getValue());
+            } catch (IllegalArgumentException ignored) {
+                // 非法 UUID（旧档损坏）跳过
+            }
+        }
+    }
+
+    // ===== 上次对话结束时间（开场说明定档用，持久化） =====
+
+    /** 每位玩家上次与本 NPC 对话结束的时刻（毫秒）。开场说明按它定档，见 ai/ConversationOpening */
+    private final Map<java.util.UUID, Long> lastConversationEndByPlayer = new java.util.HashMap<>();
+
+    /** 记一笔“与该玩家的对话在现在结束了” */
+    public synchronized void recordConversationEnd(java.util.UUID playerUuid) {
+        if (playerUuid == null) return;
+        lastConversationEndByPlayer.put(playerUuid, System.currentTimeMillis());
+    }
+
+    /** 上次与该玩家对话结束的时刻（毫秒）；从没记录过返回 0 */
+    public synchronized long lastConversationEndMs(java.util.UUID playerUuid) {
+        if (playerUuid == null) return 0L;
+        return lastConversationEndByPlayer.getOrDefault(playerUuid, 0L);
+    }
+
+    /** lastConversationEndByPlayer 快照（MemoryStore 持久化用）：UUID字符串 → 毫秒时间戳 */
+    public synchronized Map<String, Long> lastConversationEndsSnapshot() {
+        Map<String, Long> out = new java.util.HashMap<>();
+        lastConversationEndByPlayer.forEach((k, v) -> out.put(k.toString(), v));
+        return out;
+    }
+
+    /** MemoryStore 从 JSON 恢复上次对话结束时间表（覆盖式；非法键跳过） */
+    public synchronized void restoreLastConversationEnds(Map<String, Long> restored) {
+        lastConversationEndByPlayer.clear();
+        if (restored == null) return;
+        for (var e : restored.entrySet()) {
+            try {
+                if (e.getValue() != null && e.getValue() > 0) {
+                    lastConversationEndByPlayer.put(java.util.UUID.fromString(e.getKey()), e.getValue());
+                }
             } catch (IllegalArgumentException ignored) {
                 // 非法 UUID（旧档损坏）跳过
             }
