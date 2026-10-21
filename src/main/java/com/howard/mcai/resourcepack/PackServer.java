@@ -21,9 +21,12 @@ import java.util.concurrent.Executors;
  * 插件自己起个小 HTTP 服务最稳：地址按玩家连进来的域名/IP 现拼，校验码现算，
  * 不依赖任何外部网站。
  * <p>
- * 包的来源（先到先用）：① 插件数据文件夹里的 {@code MCAI-Shop.zip}（服主可替换，
- * 换包不用重打 jar）；② jar 内嵌的 {@code resourcepack/MCAI-Shop.zip}。
- * 两处都没有 → 自动发包静默禁用（手动装包的老路不受影响）。
+ * 包的来源（先到先用）：① jar 内嵌的 {@code resourcepack/MCAI-Shop.zip}（与插件版本锁死，
+ * 永远配套）；② 插件数据文件夹里的 {@code MCAI-Shop.zip}（仅当 jar 没内嵌包时兜底，
+ * 如 Gradle 构建）。<b>顺序不能反</b>：2026-10-21 实测事故——数据文件夹里躺着一份
+ * 最早期的老包，旧顺序下它把每个新 jar 的新包全压住，服主换了五版 jar、玩家装到的一直是老包
+ * （图标素材对不上、按钮全是粉红缺失贴图），查日志 sha1 才发现。两处都没有 →
+ * 自动发包静默禁用（手动装包的老路不受影响）。
  * <p>
  * 只在商店皮肤开关打开时启动。端口被占/运行环境缺 httpserver 模块等任何失败
  * 都只记一条警告并降级，绝不拖垮插件启动。
@@ -114,20 +117,24 @@ public final class PackServer {
     }
 
     private byte[] resolvePackBytes() {
-        // ① 数据文件夹外置文件优先：服主换包只换文件，不用重打 jar
+        // ① jar 内嵌副本优先：与插件版本锁死，永远不会被数据文件夹里的老包顶掉
+        try (InputStream in = plugin.getResource(JAR_RESOURCE)) {
+            if (in != null) {
+                plugin.getLogger().info("[MC-AI] 商店资源包来源: jar 内嵌");
+                return in.readAllBytes();
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[MC-AI] 读取 jar 内嵌资源包失败: " + e.getMessage());
+        }
+        // ② 数据文件夹外置文件兜底（jar 没内嵌包时，如 Gradle 构建）
         try {
             File external = new File(plugin.getDataFolder(), FILE_NAME);
             if (external.isFile()) {
+                plugin.getLogger().info("[MC-AI] 商店资源包来源: 数据文件夹（jar 内无内嵌包）");
                 return Files.readAllBytes(external.toPath());
             }
         } catch (Exception e) {
             plugin.getLogger().warning("[MC-AI] 读取数据文件夹里的资源包失败: " + e.getMessage());
-        }
-        // ② jar 内嵌副本（发布时封进 jar 的那份）
-        try (InputStream in = plugin.getResource(JAR_RESOURCE)) {
-            if (in != null) return in.readAllBytes();
-        } catch (Exception e) {
-            plugin.getLogger().warning("[MC-AI] 读取 jar 内嵌资源包失败: " + e.getMessage());
         }
         return null;
     }

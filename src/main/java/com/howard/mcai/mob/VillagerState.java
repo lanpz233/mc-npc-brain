@@ -216,33 +216,45 @@ public final class VillagerState {
         java.util.List<org.bukkit.inventory.MerchantRecipe> recipes = new java.util.ArrayList<>();
         // 基础摊位：按村民抽货（ShopStocking 用村民 UUID 做固定种子）——同职业每个村民
         // 卖的东西、数量、价格都不同，不再千人一面；价格由 PriceBook 按合成表推导。
+        java.util.Set<org.bukkit.Material> stockedSell = new java.util.HashSet<>();
         for (com.howard.mcai.ai.ShopStocking.StockedItem s
                 : com.howard.mcai.ai.ShopStocking.stockFor(profession, getUniqueId())) {
             recipes.add(s.buyBack()
                     ? com.howard.mcai.ai.TradeRegistry.createBuy(s.item(), s.count(), s.priceEmeralds())
                     : com.howard.mcai.ai.TradeRegistry.createOffer(s.item(), s.priceEmeralds(), s.count()));
+            if (!s.buyBack()) stockedSell.add(s.item());
         }
-        // 附加 LLM 上架的额外商品（基础清单里没有的）—— 附魔商品用 createEnchantedOffer 重造
+        // 附加 LLM 上架的额外商品（基础清单里没有的）—— 附魔商品用 createEnchantedOffer 重造。
+        // 上架价不能照单全收：先过 PriceBook 的账夹紧（旧存档里的离谱价会被拉回合理带）。
         for (var e : offeredItems.entrySet()) {
             org.bukkit.Material m = org.bukkit.Material.matchMaterial(e.getKey());
             if (m == null) continue;
             boolean exists = recipes.stream().anyMatch(r -> r.getResult() != null && r.getResult().getType() == m);
             if (!exists) {
                 String enchant = e.getValue().enchant();
+                int price = com.howard.mcai.ai.PriceBook.clampNegotiatedPrice(
+                        m, e.getValue().count(), e.getValue().price());
+                if (enchant != null) price = Math.max(1, price * 3 / 2); // 附魔溢价五成
                 recipes.add((enchant != null)
                         ? com.howard.mcai.ai.TradeRegistry.createEnchantedOffer(
-                                m, e.getValue().price(), e.getValue().count(), enchant)
+                                m, price, e.getValue().count(), enchant)
                         : com.howard.mcai.ai.TradeRegistry.createOffer(
-                                m, e.getValue().price(), e.getValue().count()));
+                                m, price, e.getValue().count()));
             }
         }
         if (dynamicPrices.isEmpty()) return recipes;
-        // 用动态价格覆盖"卖"配方（result=物品）的价格；收购配方（result=绿宝）不在此覆盖
+        // 动态价格覆盖"卖"配方的价格，但两条铁规（2026-10-21 价格改革落空事故）：
+        // ① 本摊商品（职业货池抽出来的）只认 PriceBook，动态价一律不许盖——旧时代
+        //    存进存档的动态价（铁块 20 之类）就是这样把新价格全顶掉的；
+        // ② 非本摊商品（模型谈出来的）也要先过账夹紧才准用。
         for (var r : recipes) {
             if (r.getResult() == null || r.getResult().getType() == org.bukkit.Material.EMERALD) continue;
+            if (stockedSell.contains(r.getResult().getType())) continue;
             Integer newPrice = dynamicPrices.get(r.getResult().getType().name());
             if (newPrice != null) {
-                com.howard.mcai.ai.TradeRegistry.setEmeraldPrice(r, newPrice);
+                int clamped = com.howard.mcai.ai.PriceBook.clampNegotiatedPrice(
+                        r.getResult().getType(), r.getResult().getAmount(), newPrice);
+                com.howard.mcai.ai.TradeRegistry.setEmeraldPrice(r, clamped);
             }
         }
         return recipes;
