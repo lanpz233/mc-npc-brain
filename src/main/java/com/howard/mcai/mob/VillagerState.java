@@ -313,6 +313,12 @@ public final class VillagerState {
      */
     private boolean inventorySeeded;
 
+    /**
+     * 启动钱是否已发（一次性标记，守卫逻辑同 inventorySeeded）。
+     * 旧存档没有这个字段 → 读档时补发一次；花光不补，之后靠卖货回血。
+     */
+    private boolean walletSeeded;
+
     /** 无关战利品池 —— 村民各处捡来的杂物，随机投放 1-3 种（与职业无关） */
     private static final String[] LOOT_POOL = {
             "ROTTEN_FLESH", "BONE", "SPIDER_EYE", "STRING", "GUNPOWDER", "ENDER_PEARL",
@@ -330,6 +336,8 @@ public final class VillagerState {
         this.gender = inferGenderOrDefault(entity);  // 优先按名字定性别，判不出才随机
         seedProfessionInventory();
         this.inventorySeeded = true;
+        seedWallet();
+        this.walletSeeded = true;
     }
 
     public VillagerState(Villager entity, VillagerProfession profession) {
@@ -343,6 +351,8 @@ public final class VillagerState {
         this.gender = inferGenderOrDefault(entity);
         seedProfessionInventory();
         this.inventorySeeded = true;
+        seedWallet();
+        this.walletSeeded = true;
     }
 
     /** 背包是否已按职业投放（MemoryStore 迁移守卫用） */
@@ -353,6 +363,31 @@ public final class VillagerState {
     /** 标记背包已投放（迁移补发后由 MemoryStore 调用） */
     public void setInventorySeeded(boolean seeded) {
         this.inventorySeeded = seeded;
+    }
+
+    /** 启动钱是否已发（MemoryStore 迁移守卫用） */
+    public boolean isWalletSeeded() {
+        return walletSeeded;
+    }
+
+    /** 标记启动钱已发（迁移补发后由 MemoryStore 调用） */
+    public void setWalletSeeded(boolean seeded) {
+        this.walletSeeded = seeded;
+    }
+
+    /**
+     * 启动钱 —— 村民随身带的绿宝石（Fong 2026-10-21）。
+     * 收购要从村民兜里真出钱：没有这笔种子钱，村民在卖出第一件货之前永远收不了
+     * 玩家的东西，村子里的买卖根本转不起来。有手艺的（能做买卖）带 12–30 块，
+     * 没职业/傻子带 3–10 块。只发一次（walletSeeded 落盘守卫），花光不补。
+     */
+    public synchronized void seedWallet() {
+        java.util.Random rng = new java.util.Random();
+        boolean hasTrade = profession != null
+                && profession != VillagerProfession.NONE
+                && profession != VillagerProfession.NITWIT;
+        int amount = hasTrade ? 12 + rng.nextInt(19) : 3 + rng.nextInt(8);
+        inventory.merge(org.bukkit.Material.EMERALD.name(), amount, Integer::sum);
     }
 
     /**

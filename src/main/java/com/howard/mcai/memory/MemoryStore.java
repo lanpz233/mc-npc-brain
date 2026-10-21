@@ -93,6 +93,14 @@ public final class MemoryStore {
                 plugin.getLogger().info("§b[MC-AI] 老村民补发职业背包: " + state.getUniqueId()
                         + " (" + state.profession().zhName + ")");
             }
+            // 迁移守卫：老村民没有启动钱 → 补发一次（收购从他兜里真出钱，没钱买卖转不起来）
+            if (!state.isWalletSeeded()) {
+                state.seedWallet();
+                state.setWalletSeeded(true);
+                markDirty(state.getUniqueId());
+                plugin.getLogger().info("§b[MC-AI] 老村民补发启动钱: " + state.getUniqueId()
+                        + " (" + state.profession().zhName + ")");
+            }
         } catch (Exception e) {
             plugin.getLogger().warning("记忆文件损坏，忽略: " + file + " — " + e.getMessage());
         }
@@ -214,6 +222,8 @@ public final class MemoryStore {
         }
         // 背包是否已按职业投放 —— 旧档无该字段 → 保持 false，由 loadVillager 补发一次
         state.setInventorySeeded(data.has("inventorySeeded") && data.get("inventorySeeded").getAsBoolean());
+        // 启动钱是否已发 —— 同上，旧档无该字段 → false，loadVillager 补发一次
+        state.setWalletSeeded(data.has("walletSeeded") && data.get("walletSeeded").getAsBoolean());
         // 遇见过哪些玩家（首次见面判定，UUID→名字）—— 旧档无 → 空表，首次互动时补记
         if (data.has("metPlayers") && data.get("metPlayers").isJsonObject()) {
             Map<String, String> met = new HashMap<>();
@@ -328,6 +338,7 @@ public final class MemoryStore {
         // 权限等级（神使授予持久化）+ NPC 库存（送礼/放置/装备的账面物资）+ 背包投放标记
         root.addProperty("rank", state.rank().name());
         root.addProperty("inventorySeeded", state.isInventorySeeded());
+        root.addProperty("walletSeeded", state.isWalletSeeded());
         JsonObject inv = new JsonObject();
         state.inventorySnapshot().forEach(inv::addProperty);
         root.add("inventory", inv);
