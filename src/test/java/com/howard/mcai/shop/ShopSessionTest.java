@@ -7,7 +7,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 交易会话：砍价进度跨关窗保留、一商品只砍一次、闲置过期。
+ * 交易会话：砍价进度跨关窗保留、可多轮砍价（只降不升）、闲置过期。
  */
 class ShopSessionTest {
 
@@ -24,11 +24,14 @@ class ShopSessionTest {
     }
 
     @Test
-    void bargainOnlyOncePerItemPerSession() {
+    void bargainMultipleRoundsOnlyDown() {
         ShopSession s = new ShopSession(NPC, PLAYER, 1_000L);
         assertTrue(s.recordBargain("BREAD", 2));
-        assertFalse(s.recordBargain("BREAD", 1), "同一商品一会话只砍一次，第二次不覆盖");
-        assertEquals(2, s.effectivePrice("BREAD", 3));
+        assertTrue(s.recordBargain("BREAD", 1), "多轮砍价：更低的价可以继续谈下来");
+        assertEquals(1, s.effectivePrice("BREAD", 3));
+        assertFalse(s.recordBargain("BREAD", 2), "价格只降不升：更高的价不许覆盖回去");
+        assertFalse(s.recordBargain("BREAD", 1), "同价重复记也不算新进展");
+        assertEquals(1, s.effectivePrice("BREAD", 3));
         assertTrue(s.hasBargained("BREAD"));
         assertFalse(s.hasBargained("IRON_SWORD"));
     }

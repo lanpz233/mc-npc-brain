@@ -184,12 +184,17 @@ public final class ShopGui implements InventoryHolder {
                     session.hasBargained(o.id())
                             ? List.of("§7这是你们谈好的价")
                             : List.of("§7点一下直接买（也可以先砍价）")));
-            if (session.hasBargained(o.id())) {
+            int floor = BargainPolicy.floorPrice(o.emeraldPrice(),
+                    state.emotion().favor(viewer.getUniqueId()));
+            if (price <= floor) {
                 inventory.setItem(42, button(Material.GRAY_STAINED_GLASS_PANE,
-                        "§7价已经谈好啦", List.of("§7一次会话里一个商品只砍一次")));
+                        "§7已经到底价啦", List.of("§7交情再好也不能低于这个价")));
             } else {
                 inventory.setItem(42, button(Material.ANVIL,
-                        "§e砍价 · 自己选砍多少", List.of("§7能砍多少看你们的交情")));
+                        "§e砍价 · 自己选砍多少",
+                        session.hasBargained(o.id())
+                                ? List.of("§7已经谈到 " + price + " 块，还想再砍就点这儿")
+                                : List.of("§7能砍多少看你们的交情")));
             }
         }
         inventory.setItem(47, balanceCard());
@@ -202,22 +207,29 @@ public final class ShopGui implements InventoryHolder {
             return;
         }
         int list = o.emeraldPrice();
+        int current = session.effectivePrice(o.id(), list);
+        int floor = BargainPolicy.floorPrice(list, state.emotion().favor(viewer.getUniqueId()));
         inventory.setItem(22, detailItem(o));
-        inventory.setItem(29, cutButton(1, list));
-        inventory.setItem(31, cutButton(5, list));
-        inventory.setItem(33, cutButton(10, list));
-        inventory.setItem(40, button(Material.ANVIL,
-                "§e自己出价 · 输入总价", List.of("§7打开小输入框，填你想出的总价（整数）")));
+        if (current <= floor) {
+            inventory.setItem(31, button(Material.GRAY_STAINED_GLASS_PANE,
+                    "§7已经到底价了", List.of("§7现在就是 " + current + " 块，再砍他也不让了")));
+        } else {
+            // 砍幅按钮 1~10 两排摆开（Fong 2026-10-21 要求）：上排 1–5、下排 6–10
+            for (int i = 0; i < 5; i++) inventory.setItem(28 + i, cutButton(i + 1, current));
+            for (int i = 0; i < 5; i++) inventory.setItem(37 + i, cutButton(i + 6, current));
+            inventory.setItem(49, button(Material.ANVIL,
+                    "§e自己出价 · 输入总价", List.of("§7打开小输入框，填你想出的总价（整数）")));
+        }
         inventory.setItem(45, button(Material.ARROW, "§f回商品页", List.of()));
     }
 
-    private ItemStack cutButton(int cut, int listPrice) {
-        if (cut >= listPrice) {
+    private ItemStack cutButton(int cut, int currentPrice) {
+        if (cut >= currentPrice) {
             return button(Material.GRAY_STAINED_GLASS_PANE, "§7砍 " + cut + " 块",
-                    List.of("§7这件东西总共才 " + listPrice + " 块，砍不了这么多"));
+                    List.of("§7现在总共才 " + currentPrice + " 块，砍不了这么多"));
         }
         return button(Material.GOLD_INGOT, "§e砍 " + cut + " 块",
-                List.of("§7想按 " + (listPrice - cut) + " 块买，点一下试试"));
+                List.of("§7现在 " + currentPrice + " 块，砍完想按 " + (currentPrice - cut) + " 块买，点一下试试"));
     }
 
     // ===== 展示小件 =====
@@ -366,10 +378,17 @@ public final class ShopGui implements InventoryHolder {
             rebuild();
             return;
         }
-        if (slot == 42 && !o.buyBack() && !session.hasBargained(o.id())) {
-            view = View.BARGAIN;
-            session.setNpcLine("想砍价？行，你自己说砍多少，砍多了我可不干。");
-            rebuild();
+        if (slot == 42 && !o.buyBack()) {
+            int listP = o.emeraldPrice();
+            int cur = session.effectivePrice(o.id(), listP);
+            int fl = BargainPolicy.floorPrice(listP, state.emotion().favor(viewer.getUniqueId()));
+            if (cur > fl) {
+                view = View.BARGAIN;
+                session.setNpcLine(session.hasBargained(o.id())
+                        ? "还想再便宜点？行，你说个数，到底价我就真不能让了。"
+                        : "想砍价？行，你自己说砍多少，砍多了我可不干。");
+                rebuild();
+            }
         }
     }
 
@@ -386,24 +405,29 @@ public final class ShopGui implements InventoryHolder {
             return;
         }
         int list = o.emeraldPrice();
-        if (slot == 29) applyBargain(o, 1);
-        else if (slot == 31) applyBargain(o, 5);
-        else if (slot == 33) applyBargain(o, 10);
-        else if (slot == 40) openPriceInput(o, list);
+        if (slot >= 28 && slot <= 32) applyBargain(o, slot - 27);        // 砍 1–5
+        else if (slot >= 37 && slot <= 41) applyBargain(o, slot - 31);   // 砍 6–10
+        else if (slot == 49) openPriceInput(o, list);
     }
 
-    /** 一次砍价：插件裁决，玩家只管选数（BargainPolicy 守底线） */
+    /**
+     * 一次砍价：插件裁决，玩家只管选数（BargainPolicy 守底线）。
+     * 多轮砍价：requestedCut 是从**当前价**再砍的数，裁决时换算成「从标价算起总共砍了多少」，
+     * 底价始终锚定标价 —— 砍多少轮都砍不穿，额度用完村民就只还价到底价。
+     */
     private void applyBargain(ShopCatalog.Offer o, int requestedCut) {
         int list = o.emeraldPrice();
-        if (requestedCut >= list) {
-            session.setNpcLine("砍 " + requestedCut + " 块？这东西总共才 " + list + " 块，你这是想白拿啊。");
+        int current = session.effectivePrice(o.id(), list);
+        if (requestedCut >= current) {
+            session.setNpcLine("砍 " + requestedCut + " 块？现在总共才 " + current + " 块，你这是想白拿啊。");
             viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
             view = View.BARGAIN;
             rebuild();
             return;
         }
         double favor = state.emotion().favor(viewer.getUniqueId());
-        BargainPolicy.Outcome out = BargainPolicy.decide(list, favor, requestedCut);
+        int totalCut = (list - current) + requestedCut;
+        BargainPolicy.Outcome out = BargainPolicy.decide(list, favor, totalCut);
         if (out.accepted()) {
             session.recordBargain(o.id(), out.agreedPrice());
             session.setNpcLine("行！" + out.agreedPrice() + " 块成交，这价给你留着，点买下它就行。");
@@ -417,16 +441,17 @@ public final class ShopGui implements InventoryHolder {
         rebuild();
     }
 
-    /** 铁砧输入框：玩家填「想出的总价」，换算成砍幅走同一套裁决 */
+    /** 铁砧输入框：玩家填「想出的总价」，按当前价换算成砍幅走同一套裁决 */
     private void openPriceInput(ShopCatalog.Offer o, int list) {
+        int current = session.effectivePrice(o.id(), list);
         viewer.closeInventory();
-        new AnvilPriceInput(viewer, list, target -> Bukkit.getScheduler().runTask(plugin, () -> {
+        new AnvilPriceInput(viewer, current, target -> Bukkit.getScheduler().runTask(plugin, () -> {
             if (!viewer.isOnline()) return;
-            if (target != null && target >= 1 && target < list) {
-                applyBargain(o, list - target);
+            if (target != null && target >= 1 && target < current) {
+                applyBargain(o, current - target);
             } else if (target != null) {
-                session.setNpcLine(target >= list
-                        ? "你出的价比我标的还高？那就按原价吧，别多花钱。"
+                session.setNpcLine(target >= current
+                        ? "你出的价比现在谈的还高？那就按现在这个价吧，别多花钱。"
                         : "你这价我实在没法卖，咱们再商量。");
                 view = View.DETAIL;
                 rebuild();
