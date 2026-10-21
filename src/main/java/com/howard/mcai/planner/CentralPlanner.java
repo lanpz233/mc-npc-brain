@@ -199,12 +199,32 @@ public final class CentralPlanner extends BukkitRunnable {
         onPlayerMessage(vState, player, message, false);
     }
 
+    /** 动作栏对话提示：「💬 正在与 X 对话中 · 再右键一次结束」—— 开始对话与对话中发言时刷新 */
+    public static void showConversationHint(Player player, VillagerState vState) {
+        if (player == null || !player.isOnline() || vState.entity() == null) return;
+        String text = "§e💬 正在与 §6" + com.howard.mcai.ai.Smalltalk.nameOf(vState)
+                + " §e对话中 §7· 再右键一次结束";
+        player.sendActionBar(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                .legacySection().deserialize(text));
+    }
+
+    /** 清掉动作栏提示（结束对话时） */
+    public static void clearConversationHint(Player player) {
+        if (player == null || !player.isOnline()) return;
+        player.sendActionBar(net.kyori.adventure.text.Component.empty());
+    }
+
     /**
      * @param systemNote true = GUI 生成的系统说明，不是玩家亲口说的话。
      *                   这种消息必须跳过送礼/讨要/砍价/教学等句式解析 ——
      *                   说明文字里会引用"给你""拿去"作为示例，误当玩家发言会登记出莫名其妙的送礼请求。
      */
     public void onPlayerMessage(VillagerState vState, Player player, String message, boolean systemNote) {
+        // 对话对象提示（Fong 实测需求）：多人围着时分不清在跟谁说话 ——
+        // 正式对话中他每说一句，屏幕下方动作栏就亮一下当前对象（开始对话时也会亮，见交互监听）
+        if (!systemNote && player != null && player.getUniqueId().equals(vState.interactingPlayer())) {
+            showConversationHint(player, vState);
+        }
         vState.onPlayerMessage();  // 重置对话超时
         // 见过这位玩家（首次见面判定改用 UUID 表，替代旧的字串匹配）
         vState.recordMeeting(player.getUniqueId(), player.getName());
@@ -545,7 +565,7 @@ public final class CentralPlanner extends BukkitRunnable {
      */
     private static final Pattern GIVE_CONSENT_PATTERN = Pattern.compile(
             "(?<!说)(?<!告诉)(?<!讲)(?<!教)给你(?:吧|了|一个|个|这|那|点|些)?"
-                    + "|拿去吧|拿去|送你了|送给你|拿着吧|拿着|收下吧|收下|归你了");
+                    + "|拿去吧|拿去|送你了|送给你|送你(?:俩|两个|一个|点|些)|拿着吧|拿着|收下吧|收下|归你了");
 
     /** 婉拒/否定说法 —— 命中就不算同意，避免"不给你"被当成"给你" */
     private static final Pattern GIVE_REFUSAL_PATTERN = Pattern.compile(
@@ -568,10 +588,18 @@ public final class CentralPlanner extends BukkitRunnable {
      * @param original 玩家原始消息（判句式 + 找物品）
      * @param base     已附加其它说明的消息（本方法在末尾追加索要说明）
      */
+    /** 泛称食物：玩家讨"吃的"不点名具体食物时用（"给我点吃的，我饿"是最自然的讨法） */
+    private static final Pattern GENERIC_FOOD_PATTERN = Pattern.compile("吃的|食物|干粮|吃食|饭食");
+
     private String annotateBeg(VillagerState vState, Player player, String original, String base) {
         if (!BEG_PATTERN.matcher(original).find() && !BEG_ALL_PATTERN.matcher(original).find()) return base;
         // 必须点名一件"NPC 库存里真有"的东西，否则可能只是"能不能给我讲讲"这类非物品请求
         Material mat = findRequestedItem(vState, original);
+        // 没点名但讨的是泛称食物 → 从他库存里挑一样真有的吃的顶上：
+        // 否则请求登记不上，模型只能自由发挥许诺（实测："送你俩面包，管饱！"实际一个没给）
+        if (mat == null && GENERIC_FOOD_PATTERN.matcher(original).find()) {
+            mat = findStockedFood(vState);
+        }
         if (mat == null) return base;
 
         int stock = vState.stockOf(mat);
@@ -631,6 +659,21 @@ public final class CentralPlanner extends BukkitRunnable {
             if (zh != null && !zh.isBlank() && text.contains(zh)) return m;
         }
         return null;
+    }
+
+    /** 从 NPC 库存里挑一样能吃的：存量最多的优先（讨"吃的"时给他最实在的那样） */
+    private Material findStockedFood(VillagerState vState) {
+        Material best = null;
+        int bestCount = 0;
+        for (var e : vState.inventorySnapshot().entrySet()) {
+            int amt = e.getValue() == null ? 0 : e.getValue();
+            if (amt <= bestCount) continue;
+            Material m = Material.matchMaterial(e.getKey());
+            if (m == null || !m.isEdible()) continue;
+            best = m;
+            bestCount = amt;
+        }
+        return best;
     }
 
     /** 讨要的数量：显式数字 → "都给我" → 默认 1 */
@@ -1294,7 +1337,9 @@ public final class CentralPlanner extends BukkitRunnable {
 
     /** 承诺交付物件："我这就给你X" / "你拿去" / "送你了" */
     private static final Pattern PROMISE_GIVE = Pattern.compile(
-            "(?:我|俺|咱)[^，。！？；]{0,8}(?:给你|送你|拿给你|递给你)"
+            // 跨度放宽到 14 字且允许中间一个逗号：实测台词"俺这儿有现成的面包，送你俩"
+            // 中间隔着 8 字 + 逗号，旧版 {0,8} 且禁逗号的窗口正好卡死 → 空头承诺漏过守卫
+            "(?:我|俺|咱)[^。！？；]{0,14}(?:给你|送你|拿给你|递给你)"
                     + "|(?:你拿去|你拿着|拿去用|送你了|归你了)");
 
     /**
