@@ -1611,18 +1611,19 @@ public final class CentralPlanner extends BukkitRunnable {
                         switch (action) {
                             case "offer" -> {
                                 // 免费赠送（price=0）—— 交易 GUI 无法表达 0 绿宝的配方，
-                                // 直接把东西塞进玩家背包才是真正的"免费给你"
+                                // 直接把东西塞进玩家背包才是真正的"免费给你"。
+                                // 止血（2026-10-21）：必须出 NPC 真实库存，禁止凭空造物 ——
+                                // 统一走 WorldInteractionService.deliverFreeGift（神使凭空补足须审计）。
+                                // 没给成（库存为空）时台词里的"我送你"会被后续承诺守卫按未兑现处理。
                                 if (baseZh != null && price == 0) {
                                     Material mat = TradeRegistry.zhToMaterial(baseZh);
                                     if (mat != null && mat != Material.EMERALD) {
-                                        int giftCount = Math.max(1, Math.min(count, 16));  // 单次赠送上限 16 个，防刷
-                                        var leftover = nearPlayer.getInventory().addItem(new ItemStack(mat, giftCount));
-                                        if (!leftover.isEmpty()) {
-                                            nearPlayer.getWorld().dropItemNaturally(nearPlayer.getLocation(), leftover.values().iterator().next());
+                                        int delivered = plugin.getWorldInteraction()
+                                                .deliverFreeGift(vState, nearPlayer, mat, count);
+                                        if (delivered > 0) {
+                                            sendDebug(nearPlayer, "§b[MC-AI] " + vState.profession().zhName
+                                                    + "送了你 " + itemZh + " x" + delivered);
                                         }
-                                        plugin.getMemoryStore().markDirty(vState.getUniqueId());
-                                        plugin.getLogger().info("§b[MC-AI] 免费赠送: " + itemZh + " x" + giftCount + " → " + nearPlayer.getName());
-                                        sendDebug(nearPlayer, "§b[MC-AI] " + vState.profession().zhName + "送了你 " + itemZh + " x" + giftCount);
                                     }
                                 }
                                 // 上架新商品（price>0）—— 写入 offeredItems 持久化，下次开 GUI 仍在
