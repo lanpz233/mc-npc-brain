@@ -137,12 +137,14 @@ public final class VillagerDeathListener implements Listener {
     }
 
     /**
-     * 独立库存掉出来 —— 按物品最大堆叠拆分，自然散落。
-     * 现实逻辑：人没了，东西不会凭空消失。
+     * 独立库存掉出来 —— 每种物品只掉 1 件（Fong 2026-10-21 定）。
+     * 原逻辑把整仓库存按堆叠全倒出来：村民攒了几十把镐子，一死就爆一地同款装备。
+     * 现在不论库存里存了几件，同种物品只自然散落一件，其余随死亡消散。
      */
     private void dropInventory(VillagerState vs, Location loc) {
         if (loc.getWorld() == null) return;
         for (var e : vs.inventorySnapshot().entrySet()) {
+            if (e.getValue() == null || e.getValue() <= 0) continue;
             Material mat;
             try {
                 mat = Material.matchMaterial(e.getKey());
@@ -150,12 +152,7 @@ public final class VillagerDeathListener implements Listener {
                 continue;
             }
             if (mat == null || mat.isAir()) continue;
-            int left = e.getValue() == null ? 0 : Math.max(0, e.getValue());
-            while (left > 0) {
-                int stack = Math.min(left, mat.getMaxStackSize());
-                loc.getWorld().dropItemNaturally(loc, new ItemStack(mat, stack));
-                left -= stack;
-            }
+            loc.getWorld().dropItemNaturally(loc, new ItemStack(mat, 1));
         }
     }
 }
