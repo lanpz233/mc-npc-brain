@@ -103,9 +103,14 @@ public final class McaiPlugin extends JavaPlugin {
 
     /** 天气账本采样/提醒任务 */
     private org.bukkit.scheduler.BukkitTask factTask;
-    /** 主动提醒冷却：村民 → 上次黄昏提醒的游戏日 / 上次天气提醒的世界刻度 */
-    private final Map<UUID, Long> lastDuskRemindDay = new ConcurrentHashMap<>();
-    private final Map<UUID, Long> lastStormRemindAt = new ConcurrentHashMap<>();
+    /**
+     * 主动提醒的“全村认领”表：世界名 → 已提醒的游戏日（黄昏）。
+     * <p>
+     * 教训（v0.3.0 实测）：按“每个村民各提醒一次”做，玩家一靠近全村十个人
+     * 同一秒齐喊“天快黑了”，像复读机。提醒是全村一件事：同一傍晚/同一场雨，
+     * 全村只派离玩家最近的一个人说一句，认领后其他人闭嘴。
+     */
+    private final Map<String, Long> duskClaimedDay = new ConcurrentHashMap<>();
     private com.howard.mcai.resourcepack.PackServer packServer;
     /** 网页配置面板（第一期）的本机管理服务 */
     private com.howard.mcai.webpanel.ConfigPanelServer configPanelServer;
@@ -1207,32 +1212,46 @@ public final class McaiPlugin extends JavaPlugin {
         saveWeatherLedgers();
     }
 
-    /** 雷暴/降雨刚开始：附近村民提醒玩家（干旱群系的村民不提，他那儿没下） */
+    /**
+     * 雷暴/降雨刚开始：全村只派离玩家最近的一个村民提醒（本方法在“刚开始下”的
+     * 边沿触发一次，天然只喊一场一次；干旱群系的村民不提，他那儿没下）。
+     */
     private void onStormStarted(org.bukkit.World w) {
         if (!config.factsRemindersEnabled()) return;
+        VillagerState best = null;
+        Player bestPlayer = null;
+        double bestSq = 12.0 * 12.0;
         for (VillagerState vs : villagers.values()) {
             org.bukkit.entity.Villager e = vs.entity();
             if (e == null || !e.isValid() || e.getWorld() != w) continue;
-            Long last = lastStormRemindAt.get(vs.getUniqueId());
-            if (last != null && w.getFullTime() - last < 12000) continue;
+            if (com.howard.mcai.ai.LocalWeather.isDryBiome(w.getBiome(e.getLocation()).name())) continue;
             Player near = nearestPlayer(e.getLocation(), 12);
             if (near == null) continue;
-            String biome = w.getBiome(e.getLocation()).name();
-            if (com.howard.mcai.ai.LocalWeather.isDryBiome(biome)) continue;
-            String line;
-            if (w.isThundering()) {
-                line = "打雷了！赶紧回屋，别在空旷地方待着。";
-            } else if (com.howard.mcai.ai.LocalWeather.isSnowyBiome(biome)) {
-                line = "下雪了，天更冷了，早点回吧。";
-            } else {
-                line = "下雨了，找个地方避避雨吧。";
+            double d = near.getLocation().distanceSquared(e.getLocation());
+            if (d < bestSq) {
+                bestSq = d;
+                best = vs;
+                bestPlayer = near;
             }
-            lastStormRemindAt.put(vs.getUniqueId(), w.getFullTime());
-            speakReminder(vs, near, line);
         }
+        if (best == null) return;
+        String biome = w.getBiome(best.entity().getLocation()).name();
+        String line;
+        if (w.isThundering()) {
+            line = "打雷了！赶紧回屋，别在空旷地方待着。";
+        } else if (com.howard.mcai.ai.LocalWeather.isSnowyBiome(biome)) {
+            line = "下雪了，天更冷了，早点回吧。";
+        } else {
+            line = "下雨了，找个地方避避雨吧。";
+        }
+        speakReminder(best, bestPlayer, line);
     }
 
-    /** 黄昏窗口（约 16:40–17:55）：附近村民提醒天快黑了，每人每天至多一次 */
+    /**
+     * 黄昏窗口（约 16:40–17:55）：全村认领制 —— 同一傍晚只派离玩家最近的
+     * 一个村民说一句；窗口前半段每次扫描五成概率触发（免得像整点闹钟），
+     * 窗口后段（tod 过 11200）必触发，保证不会整晚没人吭声。
+     */
     private void maybeDuskReminders() {
         if (!config.factsRemindersEnabled()) return;
         String[] lines = {"天快黑了，早点回屋吧。", "太阳要落山了，夜里外头不安全。", "趁还没黑透，赶紧回家。"};
@@ -1240,16 +1259,27 @@ public final class McaiPlugin extends JavaPlugin {
             long tod = ((w.getFullTime() % 24000) + 24000) % 24000;
             if (tod < 10000 || tod > 11500) continue;
             long day = w.getFullTime() / 24000;
+            if (day == duskClaimedDay.getOrDefault(w.getName(), -1L)) continue;
+            if (tod < 11200 && java.util.concurrent.ThreadLocalRandom.current().nextBoolean()) continue;
+            VillagerState best = null;
+            Player bestPlayer = null;
+            double bestSq = 12.0 * 12.0;
             for (VillagerState vs : villagers.values()) {
                 org.bukkit.entity.Villager e = vs.entity();
                 if (e == null || !e.isValid() || e.getWorld() != w) continue;
-                if (day == lastDuskRemindDay.getOrDefault(vs.getUniqueId(), -1L)) continue;
                 Player near = nearestPlayer(e.getLocation(), 12);
                 if (near == null) continue;
-                lastDuskRemindDay.put(vs.getUniqueId(), day);
-                speakReminder(vs, near,
-                        lines[Math.floorMod(vs.getUniqueId().hashCode() + (int) day, lines.length)]);
+                double d = near.getLocation().distanceSquared(e.getLocation());
+                if (d < bestSq) {
+                    bestSq = d;
+                    best = vs;
+                    bestPlayer = near;
+                }
             }
+            if (best == null) continue;
+            duskClaimedDay.put(w.getName(), day);
+            speakReminder(best, bestPlayer,
+                    lines[Math.floorMod(best.getUniqueId().hashCode() + (int) day, lines.length)]);
         }
     }
 
