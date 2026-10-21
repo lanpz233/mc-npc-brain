@@ -114,7 +114,11 @@ public record PluginConfig(
         int factsApproxStepMinutes,
 
         /** 主动提醒（黄昏将至/雷暴来临）开关 */
-        boolean factsRemindersEnabled
+        boolean factsRemindersEnabled,
+
+        // 偷窃（v0.4.2）
+        /** 被抓现行后骂人的话由对话模型现编（关 = 用 theft-lines.json 词库；模型忙/失败也退词库） */
+        boolean theftScoldByModel
 ) {
 
     /**
@@ -177,7 +181,9 @@ public record PluginConfig(
                 Math.max(1, Math.min(30, cfg.getInt("facts.ledger-retention-days", 7))),
                 Math.max(0, Math.min(100, cfg.getInt("facts.followup-chance-pct", 33))),
                 Math.max(1, Math.min(30, cfg.getInt("facts.approx-step-minutes", 10))),
-                cfg.getBoolean("facts.reminders-enabled", true)
+                cfg.getBoolean("facts.reminders-enabled", true),
+                // 偷窃（v0.4.2）
+                cfg.getBoolean("theft.scold-by-model", false)
         );
     }
 
