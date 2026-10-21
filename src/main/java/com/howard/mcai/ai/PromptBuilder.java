@@ -383,6 +383,11 @@ public final class PromptBuilder {
         ctx.append("天气、昼夜、周围有谁，只认上面的速览和场景；没写的就不许编，"
                 + "尤其不许凭空说下雨、天黑，也不许编对方身上带着什么东西。\n");
         ctx.append("对方指出你把看得见的事实（时间、天气）说错了，就照速览认了、改口，别嘴硬。\n");
+        // 每轮都把“说出口的时间”钉进来（不只问时间时）：自发提到时间同样不许算。
+        org.bukkit.World anchorWorld = villagerState.entity().getWorld();
+        ctx.append("现在时间：").append(mcPeriodZh(anchorWorld.getTime()))
+                .append(mcSpokenClock(anchorWorld.getTime()))
+                .append("。要提时间就照这个说，不许自己估、不许换算。\n");
         // 玩家在问时间 → 把准确时间钉死在要求里：实测模型不看速览、非要“眯眼瞅天”
         // 估个错时间（如实际 08:10 却说六点二十六），被纠正还嘴硬 —— 问到就原样照报。
         String lastUserText = null;
@@ -392,9 +397,8 @@ public final class PromptBuilder {
         }
         if (lastUserText != null && (lastUserText.contains("几点") || lastUserText.contains("几时")
                 || lastUserText.contains("时间") || lastUserText.contains("什么时候"))) {
-            org.bukkit.World w = villagerState.entity().getWorld();
-            ctx.append("玩家在问现在几点：现在就是 ").append(mcClock(w.getTime()))
-                    .append("，原样照着报这个时间，不许自己估、不许报别的时间。\n");
+            ctx.append("玩家在问现在几点：现在就是 ").append(mcSpokenClock(anchorWorld.getTime()))
+                    .append("，原样照着念这个时间，不许自己估、不许报别的时间。\n");
         }
 
         messages.add(Map.of("role", "user", "content", ctx.toString().trim()));
@@ -816,6 +820,30 @@ public final class PromptBuilder {
         int hour = (int) ((t / 1000 + 6) % 24);
         int minute = (int) ((t % 1000) * 60 / 1000);
         return String.format("%02d:%02d", hour, minute);
+    }
+
+    /** 0-59 的中文数字（一、十二、二十六……），口语化时间用 */
+    private static String zhNum(int n) {
+        String[] d = {"零", "一", "二", "三", "四", "五", "六", "七", "八", "九"};
+        if (n < 10) return d[n];
+        int tens = n / 10, ones = n % 10;
+        return (tens == 1 ? "十" : d[tens] + "十") + (ones == 0 ? "" : d[ones]);
+    }
+
+    /**
+     * tick → 说出口的时间（"八点十分" / "六点整" / "零点零五分"）。
+     * <p>
+     * 为什么需要：速览里是数字写法 08:10，模型要自己换算成中文口语再说出来，
+     * 这一步换算正是翻车点（实测 MiMo 把 08:10 说成六点多，Qwen 正常）。
+     * 直接把说出口的版本钉给模型，照着念就行，不给它算的机会。
+     */
+    public static String mcSpokenClock(long tick) {
+        long t = ((tick % 24000) + 24000) % 24000;
+        int hour = (int) ((t / 1000 + 6) % 24);
+        int minute = (int) ((t % 1000) * 60 / 1000);
+        if (minute == 0) return zhNum(hour) + "点整";
+        if (minute < 10) return zhNum(hour) + "点零" + zhNum(minute) + "分";
+        return zhNum(hour) + "点" + zhNum(minute) + "分";
     }
 
     /**
