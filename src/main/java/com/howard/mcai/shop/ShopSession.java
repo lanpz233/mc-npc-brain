@@ -27,7 +27,7 @@ public final class ShopSession {
     private final long createdAtMs;
     private long lastTouchMs;
 
-    /** 砍价谈成的价：offerId → 成交价（绿宝石）。同一商品一会话只砍一次（bargainedOffers 标记） */
+    /** 砍价谈成的价：offerId → 当前谈成价（绿宝石）。可多轮砍价、只降不升（bargainedOffers 记砍过的商品） */
     private final Map<String, Integer> agreedPrices = new HashMap<>();
     private final Set<String> bargainedOffers = new HashSet<>();
 
@@ -78,21 +78,25 @@ public final class ShopSession {
         return agreed != null ? agreed : listPrice;
     }
 
-    /** 这个商品在本会话里是否已经砍过价（砍过就锁定，不许叠砍） */
+    /** 这个商品在本会话里是否砍过价（至少一轮；详情页据此提示当前已谈到的价） */
     public synchronized boolean hasBargained(String offerId) {
         return bargainedOffers.contains(offerId);
     }
 
     /**
-     * 记下一次砍价结果：成交（accepted 或接受还价）后调用，价格锁定到会话结束。
-     * 已砍过的商品再次调用不覆盖 —— 一会话一商品只砍一次。
+     * 记下一次砍价结果：成交（accepted 或接受还价）后调用。
+     * 多轮砍价（Fong 2026-10-21 要求）：可以反复记，但价格**只降不升**——
+     * 新价不比现价低就不覆盖。能降到多少由 BargainPolicy 按标价锚定的底价守死，
+     * 这里只管单调性，所以反复砍也砍不穿底价。
      *
-     * @return 是否记上了（false = 之前已经砍过，保持原价）
+     * @return 是否记上了（false = 新价没比现价更低，保持现价）
      */
     public synchronized boolean recordBargain(String offerId, int agreedPrice) {
-        if (bargainedOffers.contains(offerId)) return false;
+        int price = Math.max(1, agreedPrice);
+        Integer existing = agreedPrices.get(offerId);
+        if (existing != null && price >= existing) return false;
         bargainedOffers.add(offerId);
-        agreedPrices.put(offerId, Math.max(1, agreedPrice));
+        agreedPrices.put(offerId, price);
         return true;
     }
 
