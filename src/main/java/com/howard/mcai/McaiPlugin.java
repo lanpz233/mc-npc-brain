@@ -88,6 +88,10 @@ public final class McaiPlugin extends JavaPlugin {
 
     /** 气泡管理器（TextDisplay riding villager） */
     private BubbleManager bubbleManager;
+    /** 村庄信任账（v0.4.0）：偷窃被抓先接入，救急以后共用同一本 */
+    private com.howard.mcai.ai.VillageTrust villageTrust = new com.howard.mcai.ai.VillageTrust();
+    /** 偷窃服务（v0.4.0）：背包拿取的唯一出货口，2 秒托管结算 */
+    private com.howard.mcai.security.TheftService theftService;
 
     // ===== 事实与翻译（v0.3.0）静态镜像 + 账本/提醒状态 =====
     private static volatile int factFollowupChancePct = 33;
@@ -222,6 +226,10 @@ public final class McaiPlugin extends JavaPlugin {
         recipeLookup.load(getDataFolder().toPath());
         // 定价表与职业货池（外置数据文件，面板可改）：加载失败回退代码内置默认，不拦启动
         int promptSections = com.howard.mcai.ai.PromptTemplates.load(getDataFolder().toPath());
+        int professionOverrides = com.howard.mcai.ai.ProfessionData.load(getDataFolder().toPath());
+        if (professionOverrides >= 0) {
+            getLogger().info("[MC-AI] 职业设定 professions.json 已加载（" + professionOverrides + " 个职业有自定义）");
+        }
         getLogger().info("提示词模板: " + (promptSections >= 0 ? promptSections + " 段（数据文件）" : "内置默认"));
         int anchors = com.howard.mcai.ai.PriceBook.load(getDataFolder().toPath());
         int pools = com.howard.mcai.ai.ProfessionPools.load(getDataFolder().toPath());
@@ -328,6 +336,9 @@ public final class McaiPlugin extends JavaPlugin {
 
         // 7.2 天气账本 + 主动提醒（v0.3.0）：读回账本，每 30 秒采样一次各世界天气
         loadWeatherLedgers();
+        // 7.3 村庄信任账 + 偷窃服务（v0.4.0）
+        loadVillageTrust();
+        theftService = new com.howard.mcai.security.TheftService(this);
         factTask = Bukkit.getScheduler().runTaskTimer(this, this::factTick, 600L, 600L);
 
         // 7.5 对话注视任务 —— 每 2 tick 让所有"正在对话"的村民持续面向玩家
@@ -451,6 +462,7 @@ public final class McaiPlugin extends JavaPlugin {
             factTask = null;
         }
         saveWeatherLedgers();
+        saveVillageTrust();
         // 1.5 停掉对话注视任务
         if (planner != null) {
             planner.stopFaceTask();
@@ -544,8 +556,6 @@ public final class McaiPlugin extends JavaPlugin {
         toolRegistry.register(new NpcMoveToTool(this));
         // give_item 已从老后门迁入统一柜（NpcGiveItemTool 以别名桥接旧名，对话模型菜单不变）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcGiveItemTool(this));
-        // accept_swap 同样迁入统一柜（值不值由 SwapPolicy 裁决）
-        toolRegistry.register(new com.howard.mcai.tool.tools.NpcAcceptSwapTool(this));
         // break_block / place_block 迁入统一柜（权限把关仍在 WorldInteractionService）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcBreakBlockTool(this));
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcPlaceBlockTool(this));
@@ -1187,6 +1197,45 @@ public final class McaiPlugin extends JavaPlugin {
         }
     }
 
+    // ===== 村庄信任账（v0.4.0）=====
+
+    private java.io.File villageTrustFile() {
+        return new java.io.File(getDataFolder(), "village-trust.json");
+    }
+
+    private void loadVillageTrust() {
+        try {
+            java.io.File f = villageTrustFile();
+            if (f.exists()) {
+                var loaded = com.howard.mcai.ai.VillageTrust.fromJson(
+                        java.nio.file.Files.readString(f.toPath()));
+                if (loaded != null) {
+                    villageTrust = loaded;
+                    getLogger().info("村庄信任账已读回");
+                }
+            }
+        } catch (Exception e) {
+            getLogger().warning("村庄信任账读取失败（从新账本开始）: " + e.getMessage());
+        }
+    }
+
+    /** 信任账落盘（被抓记账后立刻调用，另 onDisable 再存一次） */
+    public void saveVillageTrust() {
+        try {
+            java.nio.file.Files.writeString(villageTrustFile().toPath(), villageTrust.toJson());
+        } catch (Exception e) {
+            getLogger().warning("村庄信任账保存失败: " + e.getMessage());
+        }
+    }
+
+    public com.howard.mcai.ai.VillageTrust getVillageTrust() {
+        return villageTrust;
+    }
+
+    public com.howard.mcai.security.TheftService getTheftService() {
+        return theftService;
+    }
+
     private void saveWeatherLedgers() {
         try {
             var root = new com.google.gson.JsonObject();
@@ -1324,6 +1373,7 @@ public final class McaiPlugin extends JavaPlugin {
         com.howard.mcai.ai.PriceBook.load(getDataFolder().toPath());
         com.howard.mcai.ai.ProfessionPools.load(getDataFolder().toPath());
         com.howard.mcai.ai.PromptTemplates.load(getDataFolder().toPath());
+        com.howard.mcai.ai.ProfessionData.load(getDataFolder().toPath());
         PromptBuilder.setRecipeLookup(recipeLookup);
         PersonalityTagLibrary.load(getDataFolder().toPath());
         NameLibrary.load(getDataFolder().toPath());

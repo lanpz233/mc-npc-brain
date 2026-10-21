@@ -92,13 +92,6 @@ public final class NpcGiveItemTool implements NpcTool {
         String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
         Material mat = com.howard.mcai.security.WorldInteractionService.resolveItem(
                 ToolArgs.string(arguments, "item", null));
-        // 已登记的索要优先：物品在登记时已由插件按玩家原话定死，模型的 item 参数只是它自己的
-        // 复述，写错一个字（实测把面包说成"一袋"）解析就失败、整轮交付泡汤，玩家只看到一句
-        // 莫名其妙的"这次没能把东西给你"。有登记时以登记的物品为准，模型参数不算数。
-        VillagerState.ItemRequest pending = vs.peekItemRequest(player.getUniqueId());
-        if (pending != null) {
-            mat = pending.mat();
-        }
         if (mat == null || mat.isAir()) {
             return ToolResult.failed(ToolResult.ErrorCode.INVALID_ARGUMENT, "不知道这是什么东西");
         }
@@ -111,16 +104,11 @@ public final class NpcGiveItemTool implements NpcTool {
             return ToolResult.completed(data);
         }
 
-        // 已登记的索要（聊天讨要/GUI 点击）：数量与裁决都在登记时钉死，模型参数不算数
-        VillagerState.ItemRequest pinnedReq = vs.consumeItemRequest(player.getUniqueId(), mat);
-        int pinned = pinnedReq != null ? pinnedReq.count() : 0;
-        boolean pinnedApproved = pinnedReq != null && pinnedReq.pluginApproved();
-
         boolean envoy = plugin.getPermissionManager().rankOf(vs, player.getUniqueId()) == NpcRank.ENVOY;
         String today = LocalDate.now().toString();
         GiftPolicy.Verdict verdict = GiftPolicy.decide(
                 envoy,
-                pinned, pinnedApproved,
+                0, false,
                 ToolArgs.integer(arguments, "count", 1),
                 vs.stockOf(mat),
                 vs.emotion().favor(player.getUniqueId()),

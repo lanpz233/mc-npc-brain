@@ -12,8 +12,7 @@ import org.bukkit.inventory.Inventory;
  * NPC 背包 GUI 的交互拦截。
  * <p>
  * 铁律：背包里的物品**不能**被玩家直接拿走 —— 所有点击/拖拽都 cancel，
- * 只有点击"真货格"时才转发给 {@link VillagerInventoryGui#handleClick} 走索要流程
- *（关系门槛 + 整堆出货 + 刷新窗口）。这样"拿走"路径永远只有一条，不会漏。
+ * 只有点击"真货格"时才转发给 {@link VillagerInventoryGui#handleClick} 走偷窃流程（TheftService 托管结算）。这样"拿走"路径永远只有一条，不会漏。
  */
 public final class VillagerInventoryListener implements Listener {
 
@@ -26,10 +25,17 @@ public final class VillagerInventoryListener implements Listener {
         event.setCancelled(true);
 
         if (!(event.getWhoClicked() instanceof Player player)) return;
-        // 只处理"点在上半部分真货格"的索要；玩家自己背包格的点击只是被拦下
+        // 只处理"点在上半部分真货格"的点击；玩家自己背包格的点击只是被拦下
         if (event.getClickedInventory() != top) return;
-        // 左键 = 索要 1 个；右键 = 用玩家主手物品与这一格交换（AI 决定值不值得换）
+        // 点真货格 = 试图偷走 1 个（左右键同效，TheftService 裁决）
         gui.handleClick(player, event.getSlot(), event.isRightClick());
+    }
+
+    @EventHandler
+    public void onClose(org.bukkit.event.inventory.InventoryCloseEvent event) {
+        Inventory top = event.getView().getTopInventory();
+        if (!(top.getHolder() instanceof VillagerInventoryGui gui)) return;
+        if (event.getPlayer() instanceof Player player) gui.onClosed(player);
     }
 
     @EventHandler

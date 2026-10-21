@@ -9,6 +9,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 
+import java.util.Map;
+
 /**
  * 商店结算 —— 界面点下「买/卖」之后唯一算数的地方。
  * <p>
@@ -136,6 +138,107 @@ public final class ShopSettlement {
         return result;
     }
 
+    // ===== 买货 + 以物抵价（v0.4.0：以物换物搬进商店） =====
+
+    /**
+     * 买下商品，货款一部分用玩家篮子里的东西抵（按村民收购牌价整捆计价，
+     * 见 {@link BarterPlan}），差价用绿宝石补付/找零。其余复核与 {@link #buy} 同口径。
+     */
+    public static Result buyWithBarter(McaiPlugin plugin, Player player, VillagerState state,
+                                       ShopCatalog.Offer offer, ShopSession session) {
+        PlayerInventory inv = player.getInventory();
+        int price = session.effectivePrice(offer.id(), offer.emeraldPrice());
+
+        // 抵价条款与计划（以结算时刻的目录/钱包为准，不信界面预览）
+        var offers = ShopCatalog.fromRecipes(state.buildCurrentRecipes());
+        var terms = BarterPlan.termsFrom(offers);
+        Map<String, Integer> basketNames = session.barterBasket();
+        Map<Material, Integer> basket = new java.util.LinkedHashMap<>();
+        for (var e : basketNames.entrySet()) {
+            Material m = Material.matchMaterial(e.getKey());
+            if (m != null && e.getValue() > 0) basket.put(m, e.getValue());
+        }
+        BarterPlan.Plan plan = BarterPlan.plan(basket, terms, price, state.stockOf(Material.EMERALD));
+        if (plan.consumed().isEmpty()) {
+            return fail(session, "你选的东西还凑不成一捆，抵不了价——看看收购清单，论捆才算数。");
+        }
+        if (plan.changeUnaffordable()) {
+            return fail(session, "你抵的货超了价，我兜里绿宝石不够找零——少抵一件吧。");
+        }
+        // 复核 1：要抵的货真在玩家包里
+        for (var e : plan.consumed().entrySet()) {
+            if (!inv.containsAtLeast(new ItemStack(e.getKey()), e.getValue())) {
+                return fail(session, "你包里没有那么多 " + TradeRegistry.materialToZh(e.getKey()) + " 了。");
+            }
+        }
+        // 复核 2：补付的绿宝石够不够
+        int have = countItem(inv, Material.EMERALD);
+        if (have < plan.emeraldDue()) {
+            return fail(session, "抵完还差 " + plan.emeraldDue() + " 块绿宝石，你身上不够。");
+        }
+        // 复核 3：附带原料（与 buy 同规）
+        for (ItemStack cost : offer.cost()) {
+            if (cost.getType() == Material.EMERALD) continue;
+            if (!inv.containsAtLeast(cost, cost.getAmount())) {
+                return fail(session, "还差 " + TradeRegistry.materialToZh(cost.getType())
+                        + " 呢，你没带够，我没法给你做。");
+            }
+        }
+        // 复核 4：玩家背包塞得下商品（和可能找回的零钱）
+        if (!hasSpaceFor(inv, offer.result())) {
+            return fail(session, "你包里塞不下了，先腾点地方再来吧。");
+        }
+        if (plan.change() > 0 && !hasSpaceFor(inv, new ItemStack(Material.EMERALD, plan.change()))) {
+            return fail(session, "你包里塞不下找零了，先腾点地方吧。");
+        }
+
+        // 执行（一次性）：收抵价货 → 补付/找零 → 扣原料 → 交货
+        StringBuilder goodsDesc = new StringBuilder();
+        for (var e : plan.consumed().entrySet()) {
+            inv.removeItem(new ItemStack(e.getKey(), e.getValue()));
+            state.addToInventory(e.getKey(), e.getValue());
+            if (goodsDesc.length() > 0) goodsDesc.append("、");
+            goodsDesc.append(TradeRegistry.materialToZh(e.getKey())).append("x").append(e.getValue());
+        }
+        if (plan.emeraldDue() > 0) {
+            inv.removeItem(new ItemStack(Material.EMERALD, plan.emeraldDue()));
+            state.addToInventory(Material.EMERALD, plan.emeraldDue());
+        }
+        if (plan.change() > 0) {
+            state.removeFromInventory(Material.EMERALD, plan.change());
+            inv.addItem(new ItemStack(Material.EMERALD, plan.change()));
+        }
+        for (ItemStack cost : offer.cost()) {
+            if (cost.getType() == Material.EMERALD) continue;
+            inv.removeItem(cost.clone());
+        }
+        inv.addItem(offer.result().clone());
+        session.clearBarter();
+
+        afterTrade(plugin, player, state);
+        player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_TRADE, 1f, 1f);
+        player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.3f);
+        plugin.getAuditLog().log(npcName(state), state.getUniqueId(), "shop_buy_barter",
+                offer.id() + " x" + offer.result().getAmount(),
+                "goods=" + plan.goodsValue() + " due=" + plan.emeraldDue() + " change=" + plan.change());
+        String itemZh = TradeRegistry.materialToZh(offer.result().getType());
+        String line = "成交！" + itemZh + "拿好。你拿" + goodsDesc + "抵了 " + plan.goodsValue() + " 块"
+                + (plan.emeraldDue() > 0 ? "，又补了 " + plan.emeraldDue() + " 块绿宝石"
+                        : plan.change() > 0 ? "，我找你 " + plan.change() + " 块绿宝石" : "")
+                + "。";
+        Result result = ok(session, line);
+        int list = offer.emeraldPrice();
+        state.addFact(player.getName() + " 在我店里买走了" + itemZh + "x" + offer.result().getAmount()
+                + "，拿" + goodsDesc + "抵了 " + plan.goodsValue() + " 块绿宝石"
+                + (plan.emeraldDue() > 0 ? "、补付 " + plan.emeraldDue() + " 块" : "")
+                + (price < list ? "（成交价 " + price + "，是砍价谈成的）" : ""), player.getUniqueId());
+        ShopChatter.speak(plugin, state, player, session, line,
+                "他买走了你的" + itemZh + "，拿" + goodsDesc + "抵了 " + plan.goodsValue() + " 块绿宝石"
+                        + (plan.emeraldDue() > 0 ? "，还补了 " + plan.emeraldDue() + " 块现金" : "")
+                        + "。买卖做成了。");
+        return result;
+    }
+
     // ===== 共用小件 =====
 
     private static Result ok(ShopSession session, String line) {
@@ -148,11 +251,21 @@ public final class ShopSettlement {
         return new Result(false, line);
     }
 
-    /** 成交善后：记见面 + 好感 +1 + 标脏落盘（与原版交易窗时代的 VillagerTradeListener 一致） */
+    /** 成交善后：记见面 + 好感 +1 + 标脏落盘（与原版交易窗时代的 VillagerTradeListener 一致）；
+     * 另记村庄信任赎回（v0.4.0：在村里做买卖能慢慢把信任挣回来，每天有上限） */
     private static void afterTrade(McaiPlugin plugin, Player player, VillagerState state) {
         state.recordMeeting(player.getUniqueId(), player.getName());
         state.emotion().addFavor(player.getUniqueId(), 1.0);
         plugin.getMemoryStore().markDirty(state.getUniqueId());
+        var v = state.entity();
+        if (v != null && v.getWorld() != null) {
+            var loc = v.getLocation();
+            int vid = plugin.getVillageTrust().villageIdFor(
+                    loc.getWorld().getName(), loc.getX(), loc.getY(), loc.getZ());
+            plugin.getVillageTrust().onTrade(player.getUniqueId(), vid,
+                    v.getWorld().getFullTime() / 24000L);
+            plugin.saveVillageTrust();
+        }
     }
 
     public static int countItem(PlayerInventory inv, Material mat) {

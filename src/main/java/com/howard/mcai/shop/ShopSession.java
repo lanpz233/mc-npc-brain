@@ -40,6 +40,9 @@ public final class ShopSession {
     /** 玩家当前选中的商品 offerId（点开详情/砍价面板时用）；null = 在商品列表页 */
     private String selectedOfferId;
 
+    /** 以物抵价的篮子（v0.4.0）：材料名 → 玩家选了几个。只记意向，结算时按整捆计划消耗 */
+    private final java.util.LinkedHashMap<String, Integer> barterBasket = new java.util.LinkedHashMap<>();
+
     /** 砍价被还价后的待确认价：offerId → 村民的还价（底线价）。玩家点「接受」才落定 recordBargain */
     private final Map<String, Integer> pendingCounters = new HashMap<>();
 
@@ -150,6 +153,27 @@ public final class ShopSession {
 
     public synchronized void setNpcLine(String line) {
         this.npcLine = line;
+    }
+
+    /** 篮子快照（材料名 → 个数，保序） */
+    public synchronized Map<String, Integer> barterBasket() {
+        return new java.util.LinkedHashMap<>(barterBasket);
+    }
+
+    /** 篮子里某材料选了几个 */
+    public synchronized int barterCount(String materialName) {
+        return barterBasket.getOrDefault(materialName, 0);
+    }
+
+    /** 调整篮子数量（delta 可负）；cap 是玩家实际持有量，归零移除 */
+    public synchronized void barterAdjust(String materialName, int delta, int cap) {
+        int next = Math.max(0, Math.min(cap, barterCount(materialName) + delta));
+        if (next <= 0) barterBasket.remove(materialName);
+        else barterBasket.put(materialName, next);
+    }
+
+    public synchronized void clearBarter() {
+        barterBasket.clear();
     }
 
     public synchronized String selectedOfferId() {

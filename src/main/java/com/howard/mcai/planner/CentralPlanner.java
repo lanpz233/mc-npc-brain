@@ -285,8 +285,6 @@ public final class CentralPlanner extends BukkitRunnable {
             // 等玩家亲口确认了才收。旧版直接扣货会闯祸：换物提议被砍一半执行 = 单方面没收玩家装备。
             // 刚处理完一笔待确认送礼的那一句不再登记新的一笔（"拿去"是答应，不是新提议）
             if (!hadPendingGift) effectiveMessage = annotateGift(vState, player, message, effectiveMessage);
-            // 聊天里向 NPC 讨东西 —— 与 F 键 GUI 索要共用同一份耐心：好感不够也能靠反复磨让他松口
-            if (!bargained) effectiveMessage = annotateBeg(vState, player, message, effectiveMessage);
         }
         // 事实直答（v0.3.0）：纯事实问题（几点/下没下雨/你饿不饿）由插件直接回答、不走模型。
         // 事实经模型复述必有概率翻面（15:55→“十四点五十五分”实测），且与模型听不听话
@@ -450,11 +448,25 @@ public final class CentralPlanner extends BukkitRunnable {
      * @param base     已附加其它说明的消息（本方法在末尾追加 Gift note）
      * @return 追加了 Gift note 的消息；没命中/没东西可提则原样返回
      */
+    /**
+     * “向 NPC 伸手要东西”的句式表 —— v0.4.0 索要系统删除后只剩一个用途：
+     * {@link #annotateGift} 的护栏：一句话里既要又给 = 换物提议，不是单纯送礼，
+     * 送礼流程一次都不碰（防代码层对半执行把玩家装备单方面没收，见 annotateGift 注释）。
+     */
+    private static final Pattern ASK_PATTERN = Pattern.compile(
+            "给我|送我|分我|求你了|求求|求你|赏我|白给|讨一个|要一个|要个|能不能给"
+                    + "|还给我|还我|还回来|归还给我|还回来给我"
+                    + "|可以给我|给点|给我点|给我些|行行好");
+
+    /** "都给我/全给我"的说法（同上，护栏用） */
+    private static final Pattern ASK_ALL_PATTERN = Pattern.compile(
+            "都给我|全给我|全都给我|全部给我|整个给我|这些都给我");
+
     private String annotateGift(VillagerState vState, Player player, String original, String base) {
         // 换物提议（同一句里既"跟我要某件东西"又"把另一件给我"）→ 这是交易，不是单纯送礼。
         // 代码层对半执行的后果极其糟糕：玩家那一半被强制执行、NPC 那一半又被好感门槛拒掉，
         // 等于把玩家的装备单方面没收（实测玩家当场炸了）—— 所以这种整句一次都不碰。
-        if (BEG_PATTERN.matcher(original).find() || BEG_ALL_PATTERN.matcher(original).find()) return base;
+        if (ASK_PATTERN.matcher(original).find() || ASK_ALL_PATTERN.matcher(original).find()) return base;
 
         boolean handoverCue = GIFT_HANDOVER_CUE.matcher(original).find();
         boolean giveVerb = GIFT_GIVE_VERB.matcher(original).find();
@@ -511,7 +523,6 @@ public final class CentralPlanner extends BukkitRunnable {
             return base + "\n[Gift note: the player said yes, but they no longer have any " + zh
                     + " to hand over. Just respond naturally in one short Chinese line.]";
         }
-        vState.markGiftedFrom(player.getUniqueId(), pending.mat());    // 3 分钟内玩家可以要回去
         plugin.getLogger().info("§b[MC-AI] 玩家确认送礼: " + player.getName() + " → "
                 + com.howard.mcai.ai.Smalltalk.nameOf(vState) + " " + pending.mat().name() + " x" + taken);
         sendDebug(player, "§b[MC-AI] 已收下 " + zh + " x" + taken);
@@ -572,30 +583,6 @@ public final class CentralPlanner extends BukkitRunnable {
         return (hand == null || hand.getType().isAir()) ? null : hand.getType();
     }
 
-    // ===== 聊天里"讨东西"（与 GUI 索要共用耐心，好感不够也能磨） =====
-
-    /**
-     * 讨好/讨要句式 —— 玩家在聊天里缠着 NPC 要东西的说法。
-     * <p>
-     * 刻意不收"讨要/要点/想要"这类含糊词（GUI 注里就有"向你讨要"，会误伤），
-     * 只收"给我/送我/求你"这种明确伸手的说法；且必须同时点名了 NPC 真有的东西才成立。
-     * <p>
-     * 注意别把"送你一个"收进来 —— 那是玩家<b>递给</b>NPC（见 {@link #annotateGift}），不是向 NPC 要。
-     */
-    private static final Pattern BEG_PATTERN = Pattern.compile(
-            "给我|送我|分我|求你了|求求|求你|赏我|白给|讨一个|要一个|要个|能不能给"
-                    // 要回自己刚送出去的东西也走这条路 —— 回收窗（见 annotateBeg）会让它直接物归原主，
-                    // 不看感情分。玩家最自然的说法就是"还给我/把我的XX还我"，不加进来回收窗根本够不着
-                    + "|还给我|还我|还回来|归还给我|还回来给我"
-                    + "|可以给我|给点|给我点|给我些|行行好");
-
-    /** "都给我/全给我"的说法 → 要 NPC 这一格的全部库存 */
-    private static final Pattern BEG_ALL_PATTERN = Pattern.compile(
-            "都给我|全给我|全都给我|全部给我|整个给我|这些都给我");
-
-    /** 讨要的数量："给我3个面包" → 3 */
-    private static final Pattern BEG_COUNT_PATTERN = Pattern.compile("(\\d+)\\s*(?:个|块|片|瓶|把|张|根|串|条)");
-
     /**
      * 台词里"明确答应把东西给出去"的说法 —— 用于把口头同意落成真实交付。
      * <p>
@@ -629,103 +616,6 @@ public final class CentralPlanner extends BukkitRunnable {
      * @param original 玩家原始消息（判句式 + 找物品）
      * @param base     已附加其它说明的消息（本方法在末尾追加索要说明）
      */
-    /** 泛称食物：玩家讨"吃的"不点名具体食物时用（"给我点吃的，我饿"是最自然的讨法） */
-    private static final Pattern GENERIC_FOOD_PATTERN = Pattern.compile("吃的|食物|干粮|吃食|饭食");
-
-    private String annotateBeg(VillagerState vState, Player player, String original, String base) {
-        if (!BEG_PATTERN.matcher(original).find() && !BEG_ALL_PATTERN.matcher(original).find()) return base;
-        // 必须点名一件"NPC 库存里真有"的东西，否则可能只是"能不能给我讲讲"这类非物品请求
-        Material mat = findRequestedItem(vState, original);
-        // 没点名但讨的是泛称食物 → 从他库存里挑一样真有的吃的顶上：
-        // 否则请求登记不上，模型只能自由发挥许诺（实测："送你俩面包，管饱！"实际一个没给）
-        if (mat == null && GENERIC_FOOD_PATTERN.matcher(original).find()) {
-            mat = findStockedFood(vState);
-        }
-        if (mat == null) return base;
-
-        int stock = vState.stockOf(mat);
-        if (stock <= 0) return base;
-        int want = Math.min(parseBegCount(original, stock), stock);
-
-        double fav = vState.emotion().favor(player.getUniqueId());
-        // 裁决由插件当场算死（GiftPolicy：好感门槛按物品价值分档），不再掷骰子。
-        // 结果钉进索要请求：模型只有表态权——裁决不给时，它嘴上答应了也交不出货
-        // （交付环节会按请求里的 pluginApproved 拦截）。
-        boolean reclaim = vState.consumeReclaim(player.getUniqueId(), mat);
-        boolean envoy = plugin.getPermissionManager().rankOf(vState, player.getUniqueId())
-                == com.howard.mcai.security.NpcRank.ENVOY;
-        boolean willing = com.howard.mcai.security.GiftPolicy.willingToGive(
-                fav, com.howard.mcai.security.PermissionManager.valueOf(mat), envoy, reclaim);
-        // 钉死数量+裁决：GUI 那一套复用（模型把 count 写成一整叠也不算数）
-        vState.setItemRequest(player.getUniqueId(), mat, want, willing);
-
-        String zh = com.howard.mcai.ai.PromptBuilder.materialToZh(mat);
-        String attitude = reclaim ? "这件东西本来就是他刚送你的，你愿意还给他"
-                : (willing ? "关系不错，你愿意给" : "关系还不到位，你不太想给");
-        plugin.getLogger().info("§b[MC-AI] 聊天讨要: " + player.getName() + " → "
-                + com.howard.mcai.ai.Smalltalk.nameOf(vState) + " " + mat.name() + " x" + want
-                + " 好感=" + String.format("%.0f", fav)
-                + " 裁决=" + (reclaim ? "物归原主" : (willing ? "给(GiftPolicy达标)" : "不给(GiftPolicy未达门槛)"))
-                + " → 等模型表态后交付");
-        sendDebug(player, "§b[MC-AI] 讨要态度: " + (willing ? "愿意" : "不太愿意"));
-
-        return base + "\n[Item request note: the player is asking for " + want + "×" + zh
-                + " (" + mat.name() + ") out of your own stock. Your current attitude: " + attitude + ". "
-                + "If you agree to give it, you MUST call `give_item` with item=\"" + zh + "\" and count=" + want
-                + " — the game hands it over for real. "
-                + "If your Chinese line explicitly agrees to give (for example \"给你\"/\"拿去\"/\"送你了\"/\"拿着\"), "
-                + "the game will also execute the handover based on that agreement. "
-                + "If you refuse, say so in one short Chinese line and do NOT promise anything. "
-                + "You must actually SAY the line — not only call tools.]";
-    }
-
-    /**
-     * 找出玩家这次在讨的东西：消息里点名的中文物品名 + NPC 库存里确实有。
-     * <p>
-     * 两步：① 拿映射表里的中文名（长词优先）去比对消息；② 再拿 NPC 库存里每件东西的中文名反向比对，
-     * 覆盖映射表里没有的物品（不然"给我一个附魔金苹果"这种就永远认不出来）。
-     */
-    private Material findRequestedItem(VillagerState vState, String text) {
-        for (String zhItem : SORTED_ZH_ITEMS) {
-            if (!text.contains(zhItem)) continue;
-            Material m = TradeRegistry.zhToMaterial(zhItem);
-            if (m != null && vState.stockOf(m) > 0) return m;
-        }
-        for (var e : vState.inventorySnapshot().entrySet()) {
-            int amt = e.getValue() == null ? 0 : e.getValue();
-            if (amt <= 0) continue;
-            Material m = Material.matchMaterial(e.getKey());
-            if (m == null || m.isAir()) continue;
-            String zh = com.howard.mcai.ai.PromptBuilder.materialToZh(m);
-            if (zh != null && !zh.isBlank() && text.contains(zh)) return m;
-        }
-        return null;
-    }
-
-    /** 从 NPC 库存里挑一样能吃的：存量最多的优先（讨"吃的"时给他最实在的那样） */
-    private Material findStockedFood(VillagerState vState) {
-        Material best = null;
-        int bestCount = 0;
-        for (var e : vState.inventorySnapshot().entrySet()) {
-            int amt = e.getValue() == null ? 0 : e.getValue();
-            if (amt <= bestCount) continue;
-            Material m = Material.matchMaterial(e.getKey());
-            if (m == null || !m.isEdible()) continue;
-            best = m;
-            bestCount = amt;
-        }
-        return best;
-    }
-
-    /** 讨要的数量：显式数字 → "都给我" → 默认 1 */
-    private static int parseBegCount(String msg, int stock) {
-        Matcher m = BEG_COUNT_PATTERN.matcher(msg);
-        if (m.find()) {
-            try { return Math.max(1, Math.min(64, Integer.parseInt(m.group(1)))); } catch (NumberFormatException ignored) { }
-        }
-        if (BEG_ALL_PATTERN.matcher(msg).find()) return Math.max(1, stock);
-        return 1;
-    }
 
     /**
      * learn 工具落地：好感/门槛二次把关，通过才写进永久记忆（带出处）。
@@ -1501,7 +1391,7 @@ public final class CentralPlanner extends BukkitRunnable {
      * @return 剥掉空头承诺后的台词（可能为空串）
      */
     private String stripUnbackedPromises(VillagerState vState, String dialogue, ToolCall toolCall,
-                                         boolean reallyGave, boolean reallyLearned, boolean begPending) {
+                                         boolean reallyGave, boolean reallyLearned) {
         if (dialogue == null || dialogue.isBlank()) return dialogue;
         String tool = toolCall == null ? null : toolCall.name();
         // 关键：reallyGave/reallyLearned 一律由调用方按**真实执行结果**传入 ——
@@ -1518,30 +1408,24 @@ public final class CentralPlanner extends BukkitRunnable {
         while (m.find()) {
             String sentence = dialogue.substring(cursor, m.end());
             cursor = m.end();
-            if (isUnbackedPromise(sentence, reallyGave, reallyMoved, reallyLearned, begPending)) continue;
+            if (isUnbackedPromise(sentence, reallyGave, reallyMoved, reallyLearned)) continue;
             kept.append(sentence);
         }
         // 最后一段可能没有句末标点（模型常以"…"或直接收尾），单独判定，不能漏掉
         if (cursor < dialogue.length()) {
             String tail = dialogue.substring(cursor);
-            if (!isUnbackedPromise(tail, reallyGave, reallyMoved, reallyLearned, begPending)) kept.append(tail);
+            if (!isUnbackedPromise(tail, reallyGave, reallyMoved, reallyLearned)) kept.append(tail);
         }
         return kept.toString().trim();
     }
 
     /** 单句判定：命中"未兑现的承诺"返回 true */
     private static boolean isUnbackedPromise(String sentence, boolean reallyGave,
-                                             boolean reallyMoved, boolean reallyLearned, boolean begPending) {
+                                             boolean reallyMoved, boolean reallyLearned) {
         if (!reallyGave && !PRICE_TALK.matcher(sentence).find()) {
             // 婉拒句不是承诺："俺不能给你"这类话是老实拒绝，删掉反而只剩莫名其妙的沉默
             boolean refused = GIVE_REFUSAL_PATTERN.matcher(sentence).find();
             if (!refused && PROMISE_GIVE.matcher(sentence).find()) {
-                return true;
-            }
-            // 索要轮次加严：玩家刚讨过东西时，台词里任何"同意给"的说法（与交付触发共用
-            // 同一张同意表）若没真交付就是空头支票 —— 实测漏网句"拿着，赶紧吃吧"
-            // 与系统的拒绝提示同屏出现，自相矛盾。脱离索要语境时不用这条，免得误伤描写句。
-            if (begPending && looksLikeGivingConsent(sentence)) {
                 return true;
             }
         }
@@ -1598,10 +1482,6 @@ public final class CentralPlanner extends BukkitRunnable {
         // 若先按"模型调过工具"就放行台词，就会出现"嘴上说'给，这是俺存的最后一个好苹果，你拿着'，
         // 玩家背包里却啥也没有"。提前执行 → 拿到真实结果 → 承诺守卫按结果剥离空头支票 → 最后才开口。
         String gatedReject = null;      // 非 null = 该动作被门槛拒了，值是给玩家看的原因
-        // 本轮玩家是否刚讨过东西（工具执行前先记下，执行中请求会被消费）：承诺守卫对这种轮次
-        // 要用更严的口径判空头支票（见 isUnbackedPromise 的索要轮次加严）
-        boolean begPending = nearPlayer != null
-                && vState.peekItemRequest(nearPlayer.getUniqueId()) != null;
         boolean reallyGave = false;     // give_item 是否真的把东西交出去了
         boolean reallyLearned = false;  // learn 是否真的写进了永久记忆
         ToolResult preUnifiedResult = null;  // give_item 在第二步半经统一分发的结果（第三步复用，禁止重复执行）
@@ -1620,24 +1500,6 @@ public final class CentralPlanner extends BukkitRunnable {
                         //（老后门 execute 入口已退役，再走它只会拿到 null 被误判成成功）
                         gatedReject = "§e系统繁忙，这次没能把东西给你";
                         reallyGave = false;
-                    }
-                }
-                case "accept_swap" -> {
-                    // 玩家在背包界面右键发起的交换：双方物品/数量在点击时已由代码层登记。
-                    // 已迁入统一柜：值不值由 SwapPolicy 裁决，模型只有表态权；结果带回给承诺守卫。
-                    if (isUnifiedTool("accept_swap")) {
-                        preUnifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
-                        reallyGave = preUnifiedResult != null && preUnifiedResult.success()
-                                && preUnifiedResult.data() != null
-                                && preUnifiedResult.data().has("swapped")
-                                && preUnifiedResult.data().get("swapped").getAsBoolean();
-                        gatedReject = (preUnifiedResult != null && !preUnifiedResult.success())
-                                ? "§e" + playerFacingReason(preUnifiedResult, "交换没能完成")
-                                : null;
-                    } else {
-                        var swap = plugin.getWorldInteraction().swapWithPlayer(vState, nearPlayer);
-                        reallyGave = swap.success();
-                        gatedReject = swap.error();
                     }
                 }
                 case "learn" -> {
@@ -1664,36 +1526,11 @@ public final class CentralPlanner extends BukkitRunnable {
             }
         }
 
-        // === 索要交付：模型台词明确答应给 → 执行给予接口 ===
-        // 索要发起时不再当场出货（见 GUI requestItem / annotateBeg），交付交给模型表态：
-        // 模型调了 give_item 上面已经真给了；没调但台词明确答应（"给你/拿去/送你了/拿着"），
-        // 在这里替它把东西真正交出去，避免"嘴上答应、背包里却没有"。
-        if (!reallyGave && nearPlayer != null && looksLikeGivingConsent(dialogue)) {
-            var request = vState.peekItemRequest(nearPlayer.getUniqueId());
-            // 插件裁决不给（登记索要时已算死）：模型嘴上答应了也不交货——结果归插件，模型只有表达权
-            if (request != null && !request.pluginApproved()) {
-                plugin.getLogger().info("§c[MC-AI] 索要交付拦截: 插件裁决为不给（GiftPolicy），模型台词答应也不算数 — "
-                        + com.howard.mcai.ai.Smalltalk.nameOf(vState) + " / " + request.mat().name());
-                request = null;
-            }
-            if (request != null) {
-                String fail = plugin.getWorldInteraction()
-                        .handOverFromStock(vState, nearPlayer, request.mat(), request.count());
-                if (fail == null) {
-                    reallyGave = true;
-                    vState.clearItemRequest(nearPlayer.getUniqueId());
-                } else {
-                    if (nearPlayer.isOnline()) nearPlayer.sendMessage(fail);
-                    Bukkit.getConsoleSender().sendMessage(fail);
-                }
-            }
-        }
-
         // === 承诺-执行一致性守卫（硬约束！）===
         // 台词里的"我这就过去""给你""我记住了"若没有本轮**真实做成**的动作兑现，就是空头支票。
         // 只删那一句，不做任何替换（硬约束：禁止兜底台词）—— 全被删空时下面透传为 "..."。
         String beforePromise = dialogue;
-        dialogue = stripUnbackedPromises(vState, dialogue, toolCall, reallyGave, reallyLearned, begPending);
+        dialogue = stripUnbackedPromises(vState, dialogue, toolCall, reallyGave, reallyLearned);
         if (dialogue == null || dialogue.isBlank()) {
             // 整条回复都被承诺守卫删空。若只是"这就过去/马上过来"这类**移动措辞**误判，
             // 不能给玩家回 "..."（实测玩家收到空回复的直接原因）—— 退回原台词并留日志；
@@ -1701,8 +1538,7 @@ public final class CentralPlanner extends BukkitRunnable {
             // 仍按硬约束剥空，绝不展示空头支票。
             boolean realGiveOrRememberPromise = beforePromise != null
                     && (PROMISE_GIVE.matcher(beforePromise).find()
-                        || PROMISE_REMEMBER.matcher(beforePromise).find()
-                        || (begPending && looksLikeGivingConsent(beforePromise)));
+                        || PROMISE_REMEMBER.matcher(beforePromise).find());
             if (beforePromise != null && !beforePromise.isBlank() && !realGiveOrRememberPromise) {
                 plugin.getLogger().info("[MC-AI] 承诺守卫把整条台词删空，已退回原台词（疑似移动措辞误判）["
                         + vState.profession().zhName + "]: [" + beforePromise + "]");
@@ -1887,10 +1723,6 @@ public final class CentralPlanner extends BukkitRunnable {
                     // 这里绝不能再调一次 execute —— 否则同一件东西会被送出两份
                     speak(vState, nearPlayer, dialogue);
                 }
-                case "accept_swap" -> {
-                    // 交换也已在"第二步半"执行完（双方物品一次性转移），这里只说话
-                    speak(vState, nearPlayer, dialogue);
-                }
                 // equip 已迁入统一柜（走上面的统一分发分支），老后门世界交互到此全部退役。
                 // 本 switch 如今只剩 offer_trade（2026-10-21 已改道自家商店界面，见该分支）与兜底。
                 default -> {
@@ -1900,12 +1732,6 @@ public final class CentralPlanner extends BukkitRunnable {
             }
         } else {
             speak(vState, nearPlayer, dialogue);
-        }
-
-        // 本轮结束：模型既没给也没换 → 作废待处理请求，避免旧请求被下一轮无关的话触发
-        if (nearPlayer != null) {
-            vState.clearItemRequest(nearPlayer.getUniqueId());
-            vState.clearPendingSwap(nearPlayer.getUniqueId());
         }
 
         // === 第四步：无论如何追加 assistant（Jinja 交替硬约束） ===
