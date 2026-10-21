@@ -377,7 +377,7 @@ public final class PresentationLayer extends TickLayer {
 
             for (VillagerState vs : villagers.values()) {
                 Villager v = vs.entity();
-                if (v == null || !v.isValid() || v.isDead()) continue;
+                if (v == null || !v.isValid() || v.isDead() || v.isSleeping()) continue;
                 if (!v.getWorld().equals(player.getWorld())) continue;
                 if (v.getLocation().distance(player.getLocation()) > GREET_RADIUS) continue;
                 inRangeNow.add(vs.getUniqueId());
@@ -470,6 +470,9 @@ public final class PresentationLayer extends TickLayer {
             if (vs.interactingPlayer() != null || ambientBusy.contains(vs.getUniqueId())) continue;
             Villager v = vs.entity();
             if (!v.isValid()) continue;
+            // 睡着的村民不参与社交发起（v0.3.2 实测：两个睡在相邻床位的村民被凑成
+            // “邻居”聊起了“夜里寒快回屋”——选人时没查睡觉状态）
+            if (v.isSleeping()) continue;
             long now = System.currentTimeMillis();
             Long cd = ambientCooldown.get(vs.getUniqueId());
             if (cd != null && now - cd < 60_000L) continue;
@@ -491,7 +494,7 @@ public final class PresentationLayer extends TickLayer {
                 if (e instanceof Villager ov) {
                     VillagerState os = villagers.get(ov.getUniqueId());
                     if (os != null && os != vs && !ambientBusy.contains(os.getUniqueId())
-                            && os.interactingPlayer() == null
+                            && os.interactingPlayer() == null && !ov.isSleeping()
                             && v.getLocation().distance(ov.getLocation()) <= AMBIENT_MAX_PAIR_DISTANCE) {
                         others.add(os);
                     }
@@ -550,6 +553,12 @@ public final class PresentationLayer extends TickLayer {
             return;
         }
         VillagerState cur = step == 0 ? speaker : listeners.get(step - 1);
+        // 链路每步间隔 50 tick，期间有人去睡了很正常 —— 轮到睡着的人就散场，
+        // 不然他会躺在床上继续接话（同 P2 的道理，这里拦“聊着聊着睡着的”）
+        if (cur.entity() == null || !cur.entity().isValid() || cur.entity().isSleeping()) {
+            releaseAmbient(group);
+            return;
+        }
         String npcName = Smalltalk.nameOf(cur);
 
         String userContent;
