@@ -137,6 +137,10 @@ public final class McaiPlugin extends JavaPlugin {
     private ToolDispatcher toolDispatcher;
     /** 模型输出 → 统一工具请求（wire 名归一） */
     private LlmToolAdapter llmToolAdapter;
+
+    /** 交易会话登记处（商店界面/砍价进度，关窗不丢；路线二交易 UI 的状态层） */
+    private final com.howard.mcai.shop.ShopSessionManager shopSessions =
+            new com.howard.mcai.shop.ShopSessionManager();
     /** 行为模型（MiniCPM）：只做动作选择，不负责说话 */
     private BehaviorModelClient behaviorModelClient;
 
@@ -1539,6 +1543,7 @@ public final class McaiPlugin extends JavaPlugin {
     public NpcTaskManager getNpcTaskManager() { return npcTaskManager; }
     public ToolDispatcher getToolDispatcher() { return toolDispatcher; }
     public LlmToolAdapter getLlmToolAdapter() { return llmToolAdapter; }
+    public com.howard.mcai.shop.ShopSessionManager getShopSessions() { return shopSessions; }
     public BehaviorModelClient getBehaviorModelClient() { return behaviorModelClient; }
 
     /**
