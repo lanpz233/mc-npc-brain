@@ -412,9 +412,14 @@ public final class ShopGui implements InventoryHolder {
                         ? session.recordRaise(o.id(), counter)
                         : session.recordBargain(o.id(), counter);
                 if (recorded) {
-                    session.setNpcLine("好，就 " + counter + " 块！这价给你留着，"
-                            + (o.buyBack() ? "卖" : "买") + "的时候就按这个算。");
+                    String line = "好，就 " + counter + " 块！这价给你留着，"
+                            + (o.buyBack() ? "卖" : "买") + "的时候就按这个算。";
+                    session.setNpcLine(line);
                     viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_YES, 1f, 1f);
+                    com.howard.mcai.shop.ShopChatter.speak(plugin, state, viewer, session, line,
+                            o.buyBack()
+                                    ? "他接受了你出到 " + counter + " 块的还价，这件货的收购价就这么说定了（还没成交）。"
+                                    : "他接受了你让到 " + counter + " 块的还价，这件东西的价就这么说定了（还没付钱）。");
                 }
                 rebuild();
             } else if (slot == 42) {   // 不接受
@@ -502,12 +507,20 @@ public final class ShopGui implements InventoryHolder {
         BargainPolicy.Outcome out = BargainPolicy.decide(list, favor, totalCut);
         if (out.accepted()) {
             session.recordBargain(o.id(), out.agreedPrice());
-            session.setNpcLine("行！" + out.agreedPrice() + " 块成交，这价给你留着，点买下它就行。");
+            String line = "行！" + out.agreedPrice() + " 块成交，这价给你留着，点买下它就行。";
+            session.setNpcLine(line);
             viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_YES, 1f, 1f);
+            com.howard.mcai.shop.ShopChatter.speak(plugin, state, viewer, session, line,
+                    "他想买你的" + zh(o.result().getType()) + "，标价 " + list + " 块，跟你砍价少付 "
+                            + totalCut + " 块，你答应了，谈成 " + out.agreedPrice() + " 块（还没付钱）。");
         } else {
             session.setPendingCounter(o.id(), out.floorPrice());
-            session.setNpcLine("砍得太狠啦！我最多让到 " + out.floorPrice() + " 块，你看行不行？");
+            String line = "砍得太狠啦！我最多让到 " + out.floorPrice() + " 块，你看行不行？";
+            session.setNpcLine(line);
             viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+            com.howard.mcai.shop.ShopChatter.speak(plugin, state, viewer, session, line,
+                    "他想买你的" + zh(o.result().getType()) + "，砍得太狠，想少付 " + totalCut
+                            + " 块，你没全答应，只肯让到 " + out.floorPrice() + " 块，正等他拍板。");
         }
         view = View.DETAIL;
         rebuild();
@@ -534,12 +547,20 @@ public final class ShopGui implements InventoryHolder {
         int cap = Math.min(out.maxPay(), funds);
         if (out.accepted() && out.agreedPay() <= funds) {
             session.recordRaise(o.id(), out.agreedPay());
-            session.setNpcLine("行！" + out.agreedPay() + " 块收你的，这价给你留着，点卖给他就行。");
+            String line = "行！" + out.agreedPay() + " 块收你的，这价给你留着，点卖给他就行。";
+            session.setNpcLine(line);
             viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_YES, 1f, 1f);
+            com.howard.mcai.shop.ShopChatter.speak(plugin, state, viewer, session, line,
+                    "他要把" + zh(o.cost().get(0).getType()) + "卖给你，你原出 " + listPay
+                            + " 块，他抬价多要 " + totalRaise + " 块，你答应出 " + out.agreedPay() + " 块收（还没成交）。");
         } else if (cap > current) {
             session.setPendingCounter(o.id(), cap);
-            session.setNpcLine("太多了！俺最多出到 " + cap + " 块，你看行不行？");
+            String line = "太多了！俺最多出到 " + cap + " 块，你看行不行？";
+            session.setNpcLine(line);
             viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+            com.howard.mcai.shop.ShopChatter.speak(plugin, state, viewer, session, line,
+                    "他要把" + zh(o.cost().get(0).getType()) + "卖给你，抬得太高，想多要 " + totalRaise
+                            + " 块，你没全答应，只肯出到 " + cap + " 块，正等他拍板。");
         } else {
             session.setNpcLine("俺最多就出到 " + current + " 块了，再多真拿不出来。");
             viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);

@@ -64,8 +64,21 @@ public final class ShopSettlement {
         player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_TRADE, 1f, 1f);
         plugin.getAuditLog().log(npcName(state), state.getUniqueId(), "shop_buy",
                 offer.id() + " x" + offer.result().getAmount(), price + " emeralds");
-        return ok(session, "好嘞，成交！" + TradeRegistry.materialToZh(offer.result().getType())
-                + "拿好，一共 " + price + " 块绿宝石。");
+        String line = "好嘞，成交！" + TradeRegistry.materialToZh(offer.result().getType())
+                + "拿好，一共 " + price + " 块绿宝石。";
+        Result result = ok(session, line);
+        // 记忆 + 说话（Fong 2026-10-21）：成交当场把事实记进村民记忆（以后聊天能提起）；
+        // 台词再请模型按他的人设说一遍，系统台词先顶着，模型回来才换
+        int list = offer.emeraldPrice();
+        String itemZh = TradeRegistry.materialToZh(offer.result().getType());
+        state.addFact(player.getName() + " 在我店里买走了" + itemZh + "x" + offer.result().getAmount()
+                + "，付了 " + price + " 块绿宝石"
+                + (price < list ? "（从 " + list + " 块砍价谈成的）" : ""), player.getUniqueId());
+        ShopChatter.speak(plugin, state, player, session, line,
+                "他买走了你的" + itemZh + "x" + offer.result().getAmount() + "，付了 " + price + " 块绿宝石"
+                        + (price < list ? "（标价 " + list + " 块，是砍价谈成的）" : "（按标价，没砍价）")
+                        + "。买卖做成了。");
+        return result;
     }
 
     // ===== 收购：玩家卖 =====
@@ -104,7 +117,19 @@ public final class ShopSettlement {
         player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_TRADE, 1f, 1f);
         plugin.getAuditLog().log(npcName(state), state.getUniqueId(), "shop_buyback",
                 offer.id(), reward + " emeralds");
-        return ok(session, "这货我收了！" + reward + " 块绿宝石拿好。");
+        String line = "这货我收了！" + reward + " 块绿宝石拿好。";
+        Result result = ok(session, line);
+        // 记忆 + 说话（Fong 2026-10-21）：同买方向——事实落账，台词请模型按人设说
+        int listPay = offer.emeraldPrice();
+        String itemZh = TradeRegistry.materialToZh(offer.cost().get(0).getType());
+        state.addFact(player.getName() + " 把" + itemZh + "x" + offer.cost().get(0).getAmount()
+                + " 卖给了我，我付了 " + reward + " 块绿宝石"
+                + (reward > listPay ? "（从 " + listPay + " 块抬价谈成的）" : ""), player.getUniqueId());
+        ShopChatter.speak(plugin, state, player, session, line,
+                "他把" + itemZh + "x" + offer.cost().get(0).getAmount() + "卖给了你，你付了 " + reward + " 块绿宝石"
+                        + (reward > listPay ? "（你原出 " + listPay + " 块，是他抬价谈成的）" : "（按标价，没抬价）")
+                        + "。买卖做成了。");
+        return result;
     }
 
     // ===== 共用小件 =====
