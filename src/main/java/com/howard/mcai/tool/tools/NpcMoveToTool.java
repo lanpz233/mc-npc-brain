@@ -2,6 +2,7 @@ package com.howard.mcai.tool.tools;
 
 import com.google.gson.JsonObject;
 import com.howard.mcai.McaiPlugin;
+import com.howard.mcai.mob.NeedsState;
 import com.howard.mcai.mob.VillagerState;
 import com.howard.mcai.tool.NpcTask;
 import com.howard.mcai.tool.NpcTaskAction;
@@ -49,8 +50,12 @@ public final class NpcMoveToTool implements NpcTool {
      * 让 NPC 能继续绕路，而不是守着一条废弃路径原地罚站。
      */
     private static final long REPATH_INTERVAL_MS = 3_000L;
-    /** 单个任务最多重下一次寻路指令的次数，防止不可达目标无限重算烧 CPU */
-    private static final int MAX_REPATHS = 8;
+    /** 单个任务最多重下一次寻路指令的次数，防止不可达目标无限重算烧 CPU（8→4：不可达时早点收场） */
+    private static final int MAX_REPATHS = 4;
+
+    /** 无进展判卡死：离目标的最近距离在这么久内没有实质缩短（≥1 格），就算人还在动也判到不了 */
+    private static final long NO_PROGRESS_WINDOW_MS = 9_000L;
+    private static final double PROGRESS_MIN_GAIN = 1.0;
     /** 允许 NPC 在任务中偏离目标的额外距离（格）—— 被僵尸赶跑等外部因素，超过就放弃 */
     private static final double DRIFT_TOLERANCE = 8.0;
 
@@ -129,6 +134,9 @@ public final class NpcMoveToTool implements NpcTool {
         private long lastRepathMs;
         /** 已重下寻路指令的次数 */
         private int repathCount;
+        /** 无进展判定的工作值：本 tick 算出的"离目标最近距离/刷新时刻"，tick 末随 progressData 写回 */
+        private double pendingBest = Double.MAX_VALUE;
+        private long pendingBestSince;
 
         private MoveAction(McaiPlugin plugin) {
             this.plugin = plugin;
@@ -145,22 +153,26 @@ public final class NpcMoveToTool implements NpcTool {
             Villager villager = state.entity();
             Location target = target(villager, arguments);
             if (target == null) {
+                settleNeedFailure(state, null);
                 task.fail(System.currentTimeMillis(), ToolResult.ErrorCode.INVALID_ARGUMENT,
                         "目标坐标超出世界高度范围");
                 return;
             }
             double horizontal = horizontalDistance(villager.getLocation(), target);
             if (horizontal > MAX_DISTANCE) {
+                settleNeedFailure(state, target);
                 task.fail(System.currentTimeMillis(), ToolResult.ErrorCode.INVALID_ARGUMENT,
                         "目标距离 " + round(horizontal) + " 格，超过单次移动上限 " + (int) MAX_DISTANCE + " 格");
                 return;
             }
             if (Math.abs(target.getY() - villager.getLocation().getY()) > MAX_VERTICAL_DIFF) {
+                settleNeedFailure(state, target);
                 task.fail(System.currentTimeMillis(), ToolResult.ErrorCode.INVALID_ARGUMENT,
                         "目标高度差超过 " + (int) MAX_VERTICAL_DIFF + " 格，NPC 无法通过水平移动到达");
                 return;
             }
             if (horizontal <= ARRIVE_DISTANCE) {
+                settleNeedSuccess(state);
                 task.complete(System.currentTimeMillis(), result(task, villager));
                 return;
             }
@@ -220,6 +232,7 @@ public final class NpcMoveToTool implements NpcTool {
             double horizontal = horizontalDistance(current, target);
             if (horizontal <= ARRIVE_DISTANCE) {
                 stop(state);
+                settleNeedSuccess(state);
                 task.complete(nowMs, result(task, villager));
                 return;
             }
@@ -230,6 +243,7 @@ public final class NpcMoveToTool implements NpcTool {
             Pathfinder pathfinder = villager.getPathfinder();
             if (!pathfinder.hasPath() && repathCount >= MAX_REPATHS) {
                 stop(state);
+                settleNeedFailure(state, target);
                 task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
                         "无可行路径：重寻路 " + MAX_REPATHS + " 次后仍没有路径，剩余 " + round(horizontal) + " 格");
                 plugin.getLogger().info("[task] npc.move_to 无可行路径, 提前失败: npc=" + task.npcId()
@@ -237,10 +251,38 @@ public final class NpcMoveToTool implements NpcTool {
                 return;
             }
 
+            // 无进展判卡死（与下面的位移判定互补）：位移判定只看"人动没动"，贴墙来回蹭永远骗得过它
+            //（实测剩余距离 12.87↔14.08 跳了 28 秒）。这里看"离目标的最近距离有没有在缩"：
+            // 9 秒内没能靠近至少 1 格 → 这条路走不通，提前收场并记账。
+            {
+                JsonObject prog = task.data();
+                double best = prog != null && prog.has("best_distance")
+                        ? prog.get("best_distance").getAsDouble() : horizontal;
+                long bestSince = prog != null && prog.has("best_since_ms")
+                        ? prog.get("best_since_ms").getAsLong() : nowMs;
+                if (horizontal < best - PROGRESS_MIN_GAIN) {
+                    best = horizontal;
+                    bestSince = nowMs;
+                } else if (nowMs - bestSince >= NO_PROGRESS_WINDOW_MS) {
+                    stop(state);
+                    settleNeedFailure(state, target);
+                    task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                            "靠近不了目标：" + (NO_PROGRESS_WINDOW_MS / 1000) + " 秒内没能更接近，剩余 "
+                                    + round(horizontal) + " 格");
+                    plugin.getLogger().info("[task] npc.move_to 无进展, 提前失败: npc=" + task.npcId()
+                            + " 剩余 " + round(horizontal) + " 格");
+                    return;
+                }
+                // 暂存，tick 末随 progressData 一起写回 task.data
+                pendingBest = best;
+                pendingBestSince = bestSince;
+            }
+
             // 偏离守卫：村民会被僵尸惊到逃跑（AI 开启后恐慌寻路优先级更高），
             // 一旦被赶得比原任务允许范围还远，就没必要再追了 —— 判失败让上层重新决策。
             if (horizontal > MAX_DISTANCE + DRIFT_TOLERANCE) {
                 stop(state);
+                settleNeedFailure(state, target);
                 task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
                         "NPC 偏离目标：剩余 " + round(horizontal) + " 格，超出允许范围");
                 plugin.getLogger().info("[task] npc.move_to 偏离目标, 提前失败: npc=" + task.npcId()
@@ -281,6 +323,7 @@ public final class NpcMoveToTool implements NpcTool {
                 lastProgressMs = nowMs;
             } else if (nowMs - lastProgressMs >= STUCK_WINDOW_MS) {
                 stop(state);
+                settleNeedFailure(state, target);
                 task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
                         "移动卡住：" + (STUCK_WINDOW_MS / 1000) + " 秒内位移不足 " + STUCK_MIN_MOVE + " 格");
                 return;
@@ -294,13 +337,35 @@ public final class NpcMoveToTool implements NpcTool {
             progressData.addProperty("last_progress_x", lastX);
             progressData.addProperty("last_progress_z", lastZ);
             progressData.addProperty("last_progress_ms", lastProgressMs);
+            progressData.addProperty("best_distance", pendingBest);
+            progressData.addProperty("best_since_ms", pendingBestSince);
             task.updateData(progressData);
             // 实际移动由原版导航（Pathfinder）驱动，这里只做重寻路/进度/到达/卡住判定
         }
 
         @Override
         public void onCancel(NpcTask task) {
-            stop(resolve(task));
+            VillagerState state = resolve(task);
+            // 取消（含进入对话被打断）：挂账的需求直接作废，不降也不记失败地点
+            if (state != null) state.consumePendingNeedSatisfy();
+            stop(state);
+        }
+
+        /** 任务真走到了才结算挂账的自主需求：降需求并标脏落盘（活干完才记功） */
+        private void settleNeedSuccess(VillagerState state) {
+            if (state == null) return;
+            String need = state.consumePendingNeedSatisfy();
+            if (need != null) {
+                state.needs().satisfy(need, NeedsState.SATISFY_ON_ACTION);
+                plugin.getMemoryStore().markDirty(state.getUniqueId());
+            }
+        }
+
+        /** 任务没走成：挂账作废（不降需求），失败地点记账，自主选点短期内避开这片 */
+        private void settleNeedFailure(VillagerState state, Location target) {
+            if (state == null) return;
+            state.consumePendingNeedSatisfy();
+            state.recordFailedMoveTarget(target);
         }
 
         private VillagerState resolve(NpcTask task) {
