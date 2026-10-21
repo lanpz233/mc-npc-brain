@@ -35,9 +35,21 @@ public final class ToolRegistry {
             throw new IllegalArgumentException("工具 wire 名称重复: " + tool.wireName()
                     + "（规范名: " + tool.name() + "，已存在: " + wireDup.name() + "）");
         }
+        // 别名同样要查重并索引（与 wire 名共用一张表，find 一次命中）
+        for (String alias : tool.aliases()) {
+            if (alias == null || alias.isBlank()) continue;
+            if (byCanonicalName.containsKey(alias) || byWireName.containsKey(alias)) {
+                throw new IllegalArgumentException("工具别名重复: " + alias
+                        + "（规范名: " + tool.name() + "）");
+            }
+        }
 
         byCanonicalName.put(tool.name(), tool);
         byWireName.put(tool.wireName(), tool);
+        for (String alias : tool.aliases()) {
+            if (alias == null || alias.isBlank()) continue;
+            byWireName.put(alias, tool);
+        }
     }
 
     /**
