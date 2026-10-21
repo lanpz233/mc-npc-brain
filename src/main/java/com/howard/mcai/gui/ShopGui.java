@@ -173,10 +173,26 @@ public final class ShopGui implements InventoryHolder {
             return;
         }
         if (o.buyBack()) {
-            int reward = o.result().getAmount();
+            int reward = session.effectivePay(o.id(), o.emeraldPrice());
+            int funds = state.stockOf(Material.EMERALD);
             inventory.setItem(40, button(Material.GOLD_BLOCK,
                     "§a卖给他 · 得 " + reward + " 块绿宝石",
-                    List.of("§7他手头现有 " + state.stockOf(Material.EMERALD) + " 块绿宝石")));
+                    session.agreedPay(o.id()) != null
+                            ? List.of("§7这是你们谈好的价", "§7他手头现有 " + funds + " 块绿宝石")
+                            : List.of("§7他手头现有 " + funds + " 块绿宝石")));
+            int cap = Math.min(BargainPolicy.maxPay(o.emeraldPrice(),
+                    state.emotion().favor(viewer.getUniqueId())), funds);
+            if (reward >= cap) {
+                inventory.setItem(42, button(Material.GRAY_STAINED_GLASS_PANE,
+                        "§7他出到顶啦",
+                        List.of(funds <= reward ? "§7他兜里就这么多绿宝石了" : "§7交情到顶，他最多出这么多")));
+            } else {
+                inventory.setItem(42, button(Material.ANVIL,
+                        "§e抬价 · 自己选抬多少",
+                        session.agreedPay(o.id()) != null
+                                ? List.of("§7已经谈到 " + reward + " 块，还想再抬就点这儿")
+                                : List.of("§7能抬多少看交情，也看他兜里有多少")));
+            }
         } else {
             int price = session.effectivePrice(o.id(), o.emeraldPrice());
             inventory.setItem(40, button(Material.EMERALD_BLOCK,
@@ -201,9 +217,13 @@ public final class ShopGui implements InventoryHolder {
     }
 
     private void renderBargain(ShopCatalog.Offer o) {
-        if (o == null || o.buyBack()) {
+        if (o == null) {
             view = View.LIST;
             rebuild();
+            return;
+        }
+        if (o.buyBack()) {
+            renderRaise(o);
             return;
         }
         int list = o.emeraldPrice();
@@ -223,6 +243,34 @@ public final class ShopGui implements InventoryHolder {
         inventory.setItem(45, button(Material.ARROW, "§f回商品页", List.of()));
     }
 
+    /** 抬价面板（卖货方向）：与砍价面板同布局，按钮是「抬 N 块」，上限受交情与他的钱包双重限制 */
+    private void renderRaise(ShopCatalog.Offer o) {
+        int listPay = o.emeraldPrice();
+        int current = session.effectivePay(o.id(), listPay);
+        int funds = state.stockOf(Material.EMERALD);
+        int cap = Math.min(BargainPolicy.maxPay(listPay, state.emotion().favor(viewer.getUniqueId())), funds);
+        inventory.setItem(22, detailItem(o));
+        if (current >= cap) {
+            inventory.setItem(31, button(Material.GRAY_STAINED_GLASS_PANE,
+                    "§7他出到顶啦",
+                    List.of(funds <= current
+                            ? "§7他兜里就 " + funds + " 块绿宝石，抬不动了"
+                            : "§7现在就是 " + current + " 块，交情到顶了")));
+        } else {
+            // 抬幅按钮 1~10 两排摆开，与砍价面板一致
+            for (int i = 0; i < 5; i++) inventory.setItem(28 + i, raiseButton(i + 1, current));
+            for (int i = 0; i < 5; i++) inventory.setItem(37 + i, raiseButton(i + 6, current));
+            inventory.setItem(49, button(Material.ANVIL,
+                    "§e自己出价 · 输入总价", List.of("§7打开小输入框，填你想让他出的总价（整数）")));
+        }
+        inventory.setItem(45, button(Material.ARROW, "§f回商品页", List.of()));
+    }
+
+    private ItemStack raiseButton(int raise, int currentPay) {
+        return button(Material.GOLD_INGOT, "§e抬 " + raise + " 块",
+                List.of("§7现在他出 " + currentPay + " 块，抬完想让他出 " + (currentPay + raise) + " 块，点一下试试"));
+    }
+
     private ItemStack cutButton(int cut, int currentPrice) {
         if (cut >= currentPrice) {
             return button(Material.GRAY_STAINED_GLASS_PANE, "§7砍 " + cut + " 块",
@@ -240,7 +288,7 @@ public final class ShopGui implements InventoryHolder {
         if (o.buyBack()) {
             icon = o.cost().get(0).clone();
             lore.add("§7收购：你交出 §f" + zh(o.cost().get(0).getType()) + " x" + o.cost().get(0).getAmount());
-            lore.add("§7他付你 §a" + o.result().getAmount() + " 块绿宝石");
+            lore.add("§7他付你 §a" + session.effectivePay(o.id(), o.emeraldPrice()) + " 块绿宝石");
             lore.add("§e点一下查看");
         } else {
             icon = o.result().clone();
@@ -267,7 +315,10 @@ public final class ShopGui implements InventoryHolder {
         List<String> lore = new ArrayList<>();
         if (o.buyBack()) {
             lore.add("§7你交出：" + zh(o.cost().get(0).getType()) + " x" + o.cost().get(0).getAmount());
-            lore.add("§7他付你：§a" + o.result().getAmount() + " 块绿宝石");
+            int pay = session.effectivePay(o.id(), o.emeraldPrice());
+            lore.add("§7他付你：§a" + pay + " 块绿宝石");
+            Integer agreedPay = session.agreedPay(o.id());
+            if (agreedPay != null) lore.add("§a谈成价：" + agreedPay + " 块（已抬 " + (agreedPay - o.emeraldPrice()) + " 块）");
             lore.add("§7他手头现有：" + state.stockOf(Material.EMERALD) + " 块绿宝石");
         } else {
             int list = o.emeraldPrice();
@@ -355,10 +406,14 @@ public final class ShopGui implements InventoryHolder {
         }
         Integer counter = session.pendingCounter(o.id());
         if (counter != null) {
-            if (slot == 40) {          // 接受还价 → 落定
+            if (slot == 40) {          // 接受还价 → 落定（买方向记砍价、卖方向记抬价）
                 session.clearPendingCounter(o.id());
-                if (session.recordBargain(o.id(), counter)) {
-                    session.setNpcLine("好，就 " + counter + " 块！这价给你留着，买的时候就按这个算。");
+                boolean recorded = o.buyBack()
+                        ? session.recordRaise(o.id(), counter)
+                        : session.recordBargain(o.id(), counter);
+                if (recorded) {
+                    session.setNpcLine("好，就 " + counter + " 块！这价给你留着，"
+                            + (o.buyBack() ? "卖" : "买") + "的时候就按这个算。");
                     viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_YES, 1f, 1f);
                 }
                 rebuild();
@@ -390,6 +445,19 @@ public final class ShopGui implements InventoryHolder {
                 rebuild();
             }
         }
+        if (slot == 42 && o.buyBack()) {
+            int listPay = o.emeraldPrice();
+            int cur = session.effectivePay(o.id(), listPay);
+            int cap = Math.min(BargainPolicy.maxPay(listPay, state.emotion().favor(viewer.getUniqueId())),
+                    state.stockOf(Material.EMERALD));
+            if (cur < cap) {
+                view = View.BARGAIN;
+                session.setNpcLine(session.agreedPay(o.id()) != null
+                        ? "还想再多要点？行，说个数，俺看兜里还够不够。"
+                        : "想抬价？行，你说个数，俺兜里就这么多钱，量力而行。");
+                rebuild();
+            }
+        }
     }
 
     private void clickBargain(int slot) {
@@ -416,6 +484,10 @@ public final class ShopGui implements InventoryHolder {
      * 底价始终锚定标价 —— 砍多少轮都砍不穿，额度用完村民就只还价到底价。
      */
     private void applyBargain(ShopCatalog.Offer o, int requestedCut) {
+        if (o.buyBack()) {
+            applyRaise(o, requestedCut);
+            return;
+        }
         int list = o.emeraldPrice();
         int current = session.effectivePrice(o.id(), list);
         if (requestedCut >= current) {
@@ -441,18 +513,58 @@ public final class ShopGui implements InventoryHolder {
         rebuild();
     }
 
-    /** 铁砧输入框：玩家填「想出的总价」，按当前价换算成砍幅走同一套裁决 */
+    /**
+     * 一次抬价（卖货方向）：与砍价镜像——按「从标价算起总共抬了多少」裁决，
+     * 上限由 BargainPolicy 的交情额度与村民兜里的真钱双重守死（许诺不能超过他真有的钱）。
+     */
+    private void applyRaise(ShopCatalog.Offer o, int requestedRaise) {
+        int listPay = o.emeraldPrice();
+        int current = session.effectivePay(o.id(), listPay);
+        int funds = state.stockOf(Material.EMERALD);
+        if (current >= funds) {
+            session.setNpcLine("俺兜里就 " + funds + " 块绿宝石了，真抬不动了。");
+            viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+            view = View.BARGAIN;
+            rebuild();
+            return;
+        }
+        double favor = state.emotion().favor(viewer.getUniqueId());
+        int totalRaise = (current - listPay) + requestedRaise;
+        BargainPolicy.SellOutcome out = BargainPolicy.decideSell(listPay, favor, totalRaise);
+        int cap = Math.min(out.maxPay(), funds);
+        if (out.accepted() && out.agreedPay() <= funds) {
+            session.recordRaise(o.id(), out.agreedPay());
+            session.setNpcLine("行！" + out.agreedPay() + " 块收你的，这价给你留着，点卖给他就行。");
+            viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_YES, 1f, 1f);
+        } else if (cap > current) {
+            session.setPendingCounter(o.id(), cap);
+            session.setNpcLine("太多了！俺最多出到 " + cap + " 块，你看行不行？");
+            viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+        } else {
+            session.setNpcLine("俺最多就出到 " + current + " 块了，再多真拿不出来。");
+            viewer.playSound(viewer.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+        }
+        view = View.DETAIL;
+        rebuild();
+    }
+
+    /** 铁砧输入框：玩家填「想出的总价」，按当前价换算成砍幅/抬幅走同一套裁决（方向看买卖） */
     private void openPriceInput(ShopCatalog.Offer o, int list) {
-        int current = session.effectivePrice(o.id(), list);
+        boolean sell = o.buyBack();
+        int current = sell ? session.effectivePay(o.id(), list) : session.effectivePrice(o.id(), list);
         viewer.closeInventory();
         new AnvilPriceInput(viewer, current, target -> Bukkit.getScheduler().runTask(plugin, () -> {
             if (!viewer.isOnline()) return;
-            if (target != null && target >= 1 && target < current) {
+            if (target != null && sell && target > current) {
+                applyBargain(o, target - current);
+            } else if (target != null && !sell && target >= 1 && target < current) {
                 applyBargain(o, current - target);
             } else if (target != null) {
-                session.setNpcLine(target >= current
-                        ? "你出的价比现在谈的还高？那就按现在这个价吧，别多花钱。"
-                        : "你这价我实在没法卖，咱们再商量。");
+                session.setNpcLine(sell
+                        ? "你想让他出的比现在给的还低？那就按现在这个价吧。"
+                        : (target >= current
+                            ? "你出的价比现在谈的还高？那就按现在这个价吧，别多花钱。"
+                            : "你这价我实在没法卖，咱们再商量。"));
                 view = View.DETAIL;
                 rebuild();
             } else {

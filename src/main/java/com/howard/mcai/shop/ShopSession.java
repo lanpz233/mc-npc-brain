@@ -29,6 +29,9 @@ public final class ShopSession {
 
     /** 砍价谈成的价：offerId → 当前谈成价（绿宝石）。可多轮砍价、只降不升（bargainedOffers 记砍过的商品） */
     private final Map<String, Integer> agreedPrices = new HashMap<>();
+
+    /** 抬价谈成的收购价：offerId → 他肯付的绿宝石（卖货方向，与 agreedPrices 分开记，单调性相反） */
+    private final Map<String, Integer> agreedPays = new HashMap<>();
     private final Set<String> bargainedOffers = new HashSet<>();
 
     /** 村民最近一句要显示在界面台词栏的话（开店时模型的那句台词、还价/成交的系统台词都走这里） */
@@ -97,6 +100,32 @@ public final class ShopSession {
         if (existing != null && price >= existing) return false;
         bargainedOffers.add(offerId);
         agreedPrices.put(offerId, price);
+        return true;
+    }
+
+    /** 某收购商品抬价谈成的价；没谈过返回 null（界面按标价显示） */
+    public synchronized Integer agreedPay(String offerId) {
+        return agreedPays.get(offerId);
+    }
+
+    /** 界面该显示/结算的收购价：抬过用谈成价，没抬过用标价 */
+    public synchronized int effectivePay(String offerId, int listPay) {
+        Integer agreed = agreedPays.get(offerId);
+        return agreed != null ? agreed : listPay;
+    }
+
+    /**
+     * 记下一次抬价结果（卖货方向）。与砍价镜像：价格**只升不降**——
+     * 新价不比现价高就不覆盖。能升到多少由 BargainPolicy 的最高价与村民钱包余额守死。
+     *
+     * @return 是否记上了（false = 新价没比现价更高，保持现价）
+     */
+    public synchronized boolean recordRaise(String offerId, int agreedPay) {
+        int pay = Math.max(1, agreedPay);
+        Integer existing = agreedPays.get(offerId);
+        if (existing != null && pay <= existing) return false;
+        bargainedOffers.add(offerId);
+        agreedPays.put(offerId, pay);
         return true;
     }
 

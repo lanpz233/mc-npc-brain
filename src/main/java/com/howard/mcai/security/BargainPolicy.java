@@ -79,4 +79,54 @@ public final class BargainPolicy {
         // 砍超了：不直接拒绝，还价到底线价，玩家接受才成交
         return new Outcome(false, floor, floor);
     }
+
+    // ===== 卖货方向（玩家卖、村民收）：抬价裁决，与砍价镜像（Fong 2026-10-21 要求卖东西也能谈价） =====
+
+    /**
+     * 抬价裁决结果。
+     *
+     * @param accepted  玩家要的抬幅是否在村民肯多付的额度内（true = 按玩家要的价收）
+     * @param agreedPay accepted 时的收购价；不 accepted 时这是村民的还价（= 他肯出的最高价），
+     *                  玩家在界面点「接受」后以此价成交
+     * @param maxPay    他肯出的最高价（标价 + 最大抬幅；未计钱包余额，余额由界面/结算再夹一道）
+     */
+    public record SellOutcome(boolean accepted, int agreedPay, int maxPay) {
+    }
+
+    /**
+     * 最大抬幅（整数绿宝石）—— 与 {@link #maxCut} 同档位，关系越好村民越肯多付：
+     * 生人 1、熟人 1 + 标价/5、交情 2 + 标价/4、亲信 3 + 标价/3（标价 = 他原肯出的数）。
+     */
+    public static int maxRaise(int listPay, double favor) {
+        if (listPay <= 0) return 0;
+        if (favor < 10) return 1;
+        if (favor < 30) return 1 + listPay / 5;
+        if (favor < 60) return 2 + listPay / 4;
+        return 3 + listPay / 3;
+    }
+
+    /** 他肯出的最高价（不考虑钱包余额） */
+    public static int maxPay(int listPay, double favor) {
+        return listPay + maxRaise(listPay, favor);
+    }
+
+    /**
+     * 裁决一次抬价。
+     *
+     * @param listPay        标价（他原肯出的绿宝石，>0）
+     * @param favor          好感
+     * @param requestedRaise 玩家想多要的块数（≤0 视为不抬价，按标价收）
+     */
+    public static SellOutcome decideSell(int listPay, double favor, int requestedRaise) {
+        int cap = maxPay(listPay, favor);
+        if (requestedRaise <= 0) {
+            return new SellOutcome(true, listPay, cap);
+        }
+        int wanted = listPay + requestedRaise;
+        if (wanted <= cap) {
+            return new SellOutcome(true, wanted, cap);
+        }
+        // 抬超了：不直接拒绝，还价到他肯出的最高价，玩家接受才成交
+        return new SellOutcome(false, cap, cap);
+    }
 }

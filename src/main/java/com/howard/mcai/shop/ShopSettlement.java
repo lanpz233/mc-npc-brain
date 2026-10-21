@@ -73,7 +73,7 @@ public final class ShopSettlement {
     public static Result buyBack(McaiPlugin plugin, Player player, VillagerState state,
                                  ShopCatalog.Offer offer, ShopSession session) {
         PlayerInventory inv = player.getInventory();
-        int reward = offer.result().getAmount();   // 收购结果 = 绿宝石
+        int reward = session.effectivePay(offer.id(), offer.emeraldPrice());   // 抬过价按谈成价付，没抬按标价
 
         // 复核 1：玩家真有那么多货
         for (ItemStack cost : offer.cost()) {
@@ -86,8 +86,9 @@ public final class ShopSettlement {
         if (state.stockOf(Material.EMERALD) < reward) {
             return fail(session, "我手头绿宝石不够，收不了你这货，等我做成几笔买卖再来吧。");
         }
-        // 复核 3：玩家背包塞得下绿宝石
-        if (!hasSpaceFor(inv, offer.result())) {
+        // 复核 3：玩家背包塞得下绿宝石（按下单要付的数算，不是标价）
+        ItemStack payStack = new ItemStack(Material.EMERALD, reward);
+        if (!hasSpaceFor(inv, payStack)) {
             return fail(session, "你包里塞不下了，先腾点地方再来吧。");
         }
 
@@ -97,7 +98,7 @@ public final class ShopSettlement {
             state.addToInventory(cost.getType(), cost.getAmount());
         }
         state.removeFromInventory(Material.EMERALD, reward);
-        inv.addItem(offer.result().clone());
+        inv.addItem(payStack);
 
         afterTrade(plugin, player, state);
         player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_TRADE, 1f, 1f);

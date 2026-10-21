@@ -37,6 +37,21 @@ class ShopSessionTest {
     }
 
     @Test
+    void raiseMultipleRoundsOnlyUp() {
+        ShopSession s = new ShopSession(NPC, PLAYER, 1_000L);
+        assertEquals(3, s.effectivePay("BUY#WHITE_WOOLx1", 3));
+        assertTrue(s.recordRaise("BUY#WHITE_WOOLx1", 4));
+        assertTrue(s.recordRaise("BUY#WHITE_WOOLx1", 5), "多轮抬价：更高的价可以继续谈上去");
+        assertEquals(5, s.effectivePay("BUY#WHITE_WOOLx1", 3));
+        assertFalse(s.recordRaise("BUY#WHITE_WOOLx1", 4), "价格只升不降：更低的价不许覆盖回去");
+        assertFalse(s.recordRaise("BUY#WHITE_WOOLx1", 5), "同价重复记也不算新进展");
+        assertEquals(Integer.valueOf(5), s.agreedPay("BUY#WHITE_WOOLx1"));
+        // 买卖两个方向各记各的，不串
+        assertEquals(20, s.effectivePrice("IRON_SWORD", 20));
+        assertEquals(7, s.effectivePay("BUY#BREADx1", 7));
+    }
+
+    @Test
     void sessionExpiresAfterIdleTtl() {
         ShopSession s = new ShopSession(NPC, PLAYER, 0L);
         assertFalse(s.expired(ShopSession.IDLE_TTL_MS));
