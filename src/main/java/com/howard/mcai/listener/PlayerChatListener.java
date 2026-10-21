@@ -34,8 +34,11 @@ public final class PlayerChatListener implements Listener {
     private final CentralPlanner planner;
     private final GroupChatCoordinator groupChat;
 
-    /** 自动接入的扫描半径（格） */
-    private static final double AUTO_MATCH_RADIUS = 10.0;
+    /**
+     * 自动接入的扫描半径（格）。与 CentralPlanner 的对话有效距离（5 格）对齐：
+     * 超过 5 格对话会被走远规则立刻结束，就别在 5 格外把人拉进对话了。
+     */
+    private static final double AUTO_MATCH_RADIUS = 5.0;
 
     public PlayerChatListener(McaiPlugin plugin, Map<UUID, VillagerState> villagers,
                               CentralPlanner planner, GroupChatCoordinator groupChat) {
@@ -79,6 +82,10 @@ public final class PlayerChatListener implements Listener {
                 // 格式 玩家名>村民名，保证"谁对谁说话"在控制台完整可追溯
                 plugin.getLogger().info("[chat] " + player.getName() + ">"
                         + Smalltalk.nameOf(captured) + ": " + message);
+                // 玩家发言也标出「玩家>村民」（Fong 2026-10-21 要求）：与村民台词 [村民>玩家]
+                // 同格式成对出现，聊天框里一眼看清谁在对谁说话。
+                player.sendMessage("§6[" + player.getName() + ">" + Smalltalk.nameOf(captured)
+                        + "] §f" + message);
                 // 消息入历史 + 触发 LLM 统一走 planner（主线程）：
                 // - 砍价关键词拦截在 planner.onPlayerMessage 里做（自动匹配路径同样生效）
                 // - LLM 忙时自动积压，等当前响应后再入历史+续调，保证 user↔assistant 严格交替
@@ -95,6 +102,9 @@ public final class PlayerChatListener implements Listener {
                 // 自动接入也算一次"玩家对 NPC 说话"，控制台同样留档
                 plugin.getLogger().info("[chat] " + player.getName() + ">"
                         + Smalltalk.nameOf(autoMatch) + ": " + message);
+                // 同上：自动接入的第一句也标出「玩家>村民」
+                player.sendMessage("§6[" + player.getName() + ">" + Smalltalk.nameOf(autoMatch)
+                        + "] §f" + message);
                 // 多 NPC：说话直接切给最近的那个，其他人"闭嘴"
                 planner.switchConversation(player, autoMatch);
                 planner.onPlayerMessage(autoMatch, player,
