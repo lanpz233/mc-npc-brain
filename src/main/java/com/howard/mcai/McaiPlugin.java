@@ -477,6 +477,8 @@ public final class McaiPlugin extends JavaPlugin {
         toolRegistry.register(new NpcTaskGetTool(npcTaskManager));
         toolRegistry.register(new NpcTaskCancelTool(npcTaskManager));
         toolRegistry.register(new NpcMoveToTool(this));
+        // give_item 已从老后门迁入统一柜（NpcGiveItemTool 以别名桥接旧名，对话模型菜单不变）
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcGiveItemTool(this));
         getLogger().info("工具系统: 已注册 " + toolRegistry.size() + " 个工具");
     }
 
