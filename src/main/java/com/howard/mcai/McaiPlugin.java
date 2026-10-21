@@ -489,6 +489,8 @@ public final class McaiPlugin extends JavaPlugin {
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcTeleportToTool(this));
         // equip 迁入统一柜 —— 老后门世界交互动作至此全部迁完
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcEquipTool(this));
+        // follow_player 改任务制迁入统一柜（持续跟随，替代老后门的两步假跟随）
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcFollowPlayerTool(this));
         getLogger().info("工具系统: 已注册 " + toolRegistry.size() + " 个工具");
     }
 

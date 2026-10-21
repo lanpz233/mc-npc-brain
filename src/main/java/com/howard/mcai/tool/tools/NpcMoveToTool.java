@@ -65,6 +65,15 @@ public final class NpcMoveToTool implements NpcTool {
         return "npc.move_to";
     }
 
+    /**
+     * 别名 move_to：老后门的同名动作就此退役——对话/行为模型继续用旧名调用，
+     * 执行统一走本工具的寻路任务（原版 Pathfinder 绕墙上台阶，不再朝坐标直线硬推）。
+     */
+    @Override
+    public java.util.Set<String> aliases() {
+        return java.util.Set.of("move_to");
+    }
+
     @Override
     public String description() {
         return "让 NPC 走到同世界指定坐标。返回任务 ID，可用 npc.task.get 查询进度、npc.task.cancel 取消。";
@@ -97,6 +106,7 @@ public final class NpcMoveToTool implements NpcTool {
                 .param("y", ToolSchema.Param.number("目标 Y 坐标").min(-256).max(512), true)
                 .param("z", ToolSchema.Param.number("目标 Z 坐标").min(-30_000_000).max(30_000_000), true)
                 .param("speed", ToolSchema.Param.number("移动速度倍率：1.0 = 原版正常步行，默认 0.8（稍慢）").min(0.1).max(2.0))
+                .param("message", ToolSchema.Param.string("出发时说的中文台词（仅对话模型会带，任务本身不使用）").maxLength(120))
                 .build();
     }
 

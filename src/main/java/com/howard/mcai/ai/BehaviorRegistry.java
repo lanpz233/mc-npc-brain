@@ -74,7 +74,8 @@ public final class BehaviorRegistry {
                 List.of("message")));
 
         // move_to
-        tools.add(func("move_to", "移动到指定坐标附近。按 Minecraft 走路速度平滑移动。",
+        tools.add(func("move_to", "移动到指定坐标附近。系统会用正经寻路自己绕墙、上台阶（单次最远 32 格）；"
+                        + "这是个持续任务，你不用等它走完。对话中不能移动（要站着跟人说话）。",
                 Map.of(
                         "x", Map.of("type", "number", "description", "目标 X 坐标"),
                         "y", Map.of("type", "number", "description", "目标 Y 坐标"),
@@ -136,7 +137,8 @@ public final class BehaviorRegistry {
                 Map.of(), List.of()));
 
         // follow_player —— 让 NPC 持续跟随玩家（玩家让他"过来"、"跟我走"时调用）
-        tools.add(func("follow_player", "持续跟着指定玩家走。玩家让你过来/跟我走时调用此函数。",
+        tools.add(func("follow_player", "持续跟着指定玩家走（保持约 3 格距离，最长跟 5 分钟；玩家离线、跑太远或你进入对话就自动停）。"
+                        + "玩家让你跟我走时调用此函数。对话中不能启动跟随。",
                 Map.of(
                         "player_id", Map.of("type", "string", "description", "目标玩家的 player_id (例如 player_xxx)，不传则默认附近的玩家")
                 ),
