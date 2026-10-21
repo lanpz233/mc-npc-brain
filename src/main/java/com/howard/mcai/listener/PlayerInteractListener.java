@@ -72,6 +72,8 @@ public final class PlayerInteractListener implements Listener {
         UUID playerUuid = player.getUniqueId();
         if (state.interactingPlayer() != null && state.interactingPlayer().equals(playerUuid)) {
             state.endConversation();
+            // endConversation 已记下结束时间 —— 标脏落盘，供下次开场说明定档
+            plugin.getMemoryStore().markDirty(state.getUniqueId());
             player.sendMessage("§7[MC-AI] 结束交谈");
             return;
         }
@@ -90,11 +92,20 @@ public final class PlayerInteractListener implements Listener {
                 villager.getCustomName() != null ? villager.getCustomName().replaceAll("§.", "") : "村民",
                 "（思考中...）");
 
-        // 告诉 LLM 新加入对话的玩家身份 —— 用 user role（不是 system！Jinja 只允许 messages[0] 是 system）
+        // 开场说明按事实动态拼（见 ai/ConversationOpening）：见没见过、上次聊完过了多久、
+        // 还有没有近期记录。不再用写死的 "just approached... Greet them warmly!" ——
+        // 那句会让刚聊完又回来的玩家也被当成第一次见面重新打招呼。
+        // 注意 hasMet 必须在 onPlayerMessage 记录本次见面前查（它内部会 recordMeeting）。
+        long nowMs = System.currentTimeMillis();
+        long lastEndMs = state.lastConversationEndMs(playerUuid);
+        com.howard.mcai.ai.ConversationOpening.Tier openingTier =
+                com.howard.mcai.ai.ConversationOpening.tier(state.hasMet(playerUuid), lastEndMs, nowMs);
+        String openingNote = com.howard.mcai.ai.ConversationOpening.buildNote(
+                player.getName(), playerUuid.toString().substring(0, 8), openingTier,
+                lastEndMs > 0 ? nowMs - lastEndMs : -1L, !state.chatHistory().isEmpty());
+        // 这是导演提示不是玩家发言 —— systemNote=true，跳过讨要/砍价/教学等玩家句式解析；
         // 统一走 planner.onPlayerMessage：LLM 忙时自动积压续调，保证 user↔assistant 严格交替
-        planner.onPlayerMessage(state, player, "Player " + player.getName()
-                + " (ID: player_" + playerUuid.toString().substring(0, 8)
-                + ") just approached and wants to chat. Greet them warmly!");
+        planner.onPlayerMessage(state, player, openingNote, true);
     }
 
     /**
