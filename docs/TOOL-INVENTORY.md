@@ -125,3 +125,18 @@ E 节建议顺序已全部落地（每件一个 PR，均经本地全量编译 + 
 
 迁移后唯一仍走老路径的是 `offer_trade`——交易将随独立交易 UI（设计决策路线二）一起重做。
 统一柜现共登记 25 件工具（原有 8 件 + 本轮新增 17 件），全部经 ToolDispatcher 一条路执行。
+
+## 附录二：交易 UI 落地记录（2026-10-21）
+
+- 砍价规则与交易会话先行落地（PR #12）：`security/BargainPolicy`（整数砍幅、插件按好感守
+  底线、超额还价到底线价）、`shop/ShopSession(+Manager)`（砍价进度/台词/选中商品，关窗不丢，
+  一商品一会话只砍一次）、`shop/ShopCatalog`（配方→商品目录）。
+- 商店界面落地（本 PR）：`gui/ShopGui`（商品列表→详情→砍价三视图，砍价按钮 1/5/10 块 +
+  铁砧输入总价；收购视图村民用背包真实绿宝石付款）、`shop/ShopSettlement`（结算唯一出口：
+  先复核钱/原料/背包空间/村民余额，一次性转移，玩家付款真进村民背包）、
+  `gui/AnvilPriceInput` + `listener/ShopGuiListener`。
+- `offer_trade` 改道：open 开自家商店（原版交易窗 `openMerchant` 全面退役）、offer 上架与
+  price=0 免费送保留、**discount 退役**（只记日志）；聊天砍价拦截 `interceptBargain` 退役为
+  只识别不改价的 `annotateBargainAttempt`，VillagerState 砍价锁随之删除。
+- 已知边界：商品供货暂不限 NPC 库存（与原版交易窗时代一致），待背包四兜改造时挂钩；
+  商店外观为排版皮肤，资源包背景图在后续一件。

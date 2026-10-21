@@ -87,7 +87,7 @@ permissions:
   confidant-favor: 60           # 与玩家 favor ≥ 该值自动成为亲信（可进其领地、用工作台箱子）
   territory-radius: 24          # 玩家领地半径（以床重生点为圆心），平民不得在内破坏方块
   teleport-confirm-timeout-seconds: 30  # 神使传送玩家的聊天确认"好"的有效期
-  # 索要物品不再有"好感门槛"：好感越高，NPC 越可能答应给你东西（概率在 EmotionState.giveChance 里算）
+  # 索要/赠送已改确定性规矩（security/GiftPolicy）：普通物品好感≥10、稀有物品≥60 且同 NPC 同玩家一天至多一件、送食物留 4 个口粮；不再掷骰子
 
 # 调试开关
 debug:
