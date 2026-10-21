@@ -75,6 +75,7 @@ public final class PlayerInteractListener implements Listener {
             // endConversation 已记下结束时间 —— 标脏落盘，供下次开场说明定档
             plugin.getMemoryStore().markDirty(state.getUniqueId());
             player.sendMessage("§7[MC-AI] 结束交谈");
+            com.howard.mcai.planner.CentralPlanner.clearConversationHint(player);
             return;
         }
 
@@ -86,6 +87,8 @@ public final class PlayerInteractListener implements Listener {
 
         // 开始对话（多 NPC：自动把玩家在其他村民身上的对话状态切走，避免两头占）
         planner.switchConversation(player, state);
+        // 对话对象提示立刻亮一下（之后他每说一句都会刷新，见 CentralPlanner.onPlayerMessage）
+        com.howard.mcai.planner.CentralPlanner.showConversationHint(player, state);
 
         // 先发一个"思考中"占位会话框 —— 让玩家知道触发成功（LLM 回复到达后会自动替换）
         bubbleManager.showDialog(villager,
