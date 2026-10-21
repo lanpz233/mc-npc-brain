@@ -1081,6 +1081,13 @@ public final class CentralPlanner extends BukkitRunnable {
         return adapter != null && adapter.isRegisteredTool(name);
     }
 
+    /** 该统一工具是否动作类（失败原因需要同步给玩家；查询类失败不打扰玩家） */
+    private boolean isActionTool(String name) {
+        if (plugin.getToolRegistry() == null) return false;
+        var tool = plugin.getToolRegistry().find(name);
+        return tool != null && tool.category() == com.howard.mcai.tool.NpcTool.Category.ACTION;
+    }
+
     /**
      * 对话模型可见工具集 = 旧对话工具 + 统一注册表中的只读查询工具。
      * 只加查询不加行动：移动/改世界仍走旧白名单或行为模型，避免绕过对话站立约束。
@@ -1536,6 +1543,16 @@ public final class CentralPlanner extends BukkitRunnable {
             // 即使被拒/失败也要照常说话 —— 模型选了工具不等于台词可以吞掉。
             if (unifiedResult == null) {
                 unifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
+                // 本轮新分发的动作类工具若失败，把原因同步给玩家（与老后门口径一致：
+                // 权限拒绝这类系统事实进玩家聊天框 + 控制台，不冒 NPC 气泡）
+                if (unifiedResult != null && !unifiedResult.success()
+                        && unifiedResult.errorMessage() != null && isActionTool(toolCall.name())) {
+                    String feedback = "§e" + unifiedResult.errorMessage();
+                    if (nearPlayer != null && nearPlayer.isOnline()) {
+                        nearPlayer.sendMessage(feedback);
+                    }
+                    Bukkit.getConsoleSender().sendMessage(feedback);
+                }
             }
             speak(vState, nearPlayer, dialogue);
         } else if (toolCall != null) {
@@ -1758,8 +1775,7 @@ public final class CentralPlanner extends BukkitRunnable {
                     // 交换也已在"第二步半"执行完（双方物品一次性转移），这里只说话
                     speak(vState, nearPlayer, dialogue);
                 }
-                case "break_block", "place_block",
-                     "teleport_to", "teleport", "equip" -> {
+                case "teleport_to", "teleport", "equip" -> {
                     // SPEC 2.14 世界交互 —— 统一走 WorldInteractionService：
                     // 权限三档判定（平民白名单/亲信领地/神使全权）+ 神使审计 audit.log
                     // 传送玩家走确认流（"CONFIRM_PENDING"提示会发给玩家，等其回复"好"）
