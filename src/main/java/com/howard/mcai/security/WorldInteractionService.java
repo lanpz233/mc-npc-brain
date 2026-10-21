@@ -108,8 +108,8 @@ public final class WorldInteractionService {
         NpcRank rank = permissions.rankOf(vState, nearPlayer != null ? nearPlayer.getUniqueId() : null);
 
         return switch (tool.name()) {
-            case "break_block" -> breakBlock(vState, npcName, rank, tool);
-            case "place_block" -> placeBlock(vState, npcName, rank, tool);
+            // break_block / place_block 已迁入统一柜（NpcBreakBlockTool / NpcPlaceBlockTool，
+            // 经 breakBlockAt / placeBlockAt 执行），不再走本入口
             case "teleport_to" -> teleportTo(vState, npcName, rank, tool, nearPlayer);
             case "teleport" -> teleportSelf(vState, npcName, rank, tool);
             case "equip" -> equip(vState, npcName, rank, tool);
@@ -324,8 +324,16 @@ public final class WorldInteractionService {
 
     // ===== break_block：破坏方块（职业白名单 + 领地保护；神使全放行 + 审计） =====
 
-    private String breakBlock(VillagerState vs, String npcName, NpcRank rank, ToolCall tool) {
-        Block block = argBlock(vs, tool);
+    /**
+     * 按坐标破坏方块（统一柜 NpcBreakBlockTool 的执行体；规则与旧后门时期完全一致）。
+     *
+     * @param playerUuid 当前互动玩家（定神使/亲信等级）；无玩家上下文传 null
+     * @return 给玩家看的反馈行（null = 成功，无需额外反馈）
+     */
+    public String breakBlockAt(VillagerState vs, java.util.UUID playerUuid, double x, double y, double z) {
+        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
+        NpcRank rank = permissions.rankOf(vs, playerUuid);
+        Block block = blockAt(vs, x, y, z);
         if (block == null) return "§e坐标无效";
         if (!inRange(vs, block.getLocation())) return "§e太远了，够不着（" + (int) ACTION_RANGE + " 格内才行）";
         String params = "x=" + block.getX() + ",y=" + block.getY() + ",z=" + block.getZ()
@@ -352,11 +360,19 @@ public final class WorldInteractionService {
 
     // ===== place_block：放置方块（扣库存；神使免库存 + 审计） =====
 
-    private String placeBlock(VillagerState vs, String npcName, NpcRank rank, ToolCall tool) {
-        Block block = argBlock(vs, tool);
+    /**
+     * 按坐标放置方块（统一柜 NpcPlaceBlockTool 的执行体；规则与旧后门时期完全一致）。
+     *
+     * @param playerUuid 当前互动玩家（定神使/亲信等级）；无玩家上下文传 null
+     * @return 给玩家看的反馈行（null = 成功，无需额外反馈）
+     */
+    public String placeBlockAt(VillagerState vs, java.util.UUID playerUuid, double x, double y, double z,
+                               Material mat) {
+        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
+        NpcRank rank = permissions.rankOf(vs, playerUuid);
+        Block block = blockAt(vs, x, y, z);
         if (block == null) return "§e坐标无效";
         if (!inRange(vs, block.getLocation())) return "§e太远了，够不着（" + (int) ACTION_RANGE + " 格内才行）";
-        Material mat = resolveItem(safeStr(tool, "material"));
         if (mat == null || !mat.isBlock()) return "§e那不是能放置的方块";
         boolean envoy = rank == NpcRank.ENVOY;
         // 库存快照要在扣货前取：神使免库存 = 凭空刷，审计里要标 spawned=true
@@ -574,6 +590,15 @@ public final class WorldInteractionService {
     }
 
     /** 工具参数里的坐标 → Block（相对世界硬边界做保护，越界返回 null） */
+    /** 坐标 → 方块（与 argBlock 同口径：y 越界/实体缺失 → null） */
+    private static Block blockAt(VillagerState vs, double x, double y, double z) {
+        if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)) return null;
+        if (y < -64 || y > 320) return null;
+        var entity = vs.entity();
+        if (entity == null || entity.getWorld() == null) return null;
+        return entity.getWorld().getBlockAt((int) x, (int) y, (int) z);
+    }
+
     private static Block argBlock(VillagerState vs, ToolCall tool) {
         double x = argNum(tool, "x", Double.NaN);
         double y = argNum(tool, "y", Double.NaN);

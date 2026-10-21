@@ -481,6 +481,9 @@ public final class McaiPlugin extends JavaPlugin {
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcGiveItemTool(this));
         // accept_swap 同样迁入统一柜（值不值由 SwapPolicy 裁决）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcAcceptSwapTool(this));
+        // break_block / place_block 迁入统一柜（权限把关仍在 WorldInteractionService）
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcBreakBlockTool(this));
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcPlaceBlockTool(this));
         getLogger().info("工具系统: 已注册 " + toolRegistry.size() + " 个工具");
     }
 
