@@ -14,6 +14,132 @@
       "chars": [
         "\ue100"
       ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_farmer.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue101"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_toolsmith.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue102"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_weaponsmith.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue103"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_armorer.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue104"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_cleric.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue105"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_librarian.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue106"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_cartographer.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue107"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_fletcher.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue108"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_fisherman.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue109"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_butcher.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue10a"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_leatherworker.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue10b"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_mason.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue10c"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_shepherd.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue10d"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "minecraft:gui/mcai_shop_bg_nitwit.png",
+      "ascent": 13,
+      "height": 222,
+      "chars": [
+        "\ue10e"
+      ]
     }
   ]
 }
