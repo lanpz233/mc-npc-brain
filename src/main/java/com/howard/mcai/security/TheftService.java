@@ -41,8 +41,7 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public final class TheftService {
 
-    /** 托管时长：40 tick = 2 秒 */
-    public static final long ESCROW_TICKS = 40L;
+    /** 托管时长：随机 20~40 tick（1~2 秒），每次下手在 beginSteal 里掷 */
     /** 结算时“没跑掉”的距离界 */
     public static final double CAUGHT_RADIUS = 7.0;
     /** “看着你”的判定半径与视野半角 */
@@ -124,8 +123,18 @@ public final class TheftService {
         Pending p = new Pending(player.getUniqueId(), state.getUniqueId(), mat, onSettled);
         pendings.add(p);
         player.playSound(player.getLocation(), Sound.ENTITY_ITEM_FRAME_ROTATE_ITEM, 0.3f, 0.7f);
-        Bukkit.getScheduler().runTaskLater(plugin, () -> resolve(p, false), ESCROW_TICKS);
+        // 托管时长随机 1~2 秒（v0.4.1 服主定：固定 2 秒太可预测，玩家能掐着点跑）
+        long ticks = 20L + ThreadLocalRandom.current().nextInt(21);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> resolve(p, false), ticks);
         return null;
+    }
+
+    /** 这个玩家对这个村民有没有未结算的托管（守望收网的触发条件） */
+    public boolean hasPendingPair(UUID playerUuid, UUID npcUuid) {
+        for (Pending p : pendings) {
+            if (!p.settled && p.playerUuid.equals(playerUuid) && p.npcUuid.equals(npcUuid)) return true;
+        }
+        return false;
     }
 
     /** 这个玩家对这个村民的这种东西是否正在托管中（GUI 显示“正在下手”用） */
@@ -160,8 +169,10 @@ public final class TheftService {
                 it.remove();
                 continue;
             }
-            // 他醒着且正看见你翻他的包 → 收网：关窗 + 托管中的按被抓结算
-            if (!v.isSleeping() && observed(player, v)) {
+            // 他醒着且正看见你、且你手上正有没结算的赃 → 收网：关窗 + 按被抓结算。
+            // 没在偷（只是开着界面）时不收网——v0.4.0 实测教训：一开界面就被关，
+            // 玩家连看都不行；能不能下手由 canSteal 在点击时把关。
+            if (!v.isSleeping() && observed(player, v) && hasPendingPair(player.getUniqueId(), state.getUniqueId())) {
                 it.remove();
                 player.closeInventory();
                 player.sendMessage("§c" + npcName(state) + " 转过身来，正看见你翻他的包！");

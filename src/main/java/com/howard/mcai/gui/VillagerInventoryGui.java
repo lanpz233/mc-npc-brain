@@ -61,12 +61,21 @@ public final class VillagerInventoryGui implements InventoryHolder {
     private final Inventory inventory;
     /** 槽位 → 该格代表的 Material；只有"真货"格才进表，底板/状态卡不在表里 */
     private final Map<Integer, Material> slotMap = new HashMap<>();
+    /** 界面模式（v0.4.1）：false=查看（普通 F，可选货谈换物） true=偷窃（蹲下+F） */
+    private final boolean stealMode;
+    /** 查看模式下选中的"想要的货"（换物提议用），null = 还没选 */
+    private Material selectedMat;
 
     private VillagerInventoryGui(McaiPlugin plugin, VillagerState state, Player viewer) {
+        this(plugin, state, viewer, false);
+    }
+
+    private VillagerInventoryGui(McaiPlugin plugin, VillagerState state, Player viewer, boolean stealMode) {
         this.plugin = plugin;
         this.state = state;
         this.villagerUuid = state.getUniqueId();
         this.viewerUuid = viewer.getUniqueId();
+        this.stealMode = stealMode;
         this.inventory = Bukkit.createInventory(this, SIZE, title());
     }
 
@@ -82,11 +91,13 @@ public final class VillagerInventoryGui implements InventoryHolder {
         // 开面板前先纠正职业：状态卡的「职业」必须与实体真实职业一致 ——
         // 村民可能刚认领工作站（从"无业"变成真实职业），不刷新会显示成"无业"
         plugin.refreshVillagerProfession(state);
-        VillagerInventoryGui gui = new VillagerInventoryGui(plugin, state, viewer);
+        // 蹲下+F = 偷窃界面；普通 F = 查看界面（v0.4.1 服主定）
+        boolean steal = viewer.isSneaking();
+        VillagerInventoryGui gui = new VillagerInventoryGui(plugin, state, viewer, steal);
         gui.rebuild();
         viewer.openInventory(gui.inventory);
-        // 偷窃守望登记：翻包期间他转身正看见你 → TheftService 当场收网
-        if (plugin.getTheftService() != null) plugin.getTheftService().openSession(viewer, state);
+        // 偷窃守望只在偷窃模式登记（且只在他真有未结算的赃时才收网）
+        if (steal && plugin.getTheftService() != null) plugin.getTheftService().openSession(viewer, state);
     }
 
     @Override
@@ -264,7 +275,9 @@ public final class VillagerInventoryGui implements InventoryHolder {
                         + com.howard.mcai.ai.VillageTrust.tierZh(tScore) + "）");
             }
         }
-        invLore.add("§8（他没看着你时，点背包里的东西可以偷——2 秒后才到手，别被抓）");
+        invLore.add(stealMode
+                ? "§8（偷窃中：点东西后稍等片刻才到手，他看见就完蛋）"
+                : "§8（选他的货 + 点你的货 = 谈换物；蹲下按 F 进偷窃界面）");
         putStatus(52, Material.CHEST, "§6§l背包与交易", invLore);
 
         // 53 最近言行
@@ -427,15 +440,22 @@ public final class VillagerInventoryGui implements InventoryHolder {
             meta.setDisplayName("§f" + PromptBuilder.materialToZh(mat));
             List<String> lore = new ArrayList<>();
             lore.add("§7库存: §e" + amount);
-            Player viewer = Bukkit.getPlayer(viewerUuid);
-            var theft = plugin.getTheftService();
-            if (theft != null && theft.isPending(viewerUuid, villagerUuid, mat)) {
-                lore.add("§8正在下手……（2 秒后见分晓）");
-            } else if (viewer != null && theft != null
-                    && com.howard.mcai.security.TheftService.canSteal(viewer, state)) {
-                lore.add("§a点击 → 偷走 1 个（轻点声）");
+            if (stealMode) {
+                Player viewer = Bukkit.getPlayer(viewerUuid);
+                var theft = plugin.getTheftService();
+                if (theft != null && theft.isPending(viewerUuid, villagerUuid, mat)) {
+                    lore.add("§8正在下手……（稍等片刻见分晓）");
+                } else if (viewer != null && theft != null
+                        && com.howard.mcai.security.TheftService.canSteal(viewer, state)) {
+                    lore.add("§a点击 → 偷走 1 个（轻点声）");
+                } else {
+                    lore.add("§7他正看着你，下不了手");
+                }
+            } else if (mat == selectedMat) {
+                lore.add("§a已选中：点你背包里的东西，跟他谈换");
+                lore.add("§7再点一次取消选中");
             } else {
-                lore.add("§7他正看着你，下不了手");
+                lore.add("§e点击选中：想要这件？再点你背包里的东西出价");
             }
             meta.setLore(lore);
             stack.setItemMeta(meta);
@@ -467,25 +487,61 @@ public final class VillagerInventoryGui implements InventoryHolder {
 
     /**
      * GUI 点击入口（由 VillagerInventoryListener 转发，主线程）。
-     * 点到"真货格" = 试图偷走 1 个（走 TheftService 的 2 秒托管结算）；
-     * 他正看着你时点不动。底板/状态卡/玩家自己背包格一律忽略。
+     * 偷窃模式：点"真货格" = 试图偷走 1 个（走 TheftService 托管结算）。
+     * 查看模式：点"真货格" = 选中想换的货（再点自己背包里的东西出价谈换物）。
+     * 底板/状态卡一律忽略；玩家自己背包的点击走 {@link #handleOwnItemClick}。
      */
     public void handleClick(Player player, int slot, boolean rightClick) {
         if (player == null || !player.getUniqueId().equals(viewerUuid)) return;
         Material mat = slotMap.get(slot);
         if (mat == null) return;
-        var theft = plugin.getTheftService();
-        if (theft == null) return;
-        String err = theft.beginSteal(player, state, mat, this::refreshIfOpen);
-        if (err != null) {
+        if (stealMode) {
+            var theft = plugin.getTheftService();
+            if (theft == null) return;
+            String err = theft.beginSteal(player, state, mat, this::refreshIfOpen);
+            if (err != null) {
+                long now = System.currentTimeMillis();
+                if (now - lastWarnMs > 1500L) {
+                    lastWarnMs = now;
+                    player.sendMessage(err);
+                }
+                return;
+            }
+            rebuild();   // 立刻把这一格刷成"正在下手"
+            return;
+        }
+        // 查看模式：选中/取消选中想换的货
+        selectedMat = (mat == selectedMat) ? null : mat;
+        rebuild();
+    }
+
+    /**
+     * 玩家点了自己背包里的格子（查看模式的换物出价口）：
+     * 已选中 NPC 的货 → 登记提议、关界面、把插件算好的简报递给 NPC 模型裁决；
+     * 没选中 → 提醒先选货。偷窃模式下自己背包的点击一律忽略。
+     */
+    public void handleOwnItemClick(Player player, int ownSlot) {
+        if (stealMode || player == null || !player.getUniqueId().equals(viewerUuid)) return;
+        if (selectedMat == null) {
             long now = System.currentTimeMillis();
             if (now - lastWarnMs > 1500L) {
                 lastWarnMs = now;
-                player.sendMessage(err);
+                player.sendMessage("§7先点他背包里你想要的东西，再点你背包里的东西跟他谈换。");
             }
             return;
         }
-        rebuild();   // 立刻把这一格刷成"正在下手"
+        ItemStack stack = player.getInventory().getItem(ownSlot);
+        if (stack == null || stack.getType().isAir()) return;
+        Material npcMat = selectedMat;
+        Material offerMat = stack.getType();
+        int offerCount = stack.getAmount();
+        state.setPendingBarter(player.getUniqueId(), npcMat, offerMat, offerCount);
+        player.closeInventory();
+        boolean hungry = state.needs().get(com.howard.mcai.mob.NeedsState.HUNGER) >= 50.0;
+        String note = com.howard.mcai.ai.BarterBrief.brief(player.getName(), state.profession(),
+                npcMat, offerMat, offerCount, hungry);
+        plugin.getPlanner().switchConversation(player, state);
+        plugin.getPlanner().onPlayerMessage(state, player, note, true);
     }
 
     /** 偷窃结算后回调：窗口还开着就原地刷新（东西到手/被没收都要让格子对上真实库存） */

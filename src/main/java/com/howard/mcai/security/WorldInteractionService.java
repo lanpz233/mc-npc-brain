@@ -102,6 +102,54 @@ public final class WorldInteractionService {
     // teleport / teleport_to / equip）都已迁入统一工具柜，本类只保留各动作的
     // 执行体（公开方法）与代码层直达通道（索要交付、收礼、传送确认等）。
 
+    // ===== 背包换物（v0.4.1：模型同意后的执行体，插件只复核与搬运）=====
+
+    /** 换物执行结果 */
+    public record BarterResult(boolean swapped, String errorForPlayer) {}
+
+    /**
+     * 执行一次已登记的换物提议（主线程）：复核 NPC 库存有那件东西、
+     * 玩家包里还有出价的那一格，两边都在才一次性交换；缺一样就整单作废，
+     * 绝不只执行一半（历史上对半执行没收玩家装备的事故就是这么来的）。
+     */
+    public BarterResult executeBarter(VillagerState vs, Player player) {
+        VillagerState.PendingBarter b = vs.consumePendingBarter(player.getUniqueId());
+        if (b == null) {
+            return new BarterResult(false, "（没有待处理的换物提议，或提议已经过期）");
+        }
+        if (vs.stockOf(b.npcMat()) < 1) {
+            return new BarterResult(false, "（他包里那件东西已经不在了，换不成了）");
+        }
+        int have = 0;
+        for (ItemStack st : player.getInventory().getStorageContents()) {
+            if (st != null && st.getType() == b.offerMat()) have += st.getAmount();
+        }
+        if (have < b.offerCount()) {
+            return new BarterResult(false, "（你包里要出的东西已经不在了，换不成了）");
+        }
+        // 一次性交换：扣他的 → 扣你的 → 互交
+        vs.removeFromInventory(b.npcMat(), 1);
+        int left = b.offerCount();
+        var contents = player.getInventory().getStorageContents();
+        for (int i = 0; i < contents.length && left > 0; i++) {
+            ItemStack st = contents[i];
+            if (st == null || st.getType() != b.offerMat()) continue;
+            int take = Math.min(left, st.getAmount());
+            st.setAmount(st.getAmount() - take);
+            contents[i] = st.getAmount() <= 0 ? null : st;
+            left -= take;
+        }
+        player.getInventory().setStorageContents(contents);
+        var leftover = player.getInventory().addItem(new ItemStack(b.npcMat(), 1));
+        leftover.values().forEach(st -> player.getWorld().dropItemNaturally(player.getLocation(), st));
+        vs.addToInventory(b.offerMat(), b.offerCount());
+        plugin.getMemoryStore().markDirty(vs.getUniqueId());
+        plugin.getAuditLog().log(com.howard.mcai.ai.Smalltalk.nameOf(vs), vs.getUniqueId(), "barter_swap",
+                player.getName() + " offered " + b.offerMat().name() + "x" + b.offerCount(),
+                "got " + b.npcMat().name() + "x1");
+        return new BarterResult(true, null);
+    }
+
     // ===== 免费赠送（offer_trade 的 price=0 路径）—— 必须出库存，禁止凭空造物 =====
 
     /** 免费赠送单次上限（与旧实现一致，只是不再凭空生成） */

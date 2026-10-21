@@ -556,6 +556,7 @@ public final class McaiPlugin extends JavaPlugin {
         toolRegistry.register(new NpcMoveToTool(this));
         // give_item 已从老后门迁入统一柜（NpcGiveItemTool 以别名桥接旧名，对话模型菜单不变）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcGiveItemTool(this));
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcAcceptBarterTool(this));
         // break_block / place_block 迁入统一柜（权限把关仍在 WorldInteractionService）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcBreakBlockTool(this));
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcPlaceBlockTool(this));

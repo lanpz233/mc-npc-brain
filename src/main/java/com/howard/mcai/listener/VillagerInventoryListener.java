@@ -25,10 +25,14 @@ public final class VillagerInventoryListener implements Listener {
         event.setCancelled(true);
 
         if (!(event.getWhoClicked() instanceof Player player)) return;
-        // 只处理"点在上半部分真货格"的点击；玩家自己背包格的点击只是被拦下
-        if (event.getClickedInventory() != top) return;
-        // 点真货格 = 试图偷走 1 个（左右键同效，TheftService 裁决）
-        gui.handleClick(player, event.getSlot(), event.isRightClick());
+        if (event.getClickedInventory() == top) {
+            // 点上半部分真货格：偷窃模式 = 偷，查看模式 = 选中换物
+            gui.handleClick(player, event.getSlot(), event.isRightClick());
+        } else if (event.getClickedInventory() != null
+                && event.getClickedInventory().getType() == org.bukkit.event.inventory.InventoryType.PLAYER) {
+            // 点自己背包的格子：查看模式下是换物出价口（偷窃模式里 GUI 自己会忽略）
+            gui.handleOwnItemClick(player, event.getSlot());
+        }
     }
 
     @EventHandler
