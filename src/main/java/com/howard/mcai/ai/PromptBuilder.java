@@ -382,6 +382,20 @@ public final class PromptBuilder {
         ctx.append("一到两句说完，总共不超过30个字，说完就停，不要为了凑话再补一句。\n");
         ctx.append("天气、昼夜、周围有谁，只认上面的速览和场景；没写的就不许编，"
                 + "尤其不许凭空说下雨、天黑，也不许编对方身上带着什么东西。\n");
+        ctx.append("对方指出你把看得见的事实（时间、天气）说错了，就照速览认了、改口，别嘴硬。\n");
+        // 玩家在问时间 → 把准确时间钉死在要求里：实测模型不看速览、非要“眯眼瞅天”
+        // 估个错时间（如实际 08:10 却说六点二十六），被纠正还嘴硬 —— 问到就原样照报。
+        String lastUserText = null;
+        java.util.List<VillagerState.ChatEntry> hist = villagerState.chatHistory();
+        for (int i = hist.size() - 1; i >= 0; i--) {
+            if ("user".equals(hist.get(i).role())) { lastUserText = hist.get(i).content(); break; }
+        }
+        if (lastUserText != null && (lastUserText.contains("几点") || lastUserText.contains("几时")
+                || lastUserText.contains("时间") || lastUserText.contains("什么时候"))) {
+            org.bukkit.World w = villagerState.entity().getWorld();
+            ctx.append("玩家在问现在几点：现在就是 ").append(mcClock(w.getTime()))
+                    .append("，原样照着报这个时间，不许自己估、不许报别的时间。\n");
+        }
 
         messages.add(Map.of("role", "user", "content", ctx.toString().trim()));
 
