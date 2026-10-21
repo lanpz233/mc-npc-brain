@@ -376,6 +376,13 @@ public final class PromptBuilder {
                     + "也不能说\"等下我再过去\"——你根本不会移动，这么说了就是在骗人。\n");
         }
 
+        // --- 2.5 回复要求（钉在上下文最末尾，离生成最近 —— 小模型最听最后的话）---
+        // 长度与防编造都放这里从源头约束（服主拍板：出口不砍字数，靠给模型的要求管住）。
+        ctx.append("\n### 回复要求 (Reply requirements)\n");
+        ctx.append("一到两句说完，总共不超过30个字，说完就停，不要为了凑话再补一句。\n");
+        ctx.append("天气、昼夜、周围有谁，只认上面的速览和场景；没写的就不许编，"
+                + "尤其不许凭空说下雨、天黑，也不许编对方身上带着什么东西。\n");
+
         messages.add(Map.of("role", "user", "content", ctx.toString().trim()));
 
         // 4. Recent chat history（自动 ≤10 轮，addChatEntry 里已经压缩了旧的）

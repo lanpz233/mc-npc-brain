@@ -1344,22 +1344,9 @@ public final class CentralPlanner extends BukkitRunnable {
         // Markdown 加粗 **xxx** → MC 的加粗色码：模型爱用 ** 强调，原样显示就是一串裸星号，
         // 气泡里看着像乱码。转成 §l，结尾补回 §f 白色（正文默认色），不影响后续文字
         cleaned = cleaned.replaceAll("\\*\\*([^*]+)\\*\\*", "§l$1§f");
-        // 长度收敛：超过上限才收敛，且**只在句末标点处切** —— 绝不能腰斩半句话。
-        // 上限由服主在面板调（llm.max-dialogue-chars，默认 60）：提示词里写了 30 字
-        // 但模型（9B）经常不听、写到五六十字，全靠这一层在出口兜底。
-        if (cleaned.length() <= maxDialogueChars) return cleaned;
-        String cut = cleaned.substring(0, maxDialogueChars);
-        int last = Math.max(Math.max(cut.lastIndexOf('。'), cut.lastIndexOf('！')),
-                Math.max(cut.lastIndexOf('？'), cut.lastIndexOf('…')));
-        return last > 20 ? cut.substring(0, last + 1) : cut + "…";
-    }
-
-    /** 台词长度上限（字）—— McaiPlugin 按配置注入，默认 60；面板改完热重载即生效 */
-    private static volatile int maxDialogueChars = 60;
-
-    /** 注入台词长度上限（启动与 /ai reload 时调用） */
-    public static void setMaxDialogueChars(int chars) {
-        maxDialogueChars = Math.clamp(chars, 30, 200);
+        // 台词长度不在出口砍（服主拍板 2026-10-22：砍字数容易把没说完的话腰斩，
+        // 改为从源头约束模型 —— 系统提示词的行为规矩 + 每轮上下文末尾的回复要求）。
+        return cleaned;
     }
 
     // ===== 承诺-执行一致性守卫（②）=====
@@ -1634,7 +1621,7 @@ public final class CentralPlanner extends BukkitRunnable {
                     + beforePromise + "] → [" + dialogue + "]");
         }
 
-        // === 台词长度上限已并入 sanitizeDialogue（按句末标点收尾），此处无需重复处理 ===
+        // === 台词长度由提示词侧约束（见 PromptBuilder 每轮回复要求），出口不砍字 ===
 
         // === 第二步：Facts 自动积累（SPEC 3.4） ===
         // 关键事件自动进永久记忆 —— 让 NPC 下次见到玩家还能想起发生过什么

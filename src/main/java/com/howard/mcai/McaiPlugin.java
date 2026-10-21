@@ -191,7 +191,6 @@ public final class McaiPlugin extends JavaPlugin {
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
         // 职业徽章开关走同样的静态镜像（CentralPlanner 的静态提示方法无 plugin 引用）
         com.howard.mcai.ai.ProfessionBadge.setEnabled(config.shopSkinEnabled());
-        com.howard.mcai.planner.CentralPlanner.setMaxDialogueChars(config.maxDialogueChars());
 
         // 1.5 加载配方表（拼进 system prompt，让村民对话有真实参考）
         recipeLookup = new RecipeLookup();
@@ -1140,7 +1139,6 @@ public final class McaiPlugin extends JavaPlugin {
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
         // 职业徽章开关同理（商店皮肤在面板里开关时要跟着变）
         com.howard.mcai.ai.ProfessionBadge.setEnabled(config.shopSkinEnabled());
-        com.howard.mcai.planner.CentralPlanner.setMaxDialogueChars(config.maxDialogueChars());
         // 资源包发包服务按新开关/新端口对齐（面板里改了商店皮肤或发包端口也能即时生效）
         syncPackServer();
         // 顺带 reload 配方表 + 人格标签库（用户可能编辑了）
