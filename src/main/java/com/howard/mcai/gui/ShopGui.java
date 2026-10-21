@@ -66,10 +66,36 @@ public final class ShopGui implements InventoryHolder {
      */
     private net.kyori.adventure.text.Component title() {
         if (plugin.getPluginConfig().shopSkinEnabled()) {
-            return net.kyori.adventure.text.Component.text("\uF808\uE100")
+            return net.kyori.adventure.text.Component.text("\uF808" + bgGlyph())
                     .font(net.kyori.adventure.key.Key.key("minecraft", "mcai_shop"));
         }
         return net.kyori.adventure.text.Component.text("§6" + npcName() + "的小店");
+    }
+
+    /**
+     * 资源包皮肤的柜台背景字形（素材阶段 3：按职业换柜台）——村民什么职业，
+     * 招牌就是什么颜色、挂什么徽记；无业/未知用通用木柜台（\ue100）。
+     * 字形编号与 resourcepack 的 font/mcai_shop.json、make_bg.py 三处必须一致。
+     */
+    private char bgGlyph() {
+        if (state.profession() == null) return '\uE100';
+        return switch (state.profession()) {
+            case FARMER -> '\uE101';
+            case TOOLSMITH -> '\uE102';
+            case WEAPONSMITH -> '\uE103';
+            case ARMORER -> '\uE104';
+            case CLERIC -> '\uE105';
+            case LIBRARIAN -> '\uE106';
+            case CARTOGRAPHER -> '\uE107';
+            case FLETCHER -> '\uE108';
+            case FISHERMAN -> '\uE109';
+            case BUTCHER -> '\uE10A';
+            case LEATHERWORKER -> '\uE10B';
+            case MASON -> '\uE10C';
+            case SHEPHERD -> '\uE10D';
+            case NITWIT -> '\uE10E';
+            default -> '\uE100';
+        };
     }
 
     /** 打开商店（主线程）。会话按（村民，玩家）取/建：关窗重开还是同一份进度 */
