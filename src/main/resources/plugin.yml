@@ -2,7 +2,7 @@
 # Paper 1.21.1 加载插件时读这个文件识别入口和元数据
 
 name: MC-AI
-version: 0.2.6
+version: 0.3.0
 main: com.howard.mcai.McaiPlugin
 api-version: '1.21'
 authors: ['Howard']

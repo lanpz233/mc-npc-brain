@@ -284,6 +284,9 @@ public final class PromptBuilder {
         // 这条中文大白话打在上下文最前面，并明确"以它为准"，堵住幻觉。
         ctx.append("### 当前情况 (CURRENT SITUATION — 开口前先以这条中文速览为准)\n");
         ctx.append(envBrief(villagerState)).append("\n");
+        // 天气账本（全村共同记忆）：聊到过去的天气照账说，不许凭感觉编“昨晚下雨打雷”
+        String ledgerSummary = WeatherLedgers.summaryFor(villagerState);
+        if (ledgerSummary != null) ctx.append(ledgerSummary).append("\n");
         ctx.append("（下面的 json 只是更细的补充；凡与上面这条速览冲突的，一律以速览为准，"
                 + "不许编造天气或昼夜。）\n");
 
@@ -436,13 +439,9 @@ public final class PromptBuilder {
         // 受击记录必须用 VillagerState 自己存的时间戳 ——
         // Entity.getLastDamage() 返回的是上次伤害的数值（如 5.0 颗心），不是时间，混用会算出垃圾值
         boolean wasRecentlyHit = villagerState.wasHitRecently();
-        long hurtAgeSec = villagerState.lastHitAgeSeconds();
-        String healthTag = healthPct > 70 ? "fine" : healthPct > 30 ? "hurt" : "badly hurt";
         sb.append("\n  \"self\": {");
-        sb.append("\n    \"health_pct\": ").append(String.format("%.0f", healthPct)).append(",");
-        sb.append("\n    \"health_tag\": \"").append(healthTag).append("\",");
+        sb.append("\n    \"health\": \"").append(StateTiers.health(healthPct)).append("\",");
         sb.append("\n    \"was_hit_recently\": ").append(wasRecentlyHit).append(",");
-        sb.append("\n    \"hurt_age_seconds\": ").append(hurtAgeSec).append(",");
         sb.append("\n    \"on_fire\": ").append(entity.getFireTicks() > 0).append(",");
         sb.append("\n    \"in_water\": ").append(entity.isInWater()).append(",");
         sb.append("\n    \"in_lava\": ").append(entity.isInLava()).append(",");
@@ -456,11 +455,12 @@ public final class PromptBuilder {
 
         // === 情绪（原有的 fear/favor 压进 self 里） ===
         sb.append("\n  \"emotion\": {");
-        sb.append("\n    \"fear\": ").append(villagerState.emotion().fear()).append(",");
-        sb.append("\n    \"favor\": ").append(String.format("%.0f",
-                villagerState.emotion().favor(nearPlayer != null ? nearPlayer.getUniqueId() : null))).append(",");
+        sb.append("\n    \"fear\": \"").append(StateTiers.fear(villagerState.emotion().fear())).append("\",");
+        sb.append("\n    \"favor\": \"").append(StateTiers.favor(
+                villagerState.emotion().favor(nearPlayer != null ? nearPlayer.getUniqueId() : null))).append("\",");
         // 开放度：决定你对"别人教你东西"的接受程度（高=好奇容易信，低=固执慢热）
-        sb.append("\n    \"openness\": ").append(villagerState.openness());
+        sb.append("\n    \"openness\": \"").append(villagerState.openness() >= 0.7 ? "容易接受新事物"
+                : villagerState.openness() >= 0.4 ? "还算开放" : "比较固执").append("\"");
         sb.append("\n  },");
 
         // === 需求系统（SPEC 2.14）—— 内在驱动，LLM 按需求 + 性格自主选行动 ===
@@ -469,7 +469,10 @@ public final class PromptBuilder {
         boolean firstNeed = true;
         for (var e : needSnap.entrySet()) {
             if (!firstNeed) sb.append(",");
-            sb.append("\n    \"").append(e.getKey()).append("\": ").append(e.getValue().intValue());
+            // 定性状态给词不给数（v0.3.0 服主定）：给模型“饥饿 73”它要自己换算还常算错，
+            // 给“有点饿”任何模型都不会理解错。数字只留给账目（库存数量、价格）
+            sb.append("\n    \"").append(e.getKey()).append("\": \"")
+                    .append(StateTiers.needTier(e.getKey(), e.getValue())).append("\"");
             firstNeed = false;
         }
         sb.append("\n  },");
@@ -520,12 +523,18 @@ public final class PromptBuilder {
         String period = mcPeriod(timeOfDay);
         boolean isDaylight = mcIsDay(timeOfDay);
         boolean isRaining = world.hasStorm();
+        // 脚下天气（维度→群系→世界开关的统一判定，见 LocalWeather）：场景里的
+        // raining 从此是“这个村民头顶上真实的天气”，沙漠村民不再被告知在下雨
+        LocalWeather.Kind localKind = LocalWeather.resolve(world.getEnvironment().name(),
+                world.getBiome(vLoc).name(), isRaining, world.isThundering());
         sb.append("\n  \"world\": {");
-        sb.append("\n    \"time_tick\": ").append(timeOfDay).append(",");
+        // 原始刻度（time_tick）已删（v0.3.0）：一天 24000 刻的原始数字模型根本换算不明白，
+        // 只会瞎换算成错时间，是喂给它的干扰源 —— 时间只给人话（time_human + 口语锚点）
         sb.append("\n    \"time_human\": \"").append(mcClock(timeOfDay)).append("\",");
         sb.append("\n    \"period\": \"").append(period).append("\",");
         sb.append("\n    \"is_day\": ").append(isDaylight).append(",");
-        sb.append("\n    \"raining\": ").append(isRaining);
+        sb.append("\n    \"raining\": ").append(LocalWeather.isPrecipitating(localKind)).append(",");
+        sb.append("\n    \"local_weather\": \"").append(LocalWeather.zhNow(localKind)).append("\"");
         sb.append("\n  },");
 
         // === 附近怪物（8 格内，按类型计数） ===
@@ -558,13 +567,14 @@ public final class PromptBuilder {
             if (!neighbors.isEmpty()) neighbors.append(", ");
             neighbors.append("{\"name\":\"").append(v.getCustomName() != null ? v.getCustomName().replaceAll("§.", "") : "Villager");
             neighbors.append("\", \"prof\":\"").append(VillagerProfession.fromMinecraftProfession(v.getProfession()).zhName);
-            neighbors.append("\", \"dist\":").append(String.format("%.1f", vLoc.distance(v.getLocation()))).append("}");
+            neighbors.append("\", \"dist\":\"").append(distWord(vLoc.distance(v.getLocation()))).append("\"}");
         }
         sb.append("\n  \"neighbor_villagers\": [").append(neighbors).append("],");
 
         // === 村民当前在做什么（真实状态优先 → 职业 + 时刻推断） ===
         String currentActivity = inferActivity(villagerState, period,
-                zombies + skeletons + creepers + endermen + spiders, isRaining);
+                zombies + skeletons + creepers + endermen + spiders,
+                LocalWeather.isPrecipitating(localKind));
         sb.append("\n  \"current_activity\": \"").append(currentActivity).append("\",");
 
         // === 玩家状态 ===
@@ -574,16 +584,19 @@ public final class PromptBuilder {
             sb.append("\n  \"player\": {");
             sb.append("\n    \"id\": \"player_").append(nearPlayer.getUniqueId().toString(), 0, 8).append("\",");
             sb.append("\n    \"name\": \"").append(nearPlayer.getName()).append("\",");
-            sb.append("\n    \"distance\": ").append(String.format("%.1f", distance)).append(",");
-            sb.append("\n    \"health\": ").append(String.format("%.0f", nearPlayer.getHealth())).append(",");
+            sb.append("\n    \"distance\": \"").append(distWord(distance)).append("\",");
+            sb.append("\n    \"health\": \"").append(StateTiers.playerHealth(
+                    nearPlayer.getHealth() / Math.max(1.0, nearPlayer.getMaxHealth()) * 100)).append("\",");
+            sb.append("\n    \"hunger\": \"").append(nearPlayer.getFoodLevel() >= 18 ? "看着不饿"
+                    : nearPlayer.getFoodLevel() >= 10 ? "有点饿的样子" : "饿得脸色发青").append("\",");
             sb.append("\n    \"holding\": \"").append(getHoldingItemName(nearPlayer)).append("\",");
             sb.append("\n    \"equipment\": ").append(getEquipmentSummary(nearPlayer)).append(",");
             sb.append("\n    \"valuables\": ").append(getValuablesSummary(nearPlayer)).append(",");
             sb.append("\n    \"interacting\": ").append(villagerState.interactingPlayer() != null
                     && villagerState.interactingPlayer().equals(nearPlayer.getUniqueId())).append(",");
             // 当前这位玩家与我的关系：好感 + 等级（模型据此决定亲疏、要不要给东西）
-            sb.append("\n    \"favor\": ").append(String.format("%.0f",
-                    villagerState.emotion().favor(nearPlayer.getUniqueId()))).append(",");
+            sb.append("\n    \"favor\": \"").append(StateTiers.favor(
+                    villagerState.emotion().favor(nearPlayer.getUniqueId()))).append("\",");
             sb.append("\n    \"relation\": \"").append(com.howard.mcai.security.PermissionManager.rankOfStatic(
                     villagerState, nearPlayer.getUniqueId()).name()).append("\",");
             // 原版村庄声望（Paper API，服务端原生持久化）—— 与自存的 favor 是两个维度：
@@ -786,8 +799,10 @@ public final class PromptBuilder {
         // 群聊同样把真实天气钉死，源头上不给编造留空。
         if (e != null && e.isValid()) {
             org.bukkit.World w = e.getWorld();
-            base += "，现在是" + mcPeriodZh(w.getTime()) + "（" + mcClock(w.getTime()) + "），"
-                    + precipPhrase(w.hasStorm(), isColdBiome(w.getBiome(e.getLocation()).name()));
+            String bName = w.getBiome(e.getLocation()).name();
+            base += "，现在是" + mcPeriodZh(w.getTime()) + "（" + mcSpokenClock(w.getTime()) + "），"
+                    + LocalWeather.zhNow(LocalWeather.resolve(w.getEnvironment().name(), bName,
+                            w.hasStorm(), w.isThundering()));
         }
         // 需求提示（SPEC 2.14）：最迫切需求越过 60 就附一句，让闲聊也有"身体感"
         String urgent = vs.needs().dominantUrgent(60);
@@ -844,6 +859,15 @@ public final class PromptBuilder {
         if (minute == 0) return zhNum(hour) + "点整";
         if (minute < 10) return zhNum(hour) + "点零" + zhNum(minute) + "分";
         return zhNum(hour) + "点" + zhNum(minute) + "分";
+    }
+
+    /** 距离（格）→ 活人话：定性信息给词不给数（与 StateTiers 同一原则） */
+    public static String distWord(double d) {
+        if (d <= 2) return "就在跟前";
+        if (d <= 5) return "几步远";
+        if (d <= 10) return "有点距离";
+        if (d <= 20) return "挺远的";
+        return "很远";
     }
 
     /**
@@ -927,11 +951,15 @@ public final class PromptBuilder {
             }
         }
 
+        LocalWeather.Kind kind = LocalWeather.resolve(world.getEnvironment().name(), biomeName,
+                raining, world.isThundering());
         StringBuilder sb = new StringBuilder();
         sb.append("现在是").append(mcPeriodZh(timeOfDay)).append("（").append(mcClock(timeOfDay)).append("）")
                 .append(night ? "，天已经黑了" : "，天是亮的")
-                // 冷群系说"下雪/没下雪"，暖群系说"下雨/没下雨" —— 天气用词必须与群系一致
-                .append("，").append(precipPhrase(raining, cold))
+                // 天气走“脚下天气”统一判定（LocalWeather）：干旱群系在世界暴雨时也没雨，
+                // 旧版只看世界开关 precipPhrase 会跟沙漠村民说“下雨了”
+                .append("，").append(LocalWeather.zhNow(kind))
+                .append(LocalWeather.isDryBiome(biomeName) ? "（这儿是干旱地带，从来不下雨）" : "")
                 .append(isUnderRoof(e) ? "，你在屋内" : "，你在露天");
         // 雪地群系：地面本身就有积雪（≠ 此刻正在下雪），补一句免得模型拿它当天气
         if (snowy) sb.append("，这里是雪地群系，地上到处都是积雪");
@@ -939,7 +967,10 @@ public final class PromptBuilder {
         if (zombies + others > 0) {
             sb.append("，附近有怪物（僵尸 ").append(zombies).append("，其它 ").append(others).append("）");
         }
-        sb.append("。你现在").append(inferActivity(vs, periodEn, zombies + others, raining)).append("。");
+        // 村历：天气账本里的“昨天/前天”要有锚，村民说“来这儿第几天”也对得上
+        sb.append("。今天是这个世界第 ").append(world.getFullTime() / 24000 + 1).append(" 天");
+        sb.append("。你现在").append(inferActivity(vs, periodEn, zombies + others,
+                LocalWeather.isPrecipitating(kind))).append("。");
         return sb.toString();
     }
 

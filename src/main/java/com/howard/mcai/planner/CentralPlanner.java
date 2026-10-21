@@ -2,6 +2,9 @@ package com.howard.mcai.planner;
 
 import com.howard.mcai.McaiPlugin;
 import com.howard.mcai.ai.BehaviorRegistry;
+import com.howard.mcai.ai.FactAnswers;
+import com.howard.mcai.ai.LocalWeather;
+import com.howard.mcai.ai.StateTiers;
 import com.howard.mcai.ai.LLMClient;
 import com.howard.mcai.ai.LLMResponse;
 import com.howard.mcai.ai.LlmToolAdapter;
@@ -284,6 +287,14 @@ public final class CentralPlanner extends BukkitRunnable {
             if (!hadPendingGift) effectiveMessage = annotateGift(vState, player, message, effectiveMessage);
             // 聊天里向 NPC 讨东西 —— 与 F 键 GUI 索要共用同一份耐心：好感不够也能靠反复磨让他松口
             if (!bargained) effectiveMessage = annotateBeg(vState, player, message, effectiveMessage);
+        }
+        // 事实直答（v0.3.0）：纯事实问题（几点/下没下雨/你饿不饿）由插件直接回答、不走模型。
+        // 事实经模型复述必有概率翻面（15:55→“十四点五十五分”实测），且与模型听不听话
+        // 强相关 —— 换任何模型都得稳，就不能让事实过模型的手。范围由 FactAnswers.detect
+        // 卡死（短句 + 明确问法），闲聊与叙事一律不接管。排在 LLM 忙排队之前：
+        // 就算模型正忙，问时间也立刻有答复。
+        if (!systemNote && tryFactAnswer(vState, player, message)) {
+            return;
         }
         if (vState.llmBusy()) {
             vState.enqueuePendingMessage(effectiveMessage);
@@ -928,6 +939,12 @@ public final class CentralPlanner extends BukkitRunnable {
                             retryForSpokenLine(vState, player, messages, response.firstToolCall());
                             return;
                         }
+                        // 推理模型适配（v0.3.0）：无工具、正文空白（思考把额度耗光的典型症状）
+                        // → 换简洁上下文再问一次，见 retryWithCompactContext
+                        if (!response.hasToolCall() && contentBlank) {
+                            retryWithCompactContext(vState, player, messages);
+                            return;
+                        }
                         // 主线程执行 executeDecision（追加 assistant + 行为），release/续调也在主线程、排在其后
                         Bukkit.getScheduler().runTask(plugin, () -> {
                             try {
@@ -1015,6 +1032,87 @@ public final class CentralPlanner extends BukkitRunnable {
         if (hist.isEmpty() || !"assistant".equals(hist.getLast().role())) {
             vState.addChatEntry("assistant", "...");
         }
+    }
+
+    /**
+     * 事实直答的实际拼句与投递（插件直答，不调模型）。成功接管返回 true。
+     * <p>
+     * 历史照常落账（user + assistant 一对），投递走与模型台词同一个 speak 出口，
+     * 玩家感知上就是村民正常回了一句。追问按配置概率由插件缀（不经模型，
+     * 杜绝插件说晴天、追问却暗示下雨的自相矛盾）。
+     */
+    private boolean tryFactAnswer(VillagerState vState, Player player, String message) {
+        java.util.EnumSet<FactAnswers.Kind> kinds = FactAnswers.detect(message);
+        if (kinds.isEmpty()) return false;
+        org.bukkit.entity.Villager e = vState.entity();
+        if (e == null || !e.isValid()) return false;
+        org.bukkit.World w = e.getWorld();
+        String biome = w.getBiome(e.getLocation()).name();
+        LocalWeather.Kind kind = LocalWeather.resolve(w.getEnvironment().name(), biome,
+                w.hasStorm(), w.isThundering());
+        var snap = vState.needs().snapshot();
+        FactAnswers.Facts facts = new FactAnswers.Facts(
+                w.getTime(), kind,
+                LocalWeather.isDryBiome(biome), LocalWeather.isSnowyBiome(biome),
+                w.getWeatherDuration(),
+                StateTiers.hunger(snap.getOrDefault("hunger", 0.0)),
+                StateTiers.energy(snap.getOrDefault("energy", 0.0)),
+                StateTiers.boredom(snap.getOrDefault("boredom", 0.0)),
+                StateTiers.health(e.getHealth() / Math.max(1.0, e.getMaxHealth()) * 100),
+                McaiPlugin.factApproxStepMinutes());
+        String answer = FactAnswers.compose(kinds, facts);
+        if (java.util.concurrent.ThreadLocalRandom.current().nextInt(100) < McaiPlugin.factFollowupChancePct()) {
+            int seed = vState.getUniqueId().hashCode() + (int) (w.getFullTime() / 24000);
+            answer += FactAnswers.followUp(kinds, facts, seed);
+        }
+        vState.addChatEntry("user", message);
+        speak(vState, player, answer);
+        vState.addChatEntry("assistant", answer);
+        plugin.getMemoryStore().markDirty(vState.getUniqueId());
+        return true;
+    }
+
+    /**
+     * 推理模型适配（v0.3.0）：无工具、正文空白 —— 典型是云端推理模型把输出额度
+     * 耗在思考上、正文为空。换一份简洁上下文（人设 + 速览 + 最近两轮 + 一句
+     * “直接说一句话”）无工具再问一次；再失败就透传原空响应走正常收尾，
+     * 不让村民对着空气沉默。
+     */
+    private void retryWithCompactContext(VillagerState vState, Player player,
+                                         List<Map<String, String>> baseMessages) {
+        List<Map<String, String>> compact = new ArrayList<>();
+        if (!baseMessages.isEmpty()) compact.add(baseMessages.get(0)); // 人设系统词
+        StringBuilder u = new StringBuilder();
+        u.append(PromptBuilder.envBrief(vState)).append("\n");
+        var hist = vState.chatHistory();
+        int from = Math.max(0, hist.size() - 4);
+        for (int i = from; i < hist.size(); i++) {
+            u.append(hist.get(i).role().equals("user") ? "玩家说：" : "你说：")
+                    .append(hist.get(i).content()).append("\n");
+        }
+        u.append("（简洁模式：用一到两句中文直接回应玩家最后一句话，别调用工具、别写分析。）");
+        compact.add(Map.of("role", "user", "content", u.toString()));
+        plugin.getLlmClient().chat(compact, List.of())
+                .thenAccept(retryResp -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    try {
+                        handleResponse(vState, retryResp, player);
+                    } finally {
+                        vState.releaseLLM();
+                        resumeBacklog(vState, player);
+                    }
+                }))
+                .exceptionally(ex -> {
+                    plugin.getLogger().warning("简洁重试失败 — " + ex.getMessage());
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        try {
+                            handleResponse(vState, new LLMResponse(null, List.of()), player);
+                        } finally {
+                            vState.releaseLLM();
+                            resumeBacklog(vState, player);
+                        }
+                    });
+                    return null;
+                });
     }
 
     /**
