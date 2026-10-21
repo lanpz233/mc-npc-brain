@@ -280,6 +280,7 @@ public final class ConfigPanelServer {
             if (field.min() != null) f.addProperty("min", field.min());
             if (field.max() != null) f.addProperty("max", field.max());
             f.addProperty("live", field.live());
+            f.add("defaultValue", gson.toJsonTree(field.defaultValue()));
             fields.add(f);
         }
         out.add("fields", fields);
@@ -294,7 +295,37 @@ public final class ConfigPanelServer {
             files.add(f);
         }
         out.add("files", files);
+        out.add("info", panelInfo());
         return out;
+    }
+
+    /** 面板总览用的数据计数（读坏了就记 0，不挡面板打开） */
+    private JsonObject panelInfo() {
+        JsonObject info = new JsonObject();
+        info.addProperty("recipes", countObjectKeys("recipes.json", "recipes"));
+        info.addProperty("tags", countObjectKeys("personality_tags.json", "tags"));
+        info.addProperty("surnames", countArray("surnames.json", "surnames"));
+        info.addProperty("givenChars",
+                countArray("given_names.json", "female") + countArray("given_names.json", "male"));
+        return info;
+    }
+
+    private int countObjectKeys(String file, String key) {
+        try {
+            JsonObject root = JsonParser.parseString(readDataFile(file)).getAsJsonObject();
+            return root.has(key) && root.get(key).isJsonObject() ? root.getAsJsonObject(key).size() : 0;
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
+
+    private int countArray(String file, String key) {
+        try {
+            JsonObject root = JsonParser.parseString(readDataFile(file)).getAsJsonObject();
+            return root.has(key) && root.get(key).isJsonArray() ? root.getAsJsonArray(key).size() : 0;
+        } catch (RuntimeException e) {
+            return 0;
+        }
     }
 
     private JsonObject saveConfig(HttpExchange exchange) throws Exception {
