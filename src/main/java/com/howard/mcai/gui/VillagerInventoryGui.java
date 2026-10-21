@@ -37,8 +37,8 @@ import java.util.UUID;
  * <ul>
  *   <li>物品**只能通过 {@link #requestItem} 出货**，GUI 本身对所有点击/拖拽事件 cancel，
  *       玩家不能直接把东西拿走（{@link com.howard.mcai.listener.VillagerInventoryListener} 负责拦截）。</li>
- *   <li>出货是<b>概率制</b>：对当前玩家的好感越高，NPC 越可能答应（见 {@code EmotionState.giveChance}），
- *       掷骰没中就婉拒且不动库存。</li>
+ *   <li>出货是<b>确定性裁决</b>：插件按 {@code GiftPolicy} 的好感门槛当场算死给/不给
+ *       （普通物品好感≥10、稀有物品≥60），裁决钉进索要请求，模型只有表态权，不再掷骰子。</li>
  *   <li>出货后同步 markDirty，库存变化立即进入防抖落盘，与对话侧 {@code give_item} 共用同一份库存。</li>
  *   <li>所有方法必须在 Paper 主线程调用（openInventory / 库存扣减 / 掉落物 / 读实体状态）。</li>
  * </ul>
@@ -183,8 +183,9 @@ public final class VillagerInventoryGui implements InventoryHolder {
         List<String> favorLore = new ArrayList<>();
         favorLore.add("§7恐惧值: §f" + emotion.fear() + "§7/100 " + bar(emotion.fear()));
         favorLore.add("§7对你的好感: §f" + fmt(myFavor) + " §7(" + rank.zhName() + ")");
-        favorLore.add("§8索要命中概率 " + fmt(emotion.giveChance(viewerUuid) * 100)
-                + "% §7(好感越高越容易) / 亲信门槛 " + fmt(plugin.getPluginConfig().confidantFavor()));
+        favorLore.add("§8索要门槛：普通物品好感≥" + fmt(com.howard.mcai.security.GiftPolicy.COMMON_FAVOR_MIN)
+                + "、稀有物品好感≥" + fmt(com.howard.mcai.security.GiftPolicy.RARE_FAVOR_MIN)
+                + "（达标必给，不掷骰子）/ 亲信门槛 " + fmt(plugin.getPluginConfig().confidantFavor()));
         favorLore.add("§7—— 对各位玩家的好感 ——");
         favorLore.addAll(topList(favorEntries(), "§8（还没有任何好感记录）"));
         putStatus(47, Material.GOLDEN_APPLE, "§6§l情绪与好感", favorLore);
@@ -473,16 +474,17 @@ public final class VillagerInventoryGui implements InventoryHolder {
         Villager villager = state.entity();
         if (villager == null || !villager.isValid()) return;
 
-        // 好感/态度只作为注入模型的参考，不再在这里拍板交付
+        // 裁决由插件当场算死（GiftPolicy：好感门槛按物品价值分档），不再掷骰子；
+        // 结果钉进索要请求，模型只有表态权，裁决不给时它答应了也交不出货
         double fav = state.emotion().favor(player.getUniqueId());
-        double chance = state.emotion().giveChance(player.getUniqueId());
-        // 回收窗：这件东西本来就是这位玩家刚送出去的（3 分钟内），态度上直接愿意归还
         boolean reclaim = state.consumeReclaim(player.getUniqueId(), mat);
-        boolean willing = reclaim
-                || java.util.concurrent.ThreadLocalRandom.current().nextDouble() < chance;
+        boolean envoy = plugin.getPermissionManager().rankOf(state, player.getUniqueId())
+                == com.howard.mcai.security.NpcRank.ENVOY;
+        boolean willing = com.howard.mcai.security.GiftPolicy.willingToGive(
+                fav, com.howard.mcai.security.PermissionManager.valueOf(mat), envoy, reclaim);
 
-        // 数量仍由代码层钉死：玩家点"1 个"就只给 1 个，模型自由发挥的 count 不算数
-        state.setItemRequest(player.getUniqueId(), mat, want);
+        // 数量+裁决由代码层钉死：玩家点"1 个"就只给 1 个，模型自由发挥的 count 不算数
+        state.setItemRequest(player.getUniqueId(), mat, want, willing);
 
         // 1. 关掉背包，把 NPC 拉进对话状态（冻结原版 AI + 会持续转向玩家）
         player.closeInventory();
