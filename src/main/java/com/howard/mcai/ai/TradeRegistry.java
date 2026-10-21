@@ -43,17 +43,28 @@ public final class TradeRegistry {
      * <p>
      * 交易 GUI 只有 2 个原料槽、单格上限 64，所以最高只能收 128 绿宝——
      * 超过 64 拆成 64+余数两槽，超过 128 截断到 128（否则这笔交易物理上无法成交）。
-     * 只替换 EMERALD 原料，不影响加工类配方的第二原料（如燧石）。
+     * 只替换 EMERALD 原料，不影响加工类配方的第二原料（如燧石）；
+     * 有第二原料时它已占 1 格，价格只能占剩下的 1 格（封顶 64）。
+     * <p>
+     * <b>实现必须整表重排再 setIngredients 回填</b>：Paper 的 getIngredients() 返回的是
+     * 原料清单的<b>副本</b>（字节码实测 new ArrayList 拷贝），在返回值上 removeIf
+     * 删不掉真配方里的原料。2026-10-21 事故：旧写法先在 createOffer 里塞 1 个占位
+     * 绿宝石、指望这里删掉，结果占位残留——价格 ≤64 时配方白多一格 1 块的绿宝石，
+     * 价格 &gt;64（如钻石胸甲 96）拆两格后原料总数冲到 3，
+     * addIngredient 直接抛 "MerchantRecipe can only have maximum 2 ingredients"，
+     * TradeRegistry 静态初始化当场失败、插件启用即崩、整个插件加载不起来。
      */
     public static void setEmeraldPrice(MerchantRecipe recipe, int price) {
-        recipe.getIngredients().removeIf(s -> s.getType() == Material.EMERALD);
-        int p = Math.max(1, Math.min(price, 128));
-        if (p > 64) {
-            recipe.addIngredient(new ItemStack(Material.EMERALD, 64));
-            recipe.addIngredient(new ItemStack(Material.EMERALD, p - 64));
-        } else {
-            recipe.addIngredient(new ItemStack(Material.EMERALD, p));
+        java.util.List<ItemStack> kept = new java.util.ArrayList<>();
+        for (ItemStack s : recipe.getIngredients()) {
+            if (s != null && s.getType() != Material.EMERALD) kept.add(s.clone());
         }
+        java.util.List<ItemStack> next = new java.util.ArrayList<>();
+        for (int amount : PriceBook.emeraldStacks(price, !kept.isEmpty())) {
+            next.add(new ItemStack(Material.EMERALD, amount));
+        }
+        next.addAll(kept);
+        recipe.setIngredients(next);
     }
 
     /**

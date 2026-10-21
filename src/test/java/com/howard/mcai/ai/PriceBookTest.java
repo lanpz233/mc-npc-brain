@@ -77,6 +77,46 @@ class PriceBookTest {
     }
 
     @Test
+    void emeraldStacksUnder64Single() {
+        assertEquals(java.util.List.of(4), PriceBook.emeraldStacks(4, false));
+        assertEquals(java.util.List.of(64), PriceBook.emeraldStacks(64, false));
+        assertEquals(java.util.List.of(1), PriceBook.emeraldStacks(0, false), "非法价格抬回 1");
+    }
+
+    @Test
+    void emeraldStacksOver64Split() {
+        // 钻石胸甲卖 96 块 —— 2026-10-21 引爆插件加载崩溃的配方形态
+        assertEquals(java.util.List.of(64, 32), PriceBook.emeraldStacks(96, false));
+        assertEquals(java.util.List.of(64, 64), PriceBook.emeraldStacks(999, false), "超过 128 截断");
+    }
+
+    @Test
+    void emeraldStacksWithSecondIngredientCapped() {
+        assertEquals(java.util.List.of(64), PriceBook.emeraldStacks(96, true),
+                "有第二原料时价格封顶 64、只占一格，总格数才不超 2");
+        assertEquals(java.util.List.of(30), PriceBook.emeraldStacks(30, true));
+    }
+
+    @Test
+    void emeraldStacksInvariantAcrossAllPools() {
+        // 全池真实价格 × 有/无第二原料：总格数永不超 2，金额与成交价一致，每格 1..64
+        for (com.howard.mcai.mob.VillagerProfession p
+                : com.howard.mcai.mob.VillagerProfession.values()) {
+            for (ProfessionPools.PoolItem e : ProfessionPools.sellPool(p)) {
+                int price = PriceBook.sellPrice(e.item(), e.count());
+                for (boolean second : new boolean[]{false, true}) {
+                    var stacks = PriceBook.emeraldStacks(price, second);
+                    assertTrue(stacks.size() + (second ? 1 : 0) <= 2,
+                            p + " 的 " + e.item() + " 原料总格数会超 2（事故不变量）");
+                    int expected = second ? Math.min(price, 64) : Math.min(price, 128);
+                    assertEquals(expected, stacks.stream().mapToInt(Integer::intValue).sum());
+                    assertTrue(stacks.stream().allMatch(a -> a >= 1 && a <= 64));
+                }
+            }
+        }
+    }
+
+    @Test
     void noArbitrageAcrossAllPools() {
         for (VillagerProfession p : VillagerProfession.values()) {
             for (var e : ProfessionPools.sellPool(p)) assertNoArbitrage(e);
