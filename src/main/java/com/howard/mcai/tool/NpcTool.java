@@ -39,6 +39,17 @@ public interface NpcTool {
         return name().replace('.', '_');
     }
 
+    /**
+     * 额外的可识别名（别名）——注册表会一并索引，{@code find} 用任一名都能命中。
+     * <p>
+     * 用途：老工具集（BehaviorRegistry）的动作名（如 {@code give_item}）与统一柜的
+     * 规范名（如 {@code npc.give_item}）不一致时，迁移期用别名桥接：对话模型继续用
+     * 旧名调用，执行已经走统一分发。别名只做查找，不导出 schema、不改变模型菜单。
+     */
+    default Set<String> aliases() {
+        return Set.of();
+    }
+
     String description();
 
     Category category();

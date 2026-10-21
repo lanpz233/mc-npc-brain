@@ -234,6 +234,14 @@ public final class MemoryStore {
             }
             state.restoreLastConversationEnds(ends);
         }
+        // 稀有赠送日账 —— 旧档无此字段 → 空表
+        if (data.has("rareGiftDays") && data.get("rareGiftDays").isJsonObject()) {
+            Map<String, String> days = new HashMap<>();
+            for (var e : data.getAsJsonObject("rareGiftDays").entrySet()) {
+                days.put(e.getKey(), e.getValue().getAsString());
+            }
+            state.restoreRareGiftDays(days);
+        }
     }
 
     /** 序列化 VillagerState → JSON。state 是真源，每次写入都实时构建，杜绝脏缓存 */
@@ -331,6 +339,10 @@ public final class MemoryStore {
         JsonObject lastEnds = new JsonObject();
         state.lastConversationEndsSnapshot().forEach(lastEnds::addProperty);
         root.add("lastConversationEnds", lastEnds);
+        // 每位玩家上次拿到稀有赠送的日期（送礼日账防刷，UUID字符串→yyyy-MM-dd）
+        JsonObject rareDays = new JsonObject();
+        state.rareGiftDaysSnapshot().forEach(rareDays::addProperty);
+        root.add("rareGiftDays", rareDays);
 
         return root;
     }

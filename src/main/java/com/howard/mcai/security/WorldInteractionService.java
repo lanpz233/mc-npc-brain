@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 工具清单（注意：已无 take_item —— 从玩家身上拿东西只走"玩家亲口确认"的两步流程，
  * 不给模型直接扣货的口子，详见 {@link #takeFromPlayer}）：
  * <pre>
- * give_item(item,count)  库存给玩家东西（神使库存不足时凭空刷，审计）
+ * （give_item 已于 2026-10-21 迁入统一柜：tool/tools/NpcGiveItemTool，裁决走 GiftPolicy）
  * break_block(x,y,z)     破坏方块（breakNaturally 正常掉落）
  * place_block(x,y,z,mat) 放置方块（扣 NPC 库存；神使免库存）
  * teleport_to(target)    传送到目标 / 把目标拉过来（他人=神使；玩家需聊天回"好"确认）
@@ -108,7 +108,6 @@ public final class WorldInteractionService {
         NpcRank rank = permissions.rankOf(vState, nearPlayer != null ? nearPlayer.getUniqueId() : null);
 
         return switch (tool.name()) {
-            case "give_item" -> giveItem(vState, npcName, rank, tool, nearPlayer);
             case "break_block" -> breakBlock(vState, npcName, rank, tool);
             case "place_block" -> placeBlock(vState, npcName, rank, tool);
             case "teleport_to" -> teleportTo(vState, npcName, rank, tool, nearPlayer);
@@ -129,7 +128,7 @@ public final class WorldInteractionService {
      * 现在"给不给"完全由决策层拍板并当场出货，再把"已经给过了"作为事实注入回话要求，
      * 与砍价同一套思路（代码层拍板 + 注入硬性成交事实）。
      * <p>
-     * 出货后 8 秒内标记防重：模型同款 {@code give_item} 会被 {@code giveItem} 静默跳过。
+     * 出货后 8 秒内标记防重：模型同款 {@code give_item}（统一柜 NpcGiveItemTool）会静默跳过。
      *
      * @return null = 已交付（或本就无可交付）；非 null = 给玩家看的失败原因（库存已空）
      */
@@ -275,62 +274,6 @@ public final class WorldInteractionService {
                 + swap.offerMat().name() + " x" + swap.offerCount() + " ↔ " + npcName + " 的 "
                 + swap.npcMat().name() + " x" + swap.npcCount());
         return new SwapResult(true, null);
-    }
-
-    // ===== give_item：库存给玩家东西（送礼看库存 —— 平民/亲信只出库存；神使可刷） =====
-
-    private String giveItem(VillagerState vs, String npcName, NpcRank rank, ToolCall tool, Player player) {
-        if (player == null) return "§e附近没有玩家可给";
-        Material mat = resolveItem(safeStr(tool, "item"));
-        if (mat == null || mat.isAir()) return "§e不知道这是什么东西";
-        // 索要物品已由代码层（annotateBeg / GUI requestItem）当场交付过了 ——
-        // 模型这一轮要是再调一次同款 give_item，直接静默跳过，否则同一件东西会被送出两份
-        if (vs.wasAutoGivenRecently(mat)) return null;
-        int count = Math.max(1, Math.min(64, (int) argNum(tool, "count", 1)));
-        // GUI 索要时玩家在界面上选好的数量优先 —— 点"1 个"就只给 1 个，
-        // 模型自由发挥的 count 参数不算数（否则要 1 个却塞来一整叠）
-        int pinned = vs.consumeItemRequest(player.getUniqueId(), mat);
-        if (pinned > 0) count = Math.min(64, pinned);
-        boolean envoy = rank == NpcRank.ENVOY;
-        int stock = vs.stockOf(mat);
-
-        // 概率制（按玩家独立）—— 好感越高越可能给，不再卡"到没到门槛"（见 EmotionState.giveChance）。
-        // 神使（自己人/被授予权限的 NPC）不受此限；给出的是 NPC 自己的库存，不刷物品。
-        // 有 pending item request（GUI 左键/聊天讨要）时跳过这里的掷骰：
-        // 那次索要已经在发起时算过一次"态度"，模型接受（调用 give_item）即视为最终同意，
-        // 否则会出现"模型答应了、这里又掷骰没中"的自相矛盾。
-        if (!envoy && pinned <= 0) {
-            double fav = vs.emotion().favor(player.getUniqueId());
-            double chance = vs.emotion().giveChance(player.getUniqueId());
-            if (java.util.concurrent.ThreadLocalRandom.current().nextDouble() >= chance) {
-                plugin.getLogger().info("§c[MC-AI] give_item 婉拒: " + npcName + " 对 " + player.getName()
-                        + " 好感 " + String.format("%.0f", fav)
-                        + "，命中概率 " + String.format("%.0f", chance * 100) + "% → 掷骰未中");
-                return "§e" + npcName + "跟你还没那么熟，不好白给你东西";
-            }
-        }
-
-        if (stock < count) {
-            if (!envoy) {
-                plugin.getLogger().info("§c[MC-AI] give_item 拒绝: " + npcName + " 库存 " + mat.name()
-                        + " 只剩 " + stock + "，给不了 " + count + "（送礼看库存）");
-                return "§e" + npcName + "的库存里没有那么多 " + com.howard.mcai.ai.PromptBuilder.materialToZh(mat);
-            }
-            // 神使刷物品补差额 —— 必须审计（"刷物品"是神使专属且滥用高发）
-            auditLog.log(npcName, vs.getUniqueId(), "give_item",
-                    "item=" + mat.name() + ",spawned=" + (count - stock) + ",target=" + player.getName(), "OK");
-        } else {
-            vs.removeFromInventory(mat, count);
-        }
-
-        var leftover = player.getInventory().addItem(new ItemStack(mat, count));
-        if (!leftover.isEmpty()) {
-            player.getWorld().dropItemNaturally(player.getLocation(), leftover.values().iterator().next());
-        }
-        plugin.getMemoryStore().markDirty(vs.getUniqueId());
-        plugin.getLogger().info("§b[MC-AI] give_item: " + npcName + " → " + player.getName()
-                + " " + mat.name() + " x" + count + (envoy && stock < count ? "（神使刷出差额）" : "（出库存）"));
-        return null;
     }
 
     // ===== 从玩家身上收东西（只有"玩家亲口确认"一条路，模型不许直接扣货） =====
@@ -595,8 +538,8 @@ public final class WorldInteractionService {
 
     // ===== 解析辅助 =====
 
-    /** 中文名/英文名/ID → Material（复用 TradeRegistry 的中文映射 + 原生 matchMaterial 兜底） */
-    private static Material resolveItem(String name) {
+    /** 中文名/英文名/ID → Material（复用 TradeRegistry 的中文映射 + 原生 matchMaterial 兜底）。统一柜工具（如 NpcGiveItemTool）共用同一份解析，避免各写一份对不上 */
+    public static Material resolveItem(String name) {
         if (name == null || name.isBlank()) return null;
         String clean = name.trim().replace("附魔", "");
         Material m = TradeRegistry.zhToMaterial(clean);

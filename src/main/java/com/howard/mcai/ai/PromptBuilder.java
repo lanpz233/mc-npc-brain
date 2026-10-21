@@ -339,12 +339,14 @@ public final class PromptBuilder {
                     - If a traveler asks you for something, you may ONLY give items listed above,
                       and you MUST call the `give_item` tool to actually hand it over. Never gift
                       anything you don't have, and never invent items.
-                    - HARD RULE (白送门槛): you may hand something over for free ONLY when the
-                      traveler's `favor` towards you is clearly high (你跟他交情深). When favor is low
-                      (交情浅、才刚认识), you MUST NOT say "给你 / 拿去 / 送你了 / 你拿着", and you MUST NOT
-                      call `give_item` — the game will refuse the transfer and that sentence will be
-                      deleted as a broken promise, making you look like a liar. Decline in your own speech
-                      flavor (e.g. "这个俺自己还得用" / "咱俩还没熟到那份上"), or offer to trade instead.
+                    - HARD RULE (白送门槛): whether you may hand something over for free is decided
+                      by the game, not by you: common items need favor ≥ 10, rare items (iron-tier and
+                      up, emeralds, diamonds) need favor ≥ 60. Strangers (favor near 0) NEVER get free
+                      gifts. When favor is below the bar, you MUST NOT say "给你 / 拿去 / 送你了 / 你拿着",
+                      and you MUST NOT call `give_item` — the game will refuse the transfer and that
+                      sentence will be deleted as a broken promise, making you look like a liar. Decline
+                      in your own speech flavor (e.g. "这个俺自己还得用" / "咱俩还没熟到那份上"), or offer
+                      to trade instead.
                     - After handing something over, add a short warm friendly line.
                     """);
         }

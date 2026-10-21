@@ -152,6 +152,15 @@ public final class PermissionManager {
         return itemValue(m) >= 100;
     }
 
+    /**
+     * 物品价值（全插件共用同一把尺子：送礼门槛、交换估值、定价都从这里取）。
+     * 2026-10-21 之前 itemValue 是死代码——价值表写好了却没有任何裁决调用它，
+     * 「贵不贵」全靠提示词让模型自觉。现在 GiftPolicy 等确定性裁决统一走这里。
+     */
+    public static int valueOf(Material m) {
+        return m == null ? 0 : itemValue(m);
+    }
+
     private static int itemValue(Material m) {
         return switch (m) {
             case DIAMOND, DIAMOND_BLOCK, DIAMOND_SWORD, DIAMOND_PICKAXE, DIAMOND_AXE,
