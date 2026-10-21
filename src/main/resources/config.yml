@@ -93,6 +93,10 @@ permissions:
 debug:
   enabled: false                # true = 把 MC-AI 蓝色调试行发到玩家聊天框（默认只进控制台日志，不刷屏）
 
+# 商店界面（路线二）
+shop:
+  resource-pack-skin: false     # true = 商店窗口挂资源包背景图（木柜台）。需玩家装了配套资源包 MCAI-Shop（见仓库 resourcepack/），没装包标题会是方框字，先别开
+
 villagers:
   blacksmith:
     name: '老王'

@@ -102,7 +102,14 @@ public record PluginConfig(
         String blacksmithWorld,
         double blacksmithX,
         double blacksmithY,
-        double blacksmithZ
+        double blacksmithZ,
+
+        // 商店界面（路线二）
+        /**
+         * 商店标题是否挂资源包背景图。默认 false：没装配套资源包（MCAI-Shop）的客户端
+         * 标题会显示方框字，所以装好包再开；开了之后商店窗口是一张木柜台图而不是灰箱子。
+         */
+        boolean shopSkinEnabled
 ) {
 
     /**
@@ -165,7 +172,9 @@ public record PluginConfig(
                 cfg.getString("villagers.blacksmith.spawn-world", "world"),
                 cfg.getDouble("villagers.blacksmith.spawn-x", 100),
                 cfg.getDouble("villagers.blacksmith.spawn-y", 64),
-                cfg.getDouble("villagers.blacksmith.spawn-z", 100)
+                cfg.getDouble("villagers.blacksmith.spawn-z", 100),
+                // Shop
+                cfg.getBoolean("shop.resource-pack-skin", false)
         );
     }
 
