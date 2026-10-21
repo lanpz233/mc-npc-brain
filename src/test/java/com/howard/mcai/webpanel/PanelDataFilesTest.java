@@ -48,6 +48,48 @@ class PanelDataFilesTest {
     }
 
     @Test
+    void pricesValidation() {
+        String ok = PanelDataFiles.validateAndFormat("prices.json",
+                "{\"anchors\":{\"minecraft:iron_ingot\":0.25}}");
+        assertTrue(ok.contains("iron_ingot"));
+        assertThrows(IllegalArgumentException.class, () ->
+                PanelDataFiles.validateAndFormat("prices.json",
+                        "{\"anchors\":{\"minecraft:iron_ingot\":-1}}"));
+        assertThrows(IllegalArgumentException.class, () ->
+                PanelDataFiles.validateAndFormat("prices.json", "{\"anchors\":{}}"));
+    }
+
+    @Test
+    void poolsValidation() {
+        String ok = PanelDataFiles.validateAndFormat("profession-pools.json",
+                "{\"professions\":{\"FARMER\":{\"sell\":[[\"minecraft:bread\",6]]}},\"guest\":[]}");
+        assertTrue(ok.contains("FARMER"));
+        assertThrows(IllegalArgumentException.class, () ->
+                PanelDataFiles.validateAndFormat("profession-pools.json",
+                        "{\"professions\":{\"WIZARD\":{\"sell\":[]}}}"));
+        assertThrows(IllegalArgumentException.class, () ->
+                PanelDataFiles.validateAndFormat("profession-pools.json",
+                        "{\"professions\":{\"FARMER\":{\"sell\":[[\"minecraft:bread\",0]]}}}"));
+    }
+
+    @Test
+    void promptsValidation() {
+        String full = "{\"sections\":{"
+                + "\"identity\":\"You are {name}, a {profession} villager. {personality} {speech}\","
+                + "\"world_facts\":\"w\",\"behavior_rules\":\"b\",\"shop_rules\":\"s\",\"knowledge\":\"k\","
+                + "\"state_rules\":\"st\",\"needs_rules\":\"n\",\"perm_envoy\":\"e\",\"perm_confidant\":\"c\","
+                + "\"perm_civilian\":\"v\",\"backpack_rules\":\"bp\"}}";
+        assertTrue(PanelDataFiles.validateAndFormat("prompts.json", full).contains("identity"));
+        // 删掉填空位必须被拦
+        String noPlaceholder = full.replace("{name}", "老王");
+        assertThrows(IllegalArgumentException.class, () ->
+                PanelDataFiles.validateAndFormat("prompts.json", noPlaceholder));
+        // 缺段必须被拦
+        assertThrows(IllegalArgumentException.class, () ->
+                PanelDataFiles.validateAndFormat("prompts.json", "{\"sections\":{\"identity\":\"x\"}}"));
+    }
+
+    @Test
     void unknownFileIsRejected() {
         assertThrows(IllegalArgumentException.class, () ->
                 PanelDataFiles.validateAndFormat("../../server.properties", "{}"));

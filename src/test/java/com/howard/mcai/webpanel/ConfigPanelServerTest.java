@@ -101,7 +101,7 @@ class ConfigPanelServerTest {
         assertEquals(30000, json.getAsJsonObject("values").get("llm.read-timeout-ms").getAsInt());
         assertEquals(80.0, json.getAsJsonObject("values").get("needs.threshold").getAsDouble());
         assertTrue(json.getAsJsonArray("fields").size() >= 40);
-        assertEquals(4, json.getAsJsonArray("files").size());
+        assertEquals(7, json.getAsJsonArray("files").size());
     }
 
     @Test

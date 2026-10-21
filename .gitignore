@@ -20,3 +20,6 @@ libraries/
 # OS
 .DS_Store
 Thumbs.db
+
+# 网页面板物品图标（原版贴图，二进制不进 git；由 scripts/extract_item_icons.py 生成、随 jar 交付）
+src/main/resources/webpanel/icons/

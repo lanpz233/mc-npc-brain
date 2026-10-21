@@ -83,13 +83,6 @@ public record PluginConfig(
          */
         boolean debugEnabled,
 
-        // 铁匠老王出生点
-        String blacksmithName,
-        String blacksmithWorld,
-        double blacksmithX,
-        double blacksmithY,
-        double blacksmithZ,
-
         // 商店界面（路线二）
         /**
          * 商店标题是否挂资源包背景图。默认 false：没装配套资源包（MCAI-Shop）的客户端
@@ -160,11 +153,6 @@ public record PluginConfig(
                 // Debug
                 cfg.getBoolean("debug.enabled", false),
                 // Villager
-                cfg.getString("villagers.blacksmith.name", "老王"),
-                cfg.getString("villagers.blacksmith.spawn-world", "world"),
-                cfg.getDouble("villagers.blacksmith.spawn-x", 100),
-                cfg.getDouble("villagers.blacksmith.spawn-y", 64),
-                cfg.getDouble("villagers.blacksmith.spawn-z", 100),
                 // Shop
                 cfg.getBoolean("shop.resource-pack-skin", false),
                 cfg.getInt("shop.resource-pack-port", 8765),

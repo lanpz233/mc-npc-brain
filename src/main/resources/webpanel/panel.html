@@ -49,6 +49,17 @@
   #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   #toast.err { background:var(--bad); }
   @media (max-width: 720px) { .field { grid-template-columns: 1fr; } }
+  .picker { position: relative; }
+  .picker input[type="text"] { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; box-sizing: border-box; }
+  .picker-list { position: absolute; left: 0; right: 0; top: 100%; z-index: 60; background: #fff; border: 1px solid var(--line); border-radius: 8px; max-height: 250px; overflow-y: auto; box-shadow: 0 8px 24px rgba(60,40,10,.18); }
+  .picker-item { display: flex; align-items: center; gap: 8px; padding: 5px 9px; cursor: pointer; font-size: 14px; }
+  .picker-item:hover { background: #f3ead9; }
+  .picker-item img { width: 22px; height: 22px; image-rendering: pixelated; }
+  .picker-tile { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; background: #e8dcc3; border-radius: 4px; font-size: 13px; color: #6b5636; flex: none; }
+  .picker-item .pid { margin-left: auto; color: var(--muted); font-size: 11px; }
+  .matrow { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
+  .matrow .picker { flex: 1; }
+  .matrow input[type="number"] { width: 76px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -63,6 +74,9 @@
   <button data-tab="recipes">🧪 配方表</button>
   <button data-tab="tags">🎭 性格标签</button>
   <button data-tab="names">📛 名字库</button>
+  <button data-tab="prompts">💬 提示词</button>
+  <button data-tab="prices">🪙 定价表</button>
+  <button data-tab="pools">🧺 职业货池</button>
   <button data-tab="raw">📄 原始数据</button>
   <button data-tab="backups">🗂️ 备份恢复</button>
 </nav>
@@ -114,6 +128,33 @@
         <div><b>男名用字</b><textarea id="maleChars" rows="12" style="margin-top:6px;"></textarea></div>
       </div>
       <div class="toolbar"><span class="spacer"></span><button data-export-data="given_names.json">⬇ 导出</button><button data-import-data="given_names.json">⬆ 导入</button><button class="primary" data-save-data="given_names.json">保存名字用字</button></div>
+    </div>
+  </section>
+
+  <section id="tab-prompts" hidden>
+    <div class="card">
+      <h2>提示词（村民开口前，插件拼给模型看的约束词）</h2>
+      <p class="note">下面每一段都是村民的“规矩”：他是谁、世界什么样、怎么说话、卖东西的边界。你可以改措辞、加你的要求（比如“说话带点山东味”“多提村里的事”）。<strong>动态内容不在这里</strong>——村民的名字、记忆、所在场景、背包清单仍由插件每次现拼。第一段里的 {name} 这类<strong>填空位不能删</strong>，删了插件不让保存。改提示词只影响他怎么说，送不送东西、卖多少钱仍由插件规则裁决。</p>
+      <div class="toolbar"><span class="spacer"></span><button data-export-data="prompts.json">⬇ 导出</button><button data-import-data="prompts.json">⬆ 导入</button><button class="primary" data-save-data="prompts.json">保存提示词</button></div>
+      <div id="promptRows"></div>
+    </div>
+  </section>
+
+  <section id="tab-prices" hidden>
+    <div class="card">
+      <h2>定价表（基础物品公道价）</h2>
+      <p class="note">这里是<strong>基础价</strong>：每种不能合成的东西值多少绿宝石（一个）。能合成的东西（铁块、铁砧…）不用填，插件会按配方自动算。商店卖价 = 公道价 ×1.2，收购价 = 公道价 ×0.8 且永不高于卖价，改不出套利。加新物品就多加一行，它的合成品价格也会跟着对。</p>
+      <div class="toolbar"><button id="addPriceBtn">＋ 新增一条</button><input type="search" id="priceFilter" placeholder="搜索物品" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;"><span class="spacer"></span><button data-export-data="prices.json">⬇ 导出</button><button data-import-data="prices.json">⬆ 导入</button><button class="primary" data-save-data="prices.json">保存定价表</button></div>
+      <div id="priceRows"></div>
+    </div>
+  </section>
+
+  <section id="tab-pools" hidden>
+    <div class="card">
+      <h2>职业货池（每个职业卖什么、收什么）</h2>
+      <p class="note">点开一个职业就能改他的卖出清单和收购清单（个数 = 每摊摆多少）。村民开摊时从清单里抽 6~8 样卖、2~3 样收，所以清单可以放心写长。某个职业<strong>全部清空 = 恢复插件默认清单</strong>。价格不在这里定，按定价表算。</p>
+      <div class="toolbar"><span class="spacer"></span><button data-export-data="profession-pools.json">⬇ 导出</button><button data-import-data="profession-pools.json">⬆ 导入</button><button class="primary" data-save-data="profession-pools.json">保存职业货池</button></div>
+      <div id="poolRows"></div>
     </div>
   </section>
 
@@ -358,6 +399,9 @@ function importDataDoc(name) {
     if (name === "recipes.json") renderRecipes();
     if (name === "personality_tags.json") renderTags();
     if (name === "surnames.json" || name === "given_names.json") renderNames();
+    if (name === "prices.json") renderPrices();
+    if (name === "profession-pools.json") renderPools();
+    if (name === "prompts.json") renderPrompts();
     if ($("#rawSelect").value === name) $("#rawText").value = rawContents[name];
     toast("已导入 " + name + "，检查没问题后点该页的保存按钮才会写进插件");
   });
@@ -394,57 +438,125 @@ async function saveConfig() {
   }
 }
 
-// ================= 数据文件：结构化编辑 =================
-function materialsToText(materials) {
-  return Object.entries(materials || {}).map(([k, v]) => k + "=" + v).join("\n");
-}
-function textToMaterials(text, ownerLabel) {
-  const out = {};
-  for (const line of text.split("\n")) {
-    const t = line.trim();
-    if (!t) continue;
-    const eq = t.lastIndexOf("=");
-    if (eq <= 0) throw new Error(ownerLabel + " 的材料写法不对，一行一个：物品ID=数量");
-    const id = t.substring(0, eq).trim();
-    const n = Number(t.substring(eq + 1).trim());
-    if (!id || !(n > 0)) throw new Error(ownerLabel + " 的材料数量必须是正数：" + t);
-    out[id] = n;
+// ================= 物品选物器（中文搜索 + 图标下拉） =================
+let itemCatalog = null;
+const allPickers = [];
+function apiBase() { return API_BASE.startsWith("http") ? API_BASE : window.location.origin; }
+function iconUrl(icon) { return apiBase() + "/api/icon/" + icon + "?token=" + encodeURIComponent(TOKEN); }
+async function loadItems() {
+  if (itemCatalog) return itemCatalog;
+  try {
+    const d = await api("/api/items");
+    itemCatalog = d.items || [];
+  } catch (e) {
+    itemCatalog = [];
   }
-  return out;
+  for (const pk of allPickers) pk._showCurrent();
+  return itemCatalog;
 }
-
-function detailsRow(summaryText) {
-  const d = document.createElement("details");
-  d.style.borderTop = "1px solid var(--line)";
-  d.style.padding = "8px 0";
-  const s = document.createElement("summary");
-  s.style.cursor = "pointer";
-  s.style.fontWeight = "600";
-  s.textContent = summaryText;
-  d.appendChild(s);
-  return d;
+function itemZh(id) {
+  const it = (itemCatalog || []).find(x => x.id === id);
+  return it ? it.zh : null;
 }
-function labeledInput(labelText, input) {
+/** 中文选物器：输入中文或英文片段 → 下拉点选。_get() 返回 minecraft:xxx 形式的 ID */
+function createItemPicker(initialId, onPick) {
   const wrap = document.createElement("div");
-  wrap.style.margin = "8px 0";
-  const lab = document.createElement("div");
-  lab.className = "hint";
-  lab.style.color = "var(--muted)";
-  lab.style.fontSize = "12px";
-  lab.textContent = labelText;
-  wrap.appendChild(lab);
-  wrap.appendChild(input);
+  wrap.className = "picker";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "输入中文名搜索，如：铁锭";
+  input.autocomplete = "off";
+  const list = document.createElement("div");
+  list.className = "picker-list";
+  list.hidden = true;
+  let value = initialId || "";
+  let pristine = true;
+  function showCurrent() {
+    const zh = itemZh(value);
+    input.value = zh || value || "";
+    input.title = value || "";
+  }
+  function openList(query) {
+    if (!itemCatalog) { loadItems().then(() => openList(query)); return; }
+    const q = (query || "").trim().toLowerCase();
+    const hits = itemCatalog.filter(x => !q || x.zh.toLowerCase().includes(q) || x.id.toLowerCase().includes(q)).slice(0, 40);
+    list.innerHTML = "";
+    for (const it of hits) {
+      const row = document.createElement("div");
+      row.className = "picker-item";
+      if (it.icon) {
+        const img = document.createElement("img");
+        img.src = iconUrl(it.icon);
+        img.alt = "";
+        row.appendChild(img);
+      } else {
+        const tile = document.createElement("span");
+        tile.className = "picker-tile";
+        tile.textContent = (it.zh || "?").slice(0, 1);
+        row.appendChild(tile);
+      }
+      const label = document.createElement("span");
+      label.textContent = it.zh;
+      row.appendChild(label);
+      const pid = document.createElement("span");
+      pid.className = "pid";
+      pid.textContent = it.id.replace("minecraft:", "");
+      row.appendChild(pid);
+      row.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        value = it.id;
+        pristine = true;
+        showCurrent();
+        list.hidden = true;
+        if (onPick) onPick(value);
+      });
+      list.appendChild(row);
+    }
+    if (!hits.length) {
+      const none = document.createElement("div");
+      none.className = "picker-item hint";
+      none.textContent = "没找到，换个关键词试试";
+      list.appendChild(none);
+    }
+    list.hidden = false;
+  }
+  input.addEventListener("focus", () => openList(pristine ? "" : input.value));
+  input.addEventListener("input", () => { pristine = false; openList(input.value); });
+  input.addEventListener("blur", () => {
+    setTimeout(() => { list.hidden = true; showCurrent(); }, 160);
+  });
+  wrap.append(input, list);
+  wrap._get = () => value;
+  wrap._set = (id) => { value = id || ""; pristine = true; showCurrent(); };
+  wrap._showCurrent = showCurrent;
+  allPickers.push(wrap);
+  showCurrent();
   return wrap;
 }
-function textInput(value) {
-  const i = document.createElement("input");
-  i.type = "text";
-  i.value = value == null ? "" : value;
-  i.style.width = "100%";
-  i.style.padding = "6px 8px";
-  i.style.border = "1px solid var(--line)";
-  i.style.borderRadius = "6px";
-  return i;
+
+// ================= 数据文件：结构化编辑 =================
+function materialRow(itemId, count) {
+  const row = document.createElement("div");
+  row.className = "matrow";
+  const picker = createItemPicker(itemId || "", null);
+  const countIn = document.createElement("input");
+  countIn.type = "number";
+  countIn.min = "1";
+  countIn.value = count || 1;
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "danger small";
+  del.textContent = "删";
+  del.addEventListener("click", () => row.remove());
+  row.append(picker, countIn, del);
+  row._collect = () => {
+    const id = picker._get();
+    if (!id) return null;
+    const n = Number(countIn.value);
+    if (!(n > 0)) throw new Error("有材料的个数没填对（要大于 0）");
+    return [id, Math.floor(n)];
+  };
+  return row;
 }
 
 function renderRecipes() {
@@ -452,27 +564,41 @@ function renderRecipes() {
   const wrap = $("#recipeRows");
   wrap.innerHTML = "";
   for (const [id, recipe] of Object.entries(doc.recipes || {})) {
-    const row = detailsRow(((recipe.name_zh || id) + "（" + id + "）"));
-    const idIn = textInput(id);
+    const row = detailsRow(((recipe.name_zh || itemZh(id) || id) + "（" + id + "）"));
+    const picker = createItemPicker(id, null);
     const nameIn = textInput(recipe.name_zh || "");
     const yieldIn = document.createElement("input");
     yieldIn.type = "number"; yieldIn.min = "1"; yieldIn.value = recipe.yields || 1;
     yieldIn.style.cssText = "width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;";
-    const matTa = document.createElement("textarea");
-    matTa.rows = 4; matTa.value = materialsToText(recipe.materials);
+    const mats = document.createElement("div");
+    for (const [mid, cnt] of Object.entries(recipe.materials || {})) {
+      mats.appendChild(materialRow(mid, cnt));
+    }
+    const addMat = document.createElement("button");
+    addMat.type = "button";
+    addMat.className = "small";
+    addMat.textContent = "＋ 加一种材料";
+    addMat.addEventListener("click", () => mats.appendChild(materialRow("", 1)));
     const del = document.createElement("button");
     del.className = "danger small"; del.textContent = "删除这条配方";
+    del.style.marginTop = "8px";
     del.addEventListener("click", () => { row.remove(); });
-    row.append(labeledInput("物品 ID", idIn), labeledInput("中文名", nameIn),
-      labeledInput("一次产出几个", yieldIn), labeledInput("材料（一行一个：物品ID=数量）", matTa), del);
+    row.append(labeledInput("物品（点框输入中文搜索）", picker), labeledInput("中文名", nameIn),
+      labeledInput("一次产出几个", yieldIn), labeledInput("材料（选物品 + 填个数）", mats), addMat, del);
     row._collect = () => {
-      const newId = idIn.value.trim();
-      if (!newId) throw new Error("有配方的物品 ID 是空的");
+      const newId = picker._get();
+      if (!newId) throw new Error("有配方的物品还没选");
       const r = Object.assign({}, recipe);
-      r.name_zh = nameIn.value.trim();
+      r.name_zh = nameIn.value.trim() || itemZh(newId) || "";
       const y = Number(yieldIn.value);
       if (y > 0) r.yields = y; else delete r.yields;
-      r.materials = textToMaterials(matTa.value, newId);
+      const materials = {};
+      for (const mrow of mats.children) {
+        const got = mrow._collect();
+        if (got) materials[got[0]] = got[1];
+      }
+      if (Object.keys(materials).length === 0) throw new Error("配方 " + newId + " 一种材料都没填");
+      r.materials = materials;
       return [newId, r];
     };
     wrap.appendChild(row);
@@ -482,7 +608,7 @@ function collectRecipes() {
   const out = {};
   for (const row of $$("#recipeRows details")) {
     const [id, r] = row._collect();
-    if (out[id]) throw new Error("配方 ID 重复了：" + id);
+    if (out[id]) throw new Error("配方重复了：" + id);
     out[id] = r;
   }
   docs["recipes.json"].recipes = out;
@@ -596,6 +722,9 @@ async function saveData(name) {
     if (name === "personality_tags.json") collectTags();
     if (name === "surnames.json") collectSurnames();
     if (name === "given_names.json") collectGivenNames();
+    if (name === "prices.json") collectPrices();
+    if (name === "profession-pools.json") collectPools();
+    if (name === "prompts.json") collectPrompts();
     const resp = await api("/api/data", {
       method: "POST",
       body: JSON.stringify({ name, content: JSON.stringify(docs[name], null, 2) })
@@ -605,6 +734,170 @@ async function saveData(name) {
   } catch (e) {
     toast(e.message, true);
   }
+}
+
+// ================= 提示词 =================
+const PROMPT_LABELS = {
+  identity: ["身份与性格", "{name} 村民名、{profession} 职业、{personality} 性格、{speech} 说话风格是插件填空位，不能删"],
+  world_facts: ["世界铁律", "货币、昼夜、怪物这些世界事实，不许村民违背或编造"],
+  behavior_rules: ["行为规矩", "说话语言、长度、每轮必须开口等硬规矩"],
+  shop_rules: ["商店规矩", "什么时候开店、砍价走界面、答应了就要动手"],
+  knowledge: ["见识与好奇心", "懂多少说多少、玩家教他的东西怎么处理"],
+  state_rules: ["状态→台词规矩", "受伤/着火/夜里害怕时怎么自然地表露"],
+  needs_rules: ["需求说明", "饿/困/无聊/好奇/想社交分别意味着什么"],
+  perm_envoy: ["权限话术·神使", "对方是神使时，村民知道自己能做什么"],
+  perm_confidant: ["权限话术·亲信", "对方是亲信时的行动边界"],
+  perm_civilian: ["权限话术·平民", "普通村民的行动边界"],
+  backpack_rules: ["背包与送礼规矩", "只能送背包里有的、白送的门槛由插件定死"]
+};
+function renderPrompts() {
+  const doc = docs["prompts.json"] || {};
+  const wrap = $("#promptRows");
+  wrap.innerHTML = "";
+  const sections = doc.sections || {};
+  for (const [key, [label, hint]] of Object.entries(PROMPT_LABELS)) {
+    const box = document.createElement("div");
+    box.style.margin = "14px 0";
+    const head = document.createElement("div");
+    head.innerHTML = "<b></b> <span class='hint'></span>";
+    head.querySelector("b").textContent = label + "（" + key + "）";
+    head.querySelector(".hint").textContent = hint;
+    const ta = document.createElement("textarea");
+    ta.rows = Math.min(16, Math.max(4, (sections[key] || "").split("\n").length + 1));
+    ta.value = sections[key] || "";
+    ta.dataset.promptKey = key;
+    box.append(head, ta);
+    wrap.appendChild(box);
+  }
+}
+function collectPrompts() {
+  const sections = {};
+  for (const ta of $$("#promptRows textarea")) {
+    sections[ta.dataset.promptKey] = ta.value;
+  }
+  const identity = sections["identity"] || "";
+  for (const ph of ["{name}", "{profession}", "{personality}", "{speech}"]) {
+    if (!identity.includes(ph)) throw new Error("identity 段里的填空位 " + ph + " 被删掉了，插件没法往里填村民名字/职业");
+  }
+  docs["prompts.json"] = docs["prompts.json"] || {};
+  docs["prompts.json"].sections = sections;
+}
+
+// ================= 定价表 =================
+function priceRow(itemId, value) {
+  const row = document.createElement("div");
+  row.className = "matrow";
+  const picker = createItemPicker(itemId || "", null);
+  const valIn = document.createElement("input");
+  valIn.type = "number";
+  valIn.min = "0";
+  valIn.step = "0.01";
+  valIn.value = value == null ? "" : value;
+  valIn.style.width = "120px";
+  const unit = document.createElement("span");
+  unit.className = "hint";
+  unit.textContent = "绿宝石/个";
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "danger small";
+  del.textContent = "删";
+  del.addEventListener("click", () => row.remove());
+  row.append(picker, valIn, unit, del);
+  row._collect = () => {
+    const id = picker._get();
+    if (!id) return null;
+    const v = Number(valIn.value);
+    if (!(v > 0)) throw new Error("有物品的价格没填对（要大于 0）：" + id);
+    return [id, v];
+  };
+  return row;
+}
+function renderPrices() {
+  const wrap = $("#priceRows");
+  wrap.innerHTML = "";
+  const anchors = (docs["prices.json"] && docs["prices.json"].anchors) || {};
+  for (const [id, v] of Object.entries(anchors)) {
+    wrap.appendChild(priceRow(id, v));
+  }
+}
+function collectPrices() {
+  const out = {};
+  for (const row of $$("#priceRows .matrow")) {
+    const got = row._collect();
+    if (!got) continue;
+    if (out[got[0]] != null) throw new Error("定价表里重复了：" + got[0]);
+    out[got[0]] = got[1];
+  }
+  if (Object.keys(out).length === 0) throw new Error("定价表不能清空，至少留一条");
+  docs["prices.json"] = docs["prices.json"] || {};
+  docs["prices.json"].anchors = out;
+}
+
+// ================= 职业货池 =================
+const PROFESSION_ZH = {
+  FARMER: "农夫", TOOLSMITH: "铁匠", WEAPONSMITH: "武器匠", ARMORER: "盔甲匠",
+  CLERIC: "牧师", LIBRARIAN: "图书管理员", CARTOGRAPHER: "制图师", FLETCHER: "制箭师",
+  FISHERMAN: "渔夫", BUTCHER: "屠夫", LEATHERWORKER: "皮匠", MASON: "石匠",
+  SHEPHERD: "牧羊人", NITWIT: "傻子", NONE: "无业"
+};
+const PROFESSION_ORDER = Object.keys(PROFESSION_ZH);
+function poolListEditor(pairs) {
+  const box = document.createElement("div");
+  for (const [id, count] of pairs || []) {
+    box.appendChild(materialRow(id, count));
+  }
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "small";
+  add.textContent = "＋ 加一件";
+  add.addEventListener("click", () => box.insertBefore(materialRow("", 1), add));
+  box.appendChild(add);
+  box._collect = () => {
+    const out = [];
+    for (const row of box.children) {
+      if (row._collect) {
+        const got = row._collect();
+        if (got) out.push(got);
+      }
+    }
+    return out;
+  };
+  return box;
+}
+function renderPools() {
+  const doc = docs["profession-pools.json"] || {};
+  const wrap = $("#poolRows");
+  wrap.innerHTML = "";
+  const professions = doc.professions || {};
+  for (const prof of PROFESSION_ORDER) {
+    const data = professions[prof] || {};
+    const block = detailsRow((PROFESSION_ZH[prof] || prof) + "（" + prof + "）");
+    const sellBox = poolListEditor(data.sell || []);
+    const buyBox = poolListEditor(data.buy || []);
+    block.append(labeledInput("卖出清单（物品 + 每摊个数）", sellBox),
+      labeledInput("收购清单（物品 + 每摊个数）", buyBox));
+    block._collect = () => [prof, { sell: sellBox._collect(), buy: buyBox._collect() }];
+    wrap.appendChild(block);
+  }
+  const guest = detailsRow("杂货池（谁都可能顺带卖的小玩意）");
+  const guestBox = poolListEditor(doc.guest || []);
+  guest.append(labeledInput("杂货清单", guestBox));
+  guest._collect = () => ["__guest__", guestBox._collect()];
+  wrap.appendChild(guest);
+}
+function collectPools() {
+  const professions = {};
+  let guest = [];
+  for (const block of $$("#poolRows details")) {
+    const [key, val] = block._collect();
+    if (key === "__guest__") { guest = val; continue; }
+    if ((val.sell && val.sell.length) || (val.buy && val.buy.length)) {
+      professions[key] = val;
+    }
+  }
+  docs["profession-pools.json"] = docs["profession-pools.json"] || {};
+  docs["profession-pools.json"].professions = professions;
+  docs["profession-pools.json"].guest = guest;
 }
 
 // ================= 原始数据 =================
@@ -670,6 +963,9 @@ async function loadState(announce) {
   renderRecipes();
   renderTags();
   renderNames();
+  renderPrices();
+  renderPools();
+  renderPrompts();
   renderRawSelect();
   setStatus("已连接 · 没有未保存的修改", false);
   if (announce) toast("已连上插件，设置和数据都加载好了");
@@ -679,7 +975,7 @@ $$("#tabs button").forEach(btn => {
   btn.addEventListener("click", () => {
     $$("#tabs button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    for (const name of ["settings", "recipes", "tags", "names", "raw", "backups"]) {
+    for (const name of ["settings", "recipes", "tags", "names", "prompts", "prices", "pools", "raw", "backups"]) {
       $("#tab-" + name).hidden = name !== btn.dataset.tab;
     }
     if (btn.dataset.tab === "backups") renderBackups();
@@ -764,6 +1060,9 @@ $$("[data-export-data]").forEach(btn => btn.addEventListener("click", () => {
     if (name === "personality_tags.json") collectTags();
     if (name === "surnames.json") collectSurnames();
     if (name === "given_names.json") collectGivenNames();
+    if (name === "prices.json") collectPrices();
+    if (name === "profession-pools.json") collectPools();
+    if (name === "prompts.json") collectPrompts();
   } catch (e) { toast(e.message, true); return; }
   downloadJson(name, docs[name]);
   toast("已导出 " + name + "，在本地改好后用“导入”导回来");
@@ -784,6 +1083,16 @@ $("#recipeFilter").addEventListener("input", (e) => {
 $("#tagFilter").addEventListener("input", (e) => {
   const q = e.target.value.trim().toLowerCase();
   $$("#tagRows details").forEach(r => {
+    r.style.display = !q || r.textContent.toLowerCase().includes(q) ? "" : "none";
+  });
+});
+
+$("#addPriceBtn").addEventListener("click", () => {
+  $("#priceRows").appendChild(priceRow("", 1));
+});
+$("#priceFilter").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  $$("#priceRows .matrow").forEach(r => {
     r.style.display = !q || r.textContent.toLowerCase().includes(q) ? "" : "none";
   });
 });

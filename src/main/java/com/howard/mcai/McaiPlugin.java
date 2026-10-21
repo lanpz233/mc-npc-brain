@@ -195,6 +195,13 @@ public final class McaiPlugin extends JavaPlugin {
         // 1.5 加载配方表（拼进 system prompt，让村民对话有真实参考）
         recipeLookup = new RecipeLookup();
         recipeLookup.load(getDataFolder().toPath());
+        // 定价表与职业货池（外置数据文件，面板可改）：加载失败回退代码内置默认，不拦启动
+        int promptSections = com.howard.mcai.ai.PromptTemplates.load(getDataFolder().toPath());
+        getLogger().info("提示词模板: " + (promptSections >= 0 ? promptSections + " 段（数据文件）" : "内置默认"));
+        int anchors = com.howard.mcai.ai.PriceBook.load(getDataFolder().toPath());
+        int pools = com.howard.mcai.ai.ProfessionPools.load(getDataFolder().toPath());
+        getLogger().info("定价表: " + (anchors >= 0 ? anchors + " 条锚点（数据文件）" : "内置默认")
+                + " / 职业货池: " + (pools >= 0 ? pools + " 份（数据文件）" : "内置默认"));
         PromptBuilder.setRecipeLookup(recipeLookup);
         getLogger().info("配方表: " + (recipeLookup.isLoaded() ? recipeLookup.size() + " 条已加载" : "未找到 recipes.json"));
 
@@ -212,8 +219,8 @@ public final class McaiPlugin extends JavaPlugin {
         // 2. BubbleManager（自己注册 listener）
         bubbleManager = new BubbleManager(this);
 
-        // 3. Spawn/加载 铁匠老王 —— Paper 实体持久化，重启后自动加载
-        spawnOrLoadBlacksmith();
+        // 3.（已删除）开服自动生成铁匠老王的出生点机制为早期测试遗留，
+        //    2026-10-22 按服主要求移除；村民全部由世界扫描/自动注册接管。
 
         // 4. MemoryStore —— 加载已有记忆文件或创建空快照
         memoryStore = new MemoryStore(this, villagers);
@@ -332,6 +339,12 @@ public final class McaiPlugin extends JavaPlugin {
             }
         }
 
+        // 8.6 对外查询接口（给其他插件接入）：定价/配方/货池/中文名/提示词，只读
+        getServer().getServicesManager().register(com.howard.mcai.api.McaiApi.class,
+                new com.howard.mcai.api.McaiApiImpl(() -> recipeLookup), this,
+                org.bukkit.plugin.ServicePriority.Normal);
+        getLogger().info("[MC-AI] 对外查询接口已注册（其他插件可通过 ServicesManager 调用 McaiApi）");
+
         // 9. 全局扫一遍所有已加载 chunks → 把自然 spawn 的原版村民也注册进 AI 管理
         // （ChunkLoadEvent 只对新加载的 chunk 触发，已加载的需要手动扫）
         Bukkit.getScheduler().runTask(this, () -> {
@@ -396,6 +409,7 @@ public final class McaiPlugin extends JavaPlugin {
             configPanelServer.stop();
             configPanelServer = null;
         }
+        getServer().getServicesManager().unregisterAll(this);
 
         // 1. cancel tick loop（防止关服时还在跑）
         if (plannerTask != null) {
@@ -422,52 +436,6 @@ public final class McaiPlugin extends JavaPlugin {
         }
 
         getLogger().info("MC-AI disabled cleanly.");
-    }
-
-    /**
-     * 在 spawn 坐标附近查找铁匠老王；找不到就新建。
-     * Paper 的 Villager 实体默认持久化到 level.dat，所以这步
-     * 主要是"恢复已有的"而不是"每次新建"。
-     */
-    private void spawnOrLoadBlacksmith() {
-        World world = Bukkit.getWorld(config.blacksmithWorld());
-        if (world == null) {
-            getLogger().severe("找不到世界 '" + config.blacksmithWorld()
-                    + "'，老王没法出生。请检查 config.yml。");
-            return;
-        }
-
-        Location spawn = new Location(world, config.blacksmithX(), config.blacksmithY(), config.blacksmithZ());
-
-        // 在 spawn 半径 5 格内按 customName 匹配
-        // 注意：customName 带 §6 颜色前缀，必须剥掉再比，否则永远匹配不上 → 每次重启重复刷老王
-        Villager found = null;
-        for (Entity e : world.getNearbyEntities(spawn, 5, 5, 5)) {
-            if (!(e instanceof Villager v)) continue;
-            String strippedName = v.getCustomName() != null
-                    ? v.getCustomName().replaceAll("§.", "") : null;
-            if (config.blacksmithName().equals(strippedName)) {
-                found = v;
-                break;
-            }
-        }
-
-        Villager villager;
-        if (found != null) {
-            villager = found;
-            getLogger().info("找到已有铁匠老王: " + villager.getUniqueId());
-        } else {
-            // 新建一个：M1 简化版只 setCustomName，Profession 让 Paper 自动给
-            villager = world.spawn(spawn, Villager.class, v -> {
-                v.setCustomName("§6" + config.blacksmithName());
-                v.setCustomNameVisible(true);
-                v.setPersistent(true);
-            });
-            getLogger().info("新建铁匠老王: " + villager.getUniqueId() + " @ " + spawn);
-        }
-
-        villagers.put(villager.getUniqueId(), new VillagerState(villager));
-        initVillagerShop(villager, config.blacksmithName());
     }
 
     /**
@@ -732,10 +700,9 @@ public final class McaiPlugin extends JavaPlugin {
         return surname + (int) (Math.random() * 100);  // 兜底加数字，防死循环
     }
 
-    /** 现有村民（含铁匠老王）已用的名字集合（剥掉颜色码），用于生成时唯一性去重 */
+    /** 现有村民已用的名字集合（剥掉颜色码），用于生成时唯一性去重 */
     private java.util.Set<String> usedNames() {
         java.util.Set<String> used = new java.util.HashSet<>();
-        used.add(config.blacksmithName().replaceAll("§.", ""));
         for (VillagerState vs : villagers.values()) {
             String n = vs.entity().getCustomName();
             used.add(n != null ? n.replaceAll("§.", "") : vs.profession().zhName);
@@ -744,7 +711,7 @@ public final class McaiPlugin extends JavaPlugin {
     }
 
     /**
-     * 确保名字全局唯一 —— 已有村民（含铁匠老王）撞名时自动换一个随机名。
+     * 确保名字全局唯一 —— 已有村民撞名时自动换一个随机名。
      * 用于自动注册路径：自然生成的村民可能带自定义名（如旧版持久化的"农夫老李"），
      * 多个村民撞名会导致玩家分不清谁是谁，聊天点名也会张冠李戴。
      * 记忆文件按 UUID 关联，改名不影响已有记忆。
@@ -1175,6 +1142,9 @@ public final class McaiPlugin extends JavaPlugin {
         syncPackServer();
         // 顺带 reload 配方表 + 人格标签库（用户可能编辑了）
         recipeLookup.load(getDataFolder().toPath());
+        com.howard.mcai.ai.PriceBook.load(getDataFolder().toPath());
+        com.howard.mcai.ai.ProfessionPools.load(getDataFolder().toPath());
+        com.howard.mcai.ai.PromptTemplates.load(getDataFolder().toPath());
         PromptBuilder.setRecipeLookup(recipeLookup);
         PersonalityTagLibrary.load(getDataFolder().toPath());
         NameLibrary.load(getDataFolder().toPath());
@@ -1262,7 +1232,7 @@ public final class McaiPlugin extends JavaPlugin {
 
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system",
-                        "content", "You are Old Wang, a blacksmith villager in a Minecraft village. "
+                        "content", "You are a blacksmith villager in a Minecraft village. "
                                 + "You see a player named Steve holding a hostile iron sword just 3 blocks away. "
                                 + "Decide what ONE action to take. You MUST call a tool."),
                 Map.of("role", "user",

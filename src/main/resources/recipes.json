@@ -1,1 +1,5637 @@
-{"_meta":{"description":"MC AI 生态 - 合成配方表。村民谈论配方/交易定价时查表，严禁 LLM 自行编造数字。","note":"只收录村民高频交易/谈论物品。未收录的配方，村民应回答'这个我也不太懂'，不许编。"},"recipes":{"minecraft:anvil":{"materials":{"minecraft:iron_block":3,"minecraft:iron_ingot":4},"name_zh":"铁砧"},"minecraft:arrow":{"materials":{"minecraft:feather":1,"minecraft:flint":1,"minecraft:stick":1},"name_zh":"箭","yields":4},"minecraft:bow":{"materials":{"minecraft:stick":3,"minecraft:string":3},"name_zh":"弓"},"minecraft:bread":{"materials":{"minecraft:wheat":3},"name_zh":"面包"},"minecraft:bucket":{"materials":{"minecraft:iron_ingot":3},"name_zh":"铁桶"},"minecraft:chest":{"materials":{"minecraft:oak_planks":8},"name_zh":"箱子"},"minecraft:crafting_table":{"materials":{"minecraft:oak_planks":4},"name_zh":"工作台"},"minecraft:diamond_axe":{"materials":{"minecraft:diamond":3,"minecraft:stick":2},"name_zh":"钻石斧"},"minecraft:diamond_boots":{"materials":{"minecraft:diamond":4},"name_zh":"钻石靴子"},"minecraft:diamond_chestplate":{"materials":{"minecraft:diamond":8},"name_zh":"钻石胸甲"},"minecraft:diamond_helmet":{"materials":{"minecraft:diamond":5},"name_zh":"钻石头盔"},"minecraft:diamond_hoe":{"materials":{"minecraft:diamond":2,"minecraft:stick":2},"name_zh":"钻石锄"},"minecraft:diamond_leggings":{"materials":{"minecraft:diamond":7},"name_zh":"钻石护腿"},"minecraft:diamond_pickaxe":{"materials":{"minecraft:diamond":3,"minecraft:stick":2},"name_zh":"钻石镐"},"minecraft:diamond_shovel":{"materials":{"minecraft:diamond":1,"minecraft:stick":2},"name_zh":"钻石锹"},"minecraft:diamond_sword":{"materials":{"minecraft:diamond":2,"minecraft:stick":1},"name_zh":"钻石剑"},"minecraft:enchanting_table":{"materials":{"minecraft:book":1,"minecraft:diamond":2,"minecraft:obsidian":4},"name_zh":"附魔台"},"minecraft:fishing_rod":{"materials":{"minecraft:stick":3,"minecraft:string":2},"name_zh":"钓鱼竿"},"minecraft:furnace":{"materials":{"minecraft:cobblestone":8},"name_zh":"熔炉"},"minecraft:golden_apple":{"materials":{"minecraft:gold_ingot":8},"name_zh":"金苹果","note":"1.21 苹果在中间，8个金锭环绕"},"minecraft:iron_axe":{"materials":{"minecraft:iron_ingot":3,"minecraft:stick":2},"name_zh":"铁斧"},"minecraft:iron_boots":{"materials":{"minecraft:iron_ingot":4},"name_zh":"铁靴子"},"minecraft:iron_chestplate":{"materials":{"minecraft:iron_ingot":8},"name_zh":"铁胸甲"},"minecraft:iron_helmet":{"materials":{"minecraft:iron_ingot":5},"name_zh":"铁头盔"},"minecraft:iron_hoe":{"materials":{"minecraft:iron_ingot":2,"minecraft:stick":2},"name_zh":"铁锄"},"minecraft:iron_leggings":{"materials":{"minecraft:iron_ingot":7},"name_zh":"铁护腿"},"minecraft:iron_pickaxe":{"materials":{"minecraft:iron_ingot":3,"minecraft:stick":2},"name_zh":"铁镐"},"minecraft:iron_shovel":{"materials":{"minecraft:iron_ingot":1,"minecraft:stick":2},"name_zh":"铁锹"},"minecraft:iron_sword":{"materials":{"minecraft:iron_ingot":2,"minecraft:stick":1},"name_zh":"铁剑"},"minecraft:shears":{"materials":{"minecraft:iron_ingot":2},"name_zh":"剪刀"},"minecraft:shield":{"materials":{"minecraft:iron_ingot":1,"minecraft:oak_planks":6},"name_zh":"盾牌"},"minecraft:stick":{"materials":{"minecraft:oak_planks":2},"name_zh":"木棍","yields":4},"minecraft:stone_axe":{"materials":{"minecraft:cobblestone":3,"minecraft:stick":2},"name_zh":"石斧"},"minecraft:stone_pickaxe":{"materials":{"minecraft:cobblestone":3,"minecraft:stick":2},"name_zh":"石镐"},"minecraft:stone_sword":{"materials":{"minecraft:cobblestone":2,"minecraft:stick":1},"name_zh":"石剑"},"minecraft:torch":{"materials":{"minecraft:coal":1,"minecraft:stick":1},"name_zh":"火把","yields":4},"minecraft:wooden_pickaxe":{"materials":{"minecraft:oak_planks":3,"minecraft:stick":2},"name_zh":"木镐"},"minecraft:wooden_sword":{"materials":{"minecraft:oak_planks":2,"minecraft:stick":1},"name_zh":"木剑"}}}
+{
+ "_meta": {
+  "description": "MC AI 生态 - 合成配方表（1.21.1 全量导入）。村民谈论配方/交易定价时查表，严禁 LLM 自行编造数字。",
+  "note": "由 minecraft-data 1.21.1 原版配方转换：每种物品取一条代表配方（同物品多做法时优先真正的合成做法，其次材料最简、橡木系）。熔炼/切石等非合成台配方不在此表。未收录的物品，村民应回答不确定，不许编。",
+  "source": "PrismarineJS/minecraft-data pc/1.21.1 recipes.json",
+  "count": 791
+ },
+ "recipes": {
+  "minecraft:acacia_boat": {
+   "materials": {
+    "minecraft:acacia_planks": 5
+   },
+   "name_zh": "金合欢木船"
+  },
+  "minecraft:acacia_button": {
+   "materials": {
+    "minecraft:acacia_planks": 1
+   },
+   "name_zh": "金合欢木按钮"
+  },
+  "minecraft:acacia_chest_boat": {
+   "materials": {
+    "minecraft:acacia_boat": 1,
+    "minecraft:chest": 1
+   },
+   "name_zh": "金合欢木运输船"
+  },
+  "minecraft:acacia_door": {
+   "materials": {
+    "minecraft:acacia_planks": 6
+   },
+   "name_zh": "金合欢木门",
+   "yields": 3
+  },
+  "minecraft:acacia_fence": {
+   "materials": {
+    "minecraft:acacia_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "金合欢木栅栏",
+   "yields": 3
+  },
+  "minecraft:acacia_fence_gate": {
+   "materials": {
+    "minecraft:acacia_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "金合欢木栅栏门"
+  },
+  "minecraft:acacia_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_acacia_log": 6
+   },
+   "name_zh": "悬挂式金合欢木告示牌",
+   "yields": 6
+  },
+  "minecraft:acacia_planks": {
+   "materials": {
+    "minecraft:acacia_log": 1
+   },
+   "name_zh": "金合欢木板",
+   "yields": 4
+  },
+  "minecraft:acacia_pressure_plate": {
+   "materials": {
+    "minecraft:acacia_planks": 2
+   },
+   "name_zh": "金合欢木压力板"
+  },
+  "minecraft:acacia_sign": {
+   "materials": {
+    "minecraft:acacia_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "金合欢木告示牌",
+   "yields": 3
+  },
+  "minecraft:acacia_slab": {
+   "materials": {
+    "minecraft:acacia_planks": 3
+   },
+   "name_zh": "金合欢木台阶",
+   "yields": 6
+  },
+  "minecraft:acacia_stairs": {
+   "materials": {
+    "minecraft:acacia_planks": 6
+   },
+   "name_zh": "金合欢木楼梯",
+   "yields": 4
+  },
+  "minecraft:acacia_trapdoor": {
+   "materials": {
+    "minecraft:acacia_planks": 6
+   },
+   "name_zh": "金合欢木活板门",
+   "yields": 2
+  },
+  "minecraft:acacia_wood": {
+   "materials": {
+    "minecraft:acacia_log": 4
+   },
+   "name_zh": "金合欢木",
+   "yields": 3
+  },
+  "minecraft:activator_rail": {
+   "materials": {
+    "minecraft:iron_ingot": 6,
+    "minecraft:redstone_torch": 1,
+    "minecraft:stick": 2
+   },
+   "name_zh": "激活铁轨",
+   "yields": 6
+  },
+  "minecraft:amethyst_block": {
+   "materials": {
+    "minecraft:amethyst_shard": 4
+   },
+   "name_zh": "紫水晶块"
+  },
+  "minecraft:andesite": {
+   "materials": {
+    "minecraft:cobblestone": 1,
+    "minecraft:diorite": 1
+   },
+   "name_zh": "安山岩",
+   "yields": 2
+  },
+  "minecraft:andesite_slab": {
+   "materials": {
+    "minecraft:andesite": 3
+   },
+   "name_zh": "安山岩台阶",
+   "yields": 6
+  },
+  "minecraft:andesite_stairs": {
+   "materials": {
+    "minecraft:andesite": 6
+   },
+   "name_zh": "安山岩楼梯",
+   "yields": 4
+  },
+  "minecraft:andesite_wall": {
+   "materials": {
+    "minecraft:andesite": 6
+   },
+   "name_zh": "安山岩墙",
+   "yields": 6
+  },
+  "minecraft:anvil": {
+   "materials": {
+    "minecraft:iron_block": 3,
+    "minecraft:iron_ingot": 4
+   },
+   "name_zh": "铁砧"
+  },
+  "minecraft:armor_stand": {
+   "materials": {
+    "minecraft:smooth_stone_slab": 1,
+    "minecraft:stick": 6
+   },
+   "name_zh": "盔甲架"
+  },
+  "minecraft:arrow": {
+   "materials": {
+    "minecraft:feather": 1,
+    "minecraft:flint": 1,
+    "minecraft:stick": 1
+   },
+   "name_zh": "箭",
+   "yields": 4
+  },
+  "minecraft:bamboo_block": {
+   "materials": {
+    "minecraft:bamboo": 9
+   },
+   "name_zh": "竹块"
+  },
+  "minecraft:bamboo_button": {
+   "materials": {
+    "minecraft:bamboo_planks": 1
+   },
+   "name_zh": "竹按钮"
+  },
+  "minecraft:bamboo_chest_raft": {
+   "materials": {
+    "minecraft:bamboo_raft": 1,
+    "minecraft:chest": 1
+   },
+   "name_zh": "运输竹筏"
+  },
+  "minecraft:bamboo_door": {
+   "materials": {
+    "minecraft:bamboo_planks": 6
+   },
+   "name_zh": "竹门",
+   "yields": 3
+  },
+  "minecraft:bamboo_fence": {
+   "materials": {
+    "minecraft:bamboo_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "竹栅栏",
+   "yields": 3
+  },
+  "minecraft:bamboo_fence_gate": {
+   "materials": {
+    "minecraft:bamboo_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "竹栅栏门"
+  },
+  "minecraft:bamboo_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_bamboo_block": 6
+   },
+   "name_zh": "悬挂式竹告示牌",
+   "yields": 6
+  },
+  "minecraft:bamboo_mosaic": {
+   "materials": {
+    "minecraft:bamboo_slab": 2
+   },
+   "name_zh": "竹马赛克"
+  },
+  "minecraft:bamboo_mosaic_slab": {
+   "materials": {
+    "minecraft:bamboo_mosaic": 3
+   },
+   "name_zh": "竹马赛克台阶",
+   "yields": 6
+  },
+  "minecraft:bamboo_mosaic_stairs": {
+   "materials": {
+    "minecraft:bamboo_mosaic": 6
+   },
+   "name_zh": "竹马赛克楼梯",
+   "yields": 4
+  },
+  "minecraft:bamboo_planks": {
+   "materials": {
+    "minecraft:bamboo_block": 1
+   },
+   "name_zh": "竹板",
+   "yields": 2
+  },
+  "minecraft:bamboo_pressure_plate": {
+   "materials": {
+    "minecraft:bamboo_planks": 2
+   },
+   "name_zh": "竹压力板"
+  },
+  "minecraft:bamboo_raft": {
+   "materials": {
+    "minecraft:bamboo_planks": 5
+   },
+   "name_zh": "竹筏"
+  },
+  "minecraft:bamboo_sign": {
+   "materials": {
+    "minecraft:bamboo_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "竹告示牌",
+   "yields": 3
+  },
+  "minecraft:bamboo_slab": {
+   "materials": {
+    "minecraft:bamboo_planks": 3
+   },
+   "name_zh": "竹台阶",
+   "yields": 6
+  },
+  "minecraft:bamboo_stairs": {
+   "materials": {
+    "minecraft:bamboo_planks": 6
+   },
+   "name_zh": "竹楼梯",
+   "yields": 4
+  },
+  "minecraft:bamboo_trapdoor": {
+   "materials": {
+    "minecraft:bamboo_planks": 6
+   },
+   "name_zh": "竹活板门",
+   "yields": 2
+  },
+  "minecraft:barrel": {
+   "materials": {
+    "minecraft:oak_planks": 6,
+    "minecraft:oak_slab": 2
+   },
+   "name_zh": "木桶"
+  },
+  "minecraft:beacon": {
+   "materials": {
+    "minecraft:glass": 5,
+    "minecraft:nether_star": 1,
+    "minecraft:obsidian": 3
+   },
+   "name_zh": "信标"
+  },
+  "minecraft:beehive": {
+   "materials": {
+    "minecraft:honeycomb": 3,
+    "minecraft:oak_planks": 6
+   },
+   "name_zh": "蜂箱"
+  },
+  "minecraft:beetroot_soup": {
+   "materials": {
+    "minecraft:beetroot": 6,
+    "minecraft:bowl": 1
+   },
+   "name_zh": "甜菜汤"
+  },
+  "minecraft:birch_boat": {
+   "materials": {
+    "minecraft:birch_planks": 5
+   },
+   "name_zh": "白桦木船"
+  },
+  "minecraft:birch_button": {
+   "materials": {
+    "minecraft:birch_planks": 1
+   },
+   "name_zh": "白桦木按钮"
+  },
+  "minecraft:birch_chest_boat": {
+   "materials": {
+    "minecraft:birch_boat": 1,
+    "minecraft:chest": 1
+   },
+   "name_zh": "白桦木运输船"
+  },
+  "minecraft:birch_door": {
+   "materials": {
+    "minecraft:birch_planks": 6
+   },
+   "name_zh": "白桦木门",
+   "yields": 3
+  },
+  "minecraft:birch_fence": {
+   "materials": {
+    "minecraft:birch_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "白桦木栅栏",
+   "yields": 3
+  },
+  "minecraft:birch_fence_gate": {
+   "materials": {
+    "minecraft:birch_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "白桦木栅栏门"
+  },
+  "minecraft:birch_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_birch_log": 6
+   },
+   "name_zh": "悬挂式白桦木告示牌",
+   "yields": 6
+  },
+  "minecraft:birch_planks": {
+   "materials": {
+    "minecraft:birch_log": 1
+   },
+   "name_zh": "白桦木板",
+   "yields": 4
+  },
+  "minecraft:birch_pressure_plate": {
+   "materials": {
+    "minecraft:birch_planks": 2
+   },
+   "name_zh": "白桦木压力板"
+  },
+  "minecraft:birch_sign": {
+   "materials": {
+    "minecraft:birch_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "白桦木告示牌",
+   "yields": 3
+  },
+  "minecraft:birch_slab": {
+   "materials": {
+    "minecraft:birch_planks": 3
+   },
+   "name_zh": "白桦木台阶",
+   "yields": 6
+  },
+  "minecraft:birch_stairs": {
+   "materials": {
+    "minecraft:birch_planks": 6
+   },
+   "name_zh": "白桦木楼梯",
+   "yields": 4
+  },
+  "minecraft:birch_trapdoor": {
+   "materials": {
+    "minecraft:birch_planks": 6
+   },
+   "name_zh": "白桦木活板门",
+   "yields": 2
+  },
+  "minecraft:birch_wood": {
+   "materials": {
+    "minecraft:birch_log": 4
+   },
+   "name_zh": "白桦木",
+   "yields": 3
+  },
+  "minecraft:black_banner": {
+   "materials": {
+    "minecraft:black_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "黑色旗帜"
+  },
+  "minecraft:black_bed": {
+   "materials": {
+    "minecraft:black_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "黑色床"
+  },
+  "minecraft:black_candle": {
+   "materials": {
+    "minecraft:black_dye": 1,
+    "minecraft:candle": 1
+   },
+   "name_zh": "黑色蜡烛"
+  },
+  "minecraft:black_carpet": {
+   "materials": {
+    "minecraft:black_wool": 2
+   },
+   "name_zh": "黑色地毯",
+   "yields": 3
+  },
+  "minecraft:black_concrete_powder": {
+   "materials": {
+    "minecraft:black_dye": 1,
+    "minecraft:gravel": 4,
+    "minecraft:sand": 4
+   },
+   "name_zh": "黑色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:black_dye": {
+   "materials": {
+    "minecraft:ink_sac": 1
+   },
+   "name_zh": "黑色染料"
+  },
+  "minecraft:black_stained_glass": {
+   "materials": {
+    "minecraft:black_dye": 1,
+    "minecraft:glass": 8
+   },
+   "name_zh": "黑色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:black_stained_glass_pane": {
+   "materials": {
+    "minecraft:black_stained_glass": 6
+   },
+   "name_zh": "黑色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:black_terracotta": {
+   "materials": {
+    "minecraft:black_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "黑色陶瓦",
+   "yields": 8
+  },
+  "minecraft:black_wool": {
+   "materials": {
+    "minecraft:black_dye": 1,
+    "minecraft:blue_wool": 1
+   },
+   "name_zh": "黑色羊毛"
+  },
+  "minecraft:blackstone_slab": {
+   "materials": {
+    "minecraft:blackstone": 3
+   },
+   "name_zh": "黑石台阶",
+   "yields": 6
+  },
+  "minecraft:blackstone_stairs": {
+   "materials": {
+    "minecraft:blackstone": 6
+   },
+   "name_zh": "黑石楼梯",
+   "yields": 4
+  },
+  "minecraft:blackstone_wall": {
+   "materials": {
+    "minecraft:blackstone": 6
+   },
+   "name_zh": "黑石墙",
+   "yields": 6
+  },
+  "minecraft:blast_furnace": {
+   "materials": {
+    "minecraft:furnace": 1,
+    "minecraft:iron_ingot": 5,
+    "minecraft:smooth_stone": 3
+   },
+   "name_zh": "高炉"
+  },
+  "minecraft:blaze_powder": {
+   "materials": {
+    "minecraft:blaze_rod": 1
+   },
+   "name_zh": "烈焰粉",
+   "yields": 2
+  },
+  "minecraft:blue_banner": {
+   "materials": {
+    "minecraft:blue_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "蓝色旗帜"
+  },
+  "minecraft:blue_bed": {
+   "materials": {
+    "minecraft:blue_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "蓝色床"
+  },
+  "minecraft:blue_candle": {
+   "materials": {
+    "minecraft:blue_dye": 1,
+    "minecraft:candle": 1
+   },
+   "name_zh": "蓝色蜡烛"
+  },
+  "minecraft:blue_carpet": {
+   "materials": {
+    "minecraft:blue_wool": 2
+   },
+   "name_zh": "蓝色地毯",
+   "yields": 3
+  },
+  "minecraft:blue_concrete_powder": {
+   "materials": {
+    "minecraft:blue_dye": 1,
+    "minecraft:gravel": 4,
+    "minecraft:sand": 4
+   },
+   "name_zh": "蓝色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:blue_dye": {
+   "materials": {
+    "minecraft:cornflower": 1
+   },
+   "name_zh": "蓝色染料"
+  },
+  "minecraft:blue_ice": {
+   "materials": {
+    "minecraft:packed_ice": 9
+   },
+   "name_zh": "蓝冰"
+  },
+  "minecraft:blue_stained_glass": {
+   "materials": {
+    "minecraft:blue_dye": 1,
+    "minecraft:glass": 8
+   },
+   "name_zh": "蓝色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:blue_stained_glass_pane": {
+   "materials": {
+    "minecraft:blue_stained_glass": 6
+   },
+   "name_zh": "蓝色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:blue_terracotta": {
+   "materials": {
+    "minecraft:blue_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "蓝色陶瓦",
+   "yields": 8
+  },
+  "minecraft:blue_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:blue_dye": 1
+   },
+   "name_zh": "蓝色羊毛"
+  },
+  "minecraft:bolt_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:bolt_armor_trim_smithing_template": 1,
+    "minecraft:diamond": 7,
+    "minecraft:waxed_copper_block": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:bone_block": {
+   "materials": {
+    "minecraft:bone_meal": 9
+   },
+   "name_zh": "骨块"
+  },
+  "minecraft:bone_meal": {
+   "materials": {
+    "minecraft:bone_block": 1
+   },
+   "name_zh": "骨粉",
+   "yields": 9
+  },
+  "minecraft:book": {
+   "materials": {
+    "minecraft:leather": 1,
+    "minecraft:paper": 3
+   },
+   "name_zh": "书"
+  },
+  "minecraft:bookshelf": {
+   "materials": {
+    "minecraft:book": 3,
+    "minecraft:oak_planks": 6
+   },
+   "name_zh": "书架"
+  },
+  "minecraft:bow": {
+   "materials": {
+    "minecraft:stick": 3,
+    "minecraft:string": 3
+   },
+   "name_zh": "弓"
+  },
+  "minecraft:bowl": {
+   "materials": {
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "碗",
+   "yields": 4
+  },
+  "minecraft:bread": {
+   "materials": {
+    "minecraft:wheat": 3
+   },
+   "name_zh": "面包"
+  },
+  "minecraft:brewing_stand": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:cobbled_deepslate": 3
+   },
+   "name_zh": "酿造台"
+  },
+  "minecraft:brick_slab": {
+   "materials": {
+    "minecraft:bricks": 3
+   },
+   "name_zh": "红砖台阶",
+   "yields": 6
+  },
+  "minecraft:brick_stairs": {
+   "materials": {
+    "minecraft:bricks": 6
+   },
+   "name_zh": "红砖楼梯",
+   "yields": 4
+  },
+  "minecraft:brick_wall": {
+   "materials": {
+    "minecraft:bricks": 6
+   },
+   "name_zh": "红砖墙",
+   "yields": 6
+  },
+  "minecraft:bricks": {
+   "materials": {
+    "minecraft:brick": 4
+   },
+   "name_zh": "红砖块"
+  },
+  "minecraft:brown_banner": {
+   "materials": {
+    "minecraft:brown_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "棕色旗帜"
+  },
+  "minecraft:brown_bed": {
+   "materials": {
+    "minecraft:brown_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "棕色床"
+  },
+  "minecraft:brown_candle": {
+   "materials": {
+    "minecraft:brown_dye": 1,
+    "minecraft:candle": 1
+   },
+   "name_zh": "棕色蜡烛"
+  },
+  "minecraft:brown_carpet": {
+   "materials": {
+    "minecraft:brown_wool": 2
+   },
+   "name_zh": "棕色地毯",
+   "yields": 3
+  },
+  "minecraft:brown_concrete_powder": {
+   "materials": {
+    "minecraft:brown_dye": 1,
+    "minecraft:gravel": 4,
+    "minecraft:sand": 4
+   },
+   "name_zh": "棕色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:brown_dye": {
+   "materials": {
+    "minecraft:cocoa_beans": 1
+   },
+   "name_zh": "棕色染料"
+  },
+  "minecraft:brown_stained_glass": {
+   "materials": {
+    "minecraft:brown_dye": 1,
+    "minecraft:glass": 8
+   },
+   "name_zh": "棕色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:brown_stained_glass_pane": {
+   "materials": {
+    "minecraft:brown_stained_glass": 6
+   },
+   "name_zh": "棕色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:brown_terracotta": {
+   "materials": {
+    "minecraft:brown_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "棕色陶瓦",
+   "yields": 8
+  },
+  "minecraft:brown_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:brown_dye": 1
+   },
+   "name_zh": "棕色羊毛"
+  },
+  "minecraft:brush": {
+   "materials": {
+    "minecraft:copper_ingot": 1,
+    "minecraft:feather": 1,
+    "minecraft:stick": 1
+   },
+   "name_zh": "刷子"
+  },
+  "minecraft:bucket": {
+   "materials": {
+    "minecraft:iron_ingot": 3
+   },
+   "name_zh": "铁桶"
+  },
+  "minecraft:cake": {
+   "materials": {
+    "minecraft:egg": 1,
+    "minecraft:milk_bucket": 3,
+    "minecraft:sugar": 2,
+    "minecraft:wheat": 3
+   },
+   "name_zh": "蛋糕"
+  },
+  "minecraft:calibrated_sculk_sensor": {
+   "materials": {
+    "minecraft:amethyst_shard": 3,
+    "minecraft:sculk_sensor": 1
+   },
+   "name_zh": "校频幽匿感测体"
+  },
+  "minecraft:campfire": {
+   "materials": {
+    "minecraft:coal": 1,
+    "minecraft:oak_wood": 3,
+    "minecraft:stick": 3
+   },
+   "name_zh": "营火"
+  },
+  "minecraft:candle": {
+   "materials": {
+    "minecraft:honeycomb": 1,
+    "minecraft:string": 1
+   },
+   "name_zh": "蜡烛"
+  },
+  "minecraft:carrot_on_a_stick": {
+   "materials": {
+    "minecraft:carrot": 1,
+    "minecraft:fishing_rod": 1
+   },
+   "name_zh": "胡萝卜钓竿"
+  },
+  "minecraft:cartography_table": {
+   "materials": {
+    "minecraft:oak_planks": 4,
+    "minecraft:paper": 2
+   },
+   "name_zh": "制图台"
+  },
+  "minecraft:cauldron": {
+   "materials": {
+    "minecraft:iron_ingot": 7
+   },
+   "name_zh": "炼药锅"
+  },
+  "minecraft:chain": {
+   "materials": {
+    "minecraft:iron_ingot": 1,
+    "minecraft:iron_nugget": 2
+   },
+   "name_zh": "锁链"
+  },
+  "minecraft:cherry_boat": {
+   "materials": {
+    "minecraft:cherry_planks": 5
+   },
+   "name_zh": "樱花木船"
+  },
+  "minecraft:cherry_button": {
+   "materials": {
+    "minecraft:cherry_planks": 1
+   },
+   "name_zh": "樱花木按钮"
+  },
+  "minecraft:cherry_chest_boat": {
+   "materials": {
+    "minecraft:cherry_boat": 1,
+    "minecraft:chest": 1
+   },
+   "name_zh": "樱花木运输船"
+  },
+  "minecraft:cherry_door": {
+   "materials": {
+    "minecraft:cherry_planks": 6
+   },
+   "name_zh": "樱花木门",
+   "yields": 3
+  },
+  "minecraft:cherry_fence": {
+   "materials": {
+    "minecraft:cherry_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "樱花木栅栏",
+   "yields": 3
+  },
+  "minecraft:cherry_fence_gate": {
+   "materials": {
+    "minecraft:cherry_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "樱花木栅栏门"
+  },
+  "minecraft:cherry_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_cherry_log": 6
+   },
+   "name_zh": "悬挂式樱花木告示牌",
+   "yields": 6
+  },
+  "minecraft:cherry_planks": {
+   "materials": {
+    "minecraft:cherry_log": 1
+   },
+   "name_zh": "樱花木板",
+   "yields": 4
+  },
+  "minecraft:cherry_pressure_plate": {
+   "materials": {
+    "minecraft:cherry_planks": 2
+   },
+   "name_zh": "樱花木压力板"
+  },
+  "minecraft:cherry_sign": {
+   "materials": {
+    "minecraft:cherry_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "樱花木告示牌",
+   "yields": 3
+  },
+  "minecraft:cherry_slab": {
+   "materials": {
+    "minecraft:cherry_planks": 3
+   },
+   "name_zh": "樱花木台阶",
+   "yields": 6
+  },
+  "minecraft:cherry_stairs": {
+   "materials": {
+    "minecraft:cherry_planks": 6
+   },
+   "name_zh": "樱花木楼梯",
+   "yields": 4
+  },
+  "minecraft:cherry_trapdoor": {
+   "materials": {
+    "minecraft:cherry_planks": 6
+   },
+   "name_zh": "樱花木活板门",
+   "yields": 2
+  },
+  "minecraft:cherry_wood": {
+   "materials": {
+    "minecraft:cherry_log": 4
+   },
+   "name_zh": "樱花木",
+   "yields": 3
+  },
+  "minecraft:chest": {
+   "materials": {
+    "minecraft:oak_planks": 8
+   },
+   "name_zh": "箱子"
+  },
+  "minecraft:chest_minecart": {
+   "materials": {
+    "minecraft:chest": 1,
+    "minecraft:minecart": 1
+   },
+   "name_zh": "运输矿车"
+  },
+  "minecraft:chiseled_bookshelf": {
+   "materials": {
+    "minecraft:oak_planks": 6,
+    "minecraft:oak_slab": 3
+   },
+   "name_zh": "雕纹书架"
+  },
+  "minecraft:chiseled_copper": {
+   "materials": {
+    "minecraft:cut_copper_slab": 2
+   },
+   "name_zh": "雕纹铜块"
+  },
+  "minecraft:chiseled_deepslate": {
+   "materials": {
+    "minecraft:cobbled_deepslate_slab": 2
+   },
+   "name_zh": "雕纹深板岩"
+  },
+  "minecraft:chiseled_nether_bricks": {
+   "materials": {
+    "minecraft:nether_brick_slab": 2
+   },
+   "name_zh": "雕纹下界砖块"
+  },
+  "minecraft:chiseled_polished_blackstone": {
+   "materials": {
+    "minecraft:polished_blackstone_slab": 2
+   },
+   "name_zh": "雕纹磨制黑石"
+  },
+  "minecraft:chiseled_quartz_block": {
+   "materials": {
+    "minecraft:quartz_slab": 2
+   },
+   "name_zh": "雕纹石英块"
+  },
+  "minecraft:chiseled_red_sandstone": {
+   "materials": {
+    "minecraft:red_sandstone_slab": 2
+   },
+   "name_zh": "雕纹红砂岩"
+  },
+  "minecraft:chiseled_sandstone": {
+   "materials": {
+    "minecraft:sandstone_slab": 2
+   },
+   "name_zh": "雕纹砂岩"
+  },
+  "minecraft:chiseled_stone_bricks": {
+   "materials": {
+    "minecraft:stone_brick_slab": 2
+   },
+   "name_zh": "雕纹石砖"
+  },
+  "minecraft:chiseled_tuff": {
+   "materials": {
+    "minecraft:tuff_slab": 2
+   },
+   "name_zh": "雕纹凝灰岩"
+  },
+  "minecraft:chiseled_tuff_bricks": {
+   "materials": {
+    "minecraft:tuff_brick_slab": 2
+   },
+   "name_zh": "雕纹凝灰岩砖"
+  },
+  "minecraft:clay": {
+   "materials": {
+    "minecraft:clay_ball": 4
+   },
+   "name_zh": "黏土"
+  },
+  "minecraft:clock": {
+   "materials": {
+    "minecraft:gold_ingot": 4,
+    "minecraft:redstone": 1
+   },
+   "name_zh": "时钟"
+  },
+  "minecraft:coal": {
+   "materials": {
+    "minecraft:coal_block": 1
+   },
+   "name_zh": "煤炭",
+   "yields": 9
+  },
+  "minecraft:coal_block": {
+   "materials": {
+    "minecraft:coal": 9
+   },
+   "name_zh": "煤炭块"
+  },
+  "minecraft:coarse_dirt": {
+   "materials": {
+    "minecraft:dirt": 2,
+    "minecraft:gravel": 2
+   },
+   "name_zh": "砂土",
+   "yields": 4
+  },
+  "minecraft:coast_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:coast_armor_trim_smithing_template": 1,
+    "minecraft:cobblestone": 1,
+    "minecraft:diamond": 7
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:cobbled_deepslate_slab": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 3
+   },
+   "name_zh": "深板岩圆石台阶",
+   "yields": 6
+  },
+  "minecraft:cobbled_deepslate_stairs": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 6
+   },
+   "name_zh": "深板岩圆石楼梯",
+   "yields": 4
+  },
+  "minecraft:cobbled_deepslate_wall": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 6
+   },
+   "name_zh": "深板岩圆石墙",
+   "yields": 6
+  },
+  "minecraft:cobblestone_slab": {
+   "materials": {
+    "minecraft:cobblestone": 3
+   },
+   "name_zh": "圆石台阶",
+   "yields": 6
+  },
+  "minecraft:cobblestone_stairs": {
+   "materials": {
+    "minecraft:cobblestone": 6
+   },
+   "name_zh": "圆石楼梯",
+   "yields": 4
+  },
+  "minecraft:cobblestone_wall": {
+   "materials": {
+    "minecraft:cobblestone": 6
+   },
+   "name_zh": "圆石墙",
+   "yields": 6
+  },
+  "minecraft:comparator": {
+   "materials": {
+    "minecraft:quartz": 1,
+    "minecraft:redstone_torch": 3,
+    "minecraft:stone": 3
+   },
+   "name_zh": "红石比较器"
+  },
+  "minecraft:compass": {
+   "materials": {
+    "minecraft:iron_ingot": 4,
+    "minecraft:redstone": 1
+   },
+   "name_zh": "指南针"
+  },
+  "minecraft:composter": {
+   "materials": {
+    "minecraft:oak_slab": 7
+   },
+   "name_zh": "堆肥桶"
+  },
+  "minecraft:conduit": {
+   "materials": {
+    "minecraft:heart_of_the_sea": 1,
+    "minecraft:nautilus_shell": 8
+   },
+   "name_zh": "潮涌核心"
+  },
+  "minecraft:cookie": {
+   "materials": {
+    "minecraft:cocoa_beans": 1,
+    "minecraft:wheat": 2
+   },
+   "name_zh": "曲奇",
+   "yields": 8
+  },
+  "minecraft:copper_block": {
+   "materials": {
+    "minecraft:copper_ingot": 9
+   },
+   "name_zh": "铜块"
+  },
+  "minecraft:copper_bulb": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:copper_block": 3,
+    "minecraft:redstone": 1
+   },
+   "name_zh": "铜灯",
+   "yields": 4
+  },
+  "minecraft:copper_door": {
+   "materials": {
+    "minecraft:copper_ingot": 6
+   },
+   "name_zh": "铜门",
+   "yields": 3
+  },
+  "minecraft:copper_grate": {
+   "materials": {
+    "minecraft:copper_block": 4
+   },
+   "name_zh": "铜格栅",
+   "yields": 4
+  },
+  "minecraft:copper_ingot": {
+   "materials": {
+    "minecraft:copper_block": 1
+   },
+   "name_zh": "铜锭",
+   "yields": 9
+  },
+  "minecraft:copper_trapdoor": {
+   "materials": {
+    "minecraft:copper_ingot": 6
+   },
+   "name_zh": "铜活板门",
+   "yields": 2
+  },
+  "minecraft:crafter": {
+   "materials": {
+    "minecraft:crafting_table": 1,
+    "minecraft:dropper": 1,
+    "minecraft:iron_ingot": 5,
+    "minecraft:redstone": 2
+   },
+   "name_zh": "合成器"
+  },
+  "minecraft:crafting_table": {
+   "materials": {
+    "minecraft:oak_planks": 4
+   },
+   "name_zh": "工作台"
+  },
+  "minecraft:creeper_banner_pattern": {
+   "materials": {
+    "minecraft:creeper_head": 1,
+    "minecraft:paper": 1
+   },
+   "name_zh": "旗帜图案"
+  },
+  "minecraft:crimson_button": {
+   "materials": {
+    "minecraft:crimson_planks": 1
+   },
+   "name_zh": "绯红木按钮"
+  },
+  "minecraft:crimson_door": {
+   "materials": {
+    "minecraft:crimson_planks": 6
+   },
+   "name_zh": "绯红木门",
+   "yields": 3
+  },
+  "minecraft:crimson_fence": {
+   "materials": {
+    "minecraft:crimson_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "绯红木栅栏",
+   "yields": 3
+  },
+  "minecraft:crimson_fence_gate": {
+   "materials": {
+    "minecraft:crimson_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "绯红木栅栏门"
+  },
+  "minecraft:crimson_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_crimson_stem": 6
+   },
+   "name_zh": "悬挂式绯红木告示牌",
+   "yields": 6
+  },
+  "minecraft:crimson_hyphae": {
+   "materials": {
+    "minecraft:crimson_stem": 4
+   },
+   "name_zh": "绯红菌核",
+   "yields": 3
+  },
+  "minecraft:crimson_planks": {
+   "materials": {
+    "minecraft:crimson_stem": 1
+   },
+   "name_zh": "绯红木板",
+   "yields": 4
+  },
+  "minecraft:crimson_pressure_plate": {
+   "materials": {
+    "minecraft:crimson_planks": 2
+   },
+   "name_zh": "绯红木压力板"
+  },
+  "minecraft:crimson_sign": {
+   "materials": {
+    "minecraft:crimson_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "绯红木告示牌",
+   "yields": 3
+  },
+  "minecraft:crimson_slab": {
+   "materials": {
+    "minecraft:crimson_planks": 3
+   },
+   "name_zh": "绯红木台阶",
+   "yields": 6
+  },
+  "minecraft:crimson_stairs": {
+   "materials": {
+    "minecraft:crimson_planks": 6
+   },
+   "name_zh": "绯红木楼梯",
+   "yields": 4
+  },
+  "minecraft:crimson_trapdoor": {
+   "materials": {
+    "minecraft:crimson_planks": 6
+   },
+   "name_zh": "绯红木活板门",
+   "yields": 2
+  },
+  "minecraft:crossbow": {
+   "materials": {
+    "minecraft:iron_ingot": 1,
+    "minecraft:stick": 3,
+    "minecraft:string": 2,
+    "minecraft:tripwire_hook": 1
+   },
+   "name_zh": "弩"
+  },
+  "minecraft:cut_copper": {
+   "materials": {
+    "minecraft:copper_block": 4
+   },
+   "name_zh": "切制铜块",
+   "yields": 4
+  },
+  "minecraft:cut_copper_slab": {
+   "materials": {
+    "minecraft:cut_copper": 3
+   },
+   "name_zh": "切制铜台阶",
+   "yields": 6
+  },
+  "minecraft:cut_copper_stairs": {
+   "materials": {
+    "minecraft:cut_copper": 6
+   },
+   "name_zh": "切制铜楼梯",
+   "yields": 4
+  },
+  "minecraft:cut_red_sandstone": {
+   "materials": {
+    "minecraft:red_sandstone": 4
+   },
+   "name_zh": "切制红砂岩",
+   "yields": 4
+  },
+  "minecraft:cut_red_sandstone_slab": {
+   "materials": {
+    "minecraft:cut_red_sandstone": 3
+   },
+   "name_zh": "切制红砂岩台阶",
+   "yields": 6
+  },
+  "minecraft:cut_sandstone": {
+   "materials": {
+    "minecraft:sandstone": 4
+   },
+   "name_zh": "切制砂岩",
+   "yields": 4
+  },
+  "minecraft:cut_sandstone_slab": {
+   "materials": {
+    "minecraft:cut_sandstone": 3
+   },
+   "name_zh": "切制砂岩台阶",
+   "yields": 6
+  },
+  "minecraft:cyan_banner": {
+   "materials": {
+    "minecraft:cyan_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "青色旗帜"
+  },
+  "minecraft:cyan_bed": {
+   "materials": {
+    "minecraft:cyan_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "青色床"
+  },
+  "minecraft:cyan_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:cyan_dye": 1
+   },
+   "name_zh": "青色蜡烛"
+  },
+  "minecraft:cyan_carpet": {
+   "materials": {
+    "minecraft:cyan_wool": 2
+   },
+   "name_zh": "青色地毯",
+   "yields": 3
+  },
+  "minecraft:cyan_concrete_powder": {
+   "materials": {
+    "minecraft:cyan_dye": 1,
+    "minecraft:gravel": 4,
+    "minecraft:sand": 4
+   },
+   "name_zh": "青色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:cyan_dye": {
+   "materials": {
+    "minecraft:pitcher_plant": 1
+   },
+   "name_zh": "青色染料",
+   "yields": 2
+  },
+  "minecraft:cyan_stained_glass": {
+   "materials": {
+    "minecraft:cyan_dye": 1,
+    "minecraft:glass": 8
+   },
+   "name_zh": "青色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:cyan_stained_glass_pane": {
+   "materials": {
+    "minecraft:cyan_stained_glass": 6
+   },
+   "name_zh": "青色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:cyan_terracotta": {
+   "materials": {
+    "minecraft:cyan_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "青色陶瓦",
+   "yields": 8
+  },
+  "minecraft:cyan_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:cyan_dye": 1
+   },
+   "name_zh": "青色羊毛"
+  },
+  "minecraft:dark_oak_boat": {
+   "materials": {
+    "minecraft:dark_oak_planks": 5
+   },
+   "name_zh": "深色橡木船"
+  },
+  "minecraft:dark_oak_button": {
+   "materials": {
+    "minecraft:dark_oak_planks": 1
+   },
+   "name_zh": "深色橡木按钮"
+  },
+  "minecraft:dark_oak_chest_boat": {
+   "materials": {
+    "minecraft:chest": 1,
+    "minecraft:dark_oak_boat": 1
+   },
+   "name_zh": "深色橡木运输船"
+  },
+  "minecraft:dark_oak_door": {
+   "materials": {
+    "minecraft:dark_oak_planks": 6
+   },
+   "name_zh": "深色橡木门",
+   "yields": 3
+  },
+  "minecraft:dark_oak_fence": {
+   "materials": {
+    "minecraft:dark_oak_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "深色橡木栅栏",
+   "yields": 3
+  },
+  "minecraft:dark_oak_fence_gate": {
+   "materials": {
+    "minecraft:dark_oak_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "深色橡木栅栏门"
+  },
+  "minecraft:dark_oak_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_dark_oak_log": 6
+   },
+   "name_zh": "悬挂式深色橡木告示牌",
+   "yields": 6
+  },
+  "minecraft:dark_oak_planks": {
+   "materials": {
+    "minecraft:dark_oak_log": 1
+   },
+   "name_zh": "深色橡木木板",
+   "yields": 4
+  },
+  "minecraft:dark_oak_pressure_plate": {
+   "materials": {
+    "minecraft:dark_oak_planks": 2
+   },
+   "name_zh": "深色橡木压力板"
+  },
+  "minecraft:dark_oak_sign": {
+   "materials": {
+    "minecraft:dark_oak_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "深色橡木告示牌",
+   "yields": 3
+  },
+  "minecraft:dark_oak_slab": {
+   "materials": {
+    "minecraft:dark_oak_planks": 3
+   },
+   "name_zh": "深色橡木台阶",
+   "yields": 6
+  },
+  "minecraft:dark_oak_stairs": {
+   "materials": {
+    "minecraft:dark_oak_planks": 6
+   },
+   "name_zh": "深色橡木楼梯",
+   "yields": 4
+  },
+  "minecraft:dark_oak_trapdoor": {
+   "materials": {
+    "minecraft:dark_oak_planks": 6
+   },
+   "name_zh": "深色橡木活板门",
+   "yields": 2
+  },
+  "minecraft:dark_oak_wood": {
+   "materials": {
+    "minecraft:dark_oak_log": 4
+   },
+   "name_zh": "深色橡木",
+   "yields": 3
+  },
+  "minecraft:dark_prismarine": {
+   "materials": {
+    "minecraft:black_dye": 1,
+    "minecraft:prismarine_shard": 8
+   },
+   "name_zh": "暗海晶石"
+  },
+  "minecraft:dark_prismarine_slab": {
+   "materials": {
+    "minecraft:dark_prismarine": 3
+   },
+   "name_zh": "暗海晶石台阶",
+   "yields": 6
+  },
+  "minecraft:dark_prismarine_stairs": {
+   "materials": {
+    "minecraft:dark_prismarine": 6
+   },
+   "name_zh": "暗海晶石楼梯",
+   "yields": 4
+  },
+  "minecraft:daylight_detector": {
+   "materials": {
+    "minecraft:glass": 3,
+    "minecraft:oak_slab": 3,
+    "minecraft:quartz": 3
+   },
+   "name_zh": "阳光探测器"
+  },
+  "minecraft:decorated_pot": {
+   "materials": {
+    "minecraft:brick": 4
+   },
+   "name_zh": "饰纹陶罐"
+  },
+  "minecraft:deepslate_brick_slab": {
+   "materials": {
+    "minecraft:deepslate_bricks": 3
+   },
+   "name_zh": "深板岩砖台阶",
+   "yields": 6
+  },
+  "minecraft:deepslate_brick_stairs": {
+   "materials": {
+    "minecraft:deepslate_bricks": 6
+   },
+   "name_zh": "深板岩砖楼梯",
+   "yields": 4
+  },
+  "minecraft:deepslate_brick_wall": {
+   "materials": {
+    "minecraft:deepslate_bricks": 6
+   },
+   "name_zh": "深板岩砖墙",
+   "yields": 6
+  },
+  "minecraft:deepslate_bricks": {
+   "materials": {
+    "minecraft:polished_deepslate": 4
+   },
+   "name_zh": "深板岩砖",
+   "yields": 4
+  },
+  "minecraft:deepslate_tile_slab": {
+   "materials": {
+    "minecraft:deepslate_tiles": 3
+   },
+   "name_zh": "深板岩瓦台阶",
+   "yields": 6
+  },
+  "minecraft:deepslate_tile_stairs": {
+   "materials": {
+    "minecraft:deepslate_tiles": 6
+   },
+   "name_zh": "深板岩瓦楼梯",
+   "yields": 4
+  },
+  "minecraft:deepslate_tile_wall": {
+   "materials": {
+    "minecraft:deepslate_tiles": 6
+   },
+   "name_zh": "深板岩瓦墙",
+   "yields": 6
+  },
+  "minecraft:deepslate_tiles": {
+   "materials": {
+    "minecraft:deepslate_bricks": 4
+   },
+   "name_zh": "深板岩瓦",
+   "yields": 4
+  },
+  "minecraft:detector_rail": {
+   "materials": {
+    "minecraft:iron_ingot": 6,
+    "minecraft:redstone": 1,
+    "minecraft:stone_pressure_plate": 1
+   },
+   "name_zh": "探测铁轨",
+   "yields": 6
+  },
+  "minecraft:diamond": {
+   "materials": {
+    "minecraft:diamond_block": 1
+   },
+   "name_zh": "钻石",
+   "yields": 9
+  },
+  "minecraft:diamond_axe": {
+   "materials": {
+    "minecraft:diamond": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "钻石斧"
+  },
+  "minecraft:diamond_block": {
+   "materials": {
+    "minecraft:diamond": 9
+   },
+   "name_zh": "钻石块"
+  },
+  "minecraft:diamond_boots": {
+   "materials": {
+    "minecraft:diamond": 4
+   },
+   "name_zh": "钻石靴子"
+  },
+  "minecraft:diamond_chestplate": {
+   "materials": {
+    "minecraft:diamond": 8
+   },
+   "name_zh": "钻石胸甲"
+  },
+  "minecraft:diamond_helmet": {
+   "materials": {
+    "minecraft:diamond": 5
+   },
+   "name_zh": "钻石头盔"
+  },
+  "minecraft:diamond_hoe": {
+   "materials": {
+    "minecraft:diamond": 2,
+    "minecraft:stick": 2
+   },
+   "name_zh": "钻石锄"
+  },
+  "minecraft:diamond_leggings": {
+   "materials": {
+    "minecraft:diamond": 7
+   },
+   "name_zh": "钻石护腿"
+  },
+  "minecraft:diamond_pickaxe": {
+   "materials": {
+    "minecraft:diamond": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "钻石镐"
+  },
+  "minecraft:diamond_shovel": {
+   "materials": {
+    "minecraft:diamond": 1,
+    "minecraft:stick": 2
+   },
+   "name_zh": "钻石锹"
+  },
+  "minecraft:diamond_sword": {
+   "materials": {
+    "minecraft:diamond": 2,
+    "minecraft:stick": 1
+   },
+   "name_zh": "钻石剑"
+  },
+  "minecraft:diorite": {
+   "materials": {
+    "minecraft:cobblestone": 2,
+    "minecraft:quartz": 2
+   },
+   "name_zh": "闪长岩",
+   "yields": 2
+  },
+  "minecraft:diorite_slab": {
+   "materials": {
+    "minecraft:diorite": 3
+   },
+   "name_zh": "闪长岩台阶",
+   "yields": 6
+  },
+  "minecraft:diorite_stairs": {
+   "materials": {
+    "minecraft:diorite": 6
+   },
+   "name_zh": "闪长岩楼梯",
+   "yields": 4
+  },
+  "minecraft:diorite_wall": {
+   "materials": {
+    "minecraft:diorite": 6
+   },
+   "name_zh": "闪长岩墙",
+   "yields": 6
+  },
+  "minecraft:dispenser": {
+   "materials": {
+    "minecraft:bow": 1,
+    "minecraft:cobblestone": 7,
+    "minecraft:redstone": 1
+   },
+   "name_zh": "发射器"
+  },
+  "minecraft:dried_kelp": {
+   "materials": {
+    "minecraft:dried_kelp_block": 1
+   },
+   "name_zh": "干海带",
+   "yields": 9
+  },
+  "minecraft:dried_kelp_block": {
+   "materials": {
+    "minecraft:dried_kelp": 9
+   },
+   "name_zh": "干海带块"
+  },
+  "minecraft:dripstone_block": {
+   "materials": {
+    "minecraft:pointed_dripstone": 4
+   },
+   "name_zh": "滴水石块"
+  },
+  "minecraft:dropper": {
+   "materials": {
+    "minecraft:cobblestone": 7,
+    "minecraft:redstone": 1
+   },
+   "name_zh": "投掷器"
+  },
+  "minecraft:dune_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:dune_armor_trim_smithing_template": 1,
+    "minecraft:sandstone": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:emerald": {
+   "materials": {
+    "minecraft:emerald_block": 1
+   },
+   "name_zh": "绿宝石",
+   "yields": 9
+  },
+  "minecraft:emerald_block": {
+   "materials": {
+    "minecraft:emerald": 9
+   },
+   "name_zh": "绿宝石块"
+  },
+  "minecraft:enchanting_table": {
+   "materials": {
+    "minecraft:book": 1,
+    "minecraft:diamond": 2,
+    "minecraft:obsidian": 4
+   },
+   "name_zh": "附魔台"
+  },
+  "minecraft:end_crystal": {
+   "materials": {
+    "minecraft:ender_eye": 1,
+    "minecraft:ghast_tear": 1,
+    "minecraft:glass": 7
+   },
+   "name_zh": "末地水晶"
+  },
+  "minecraft:end_rod": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:popped_chorus_fruit": 1
+   },
+   "name_zh": "末地烛",
+   "yields": 4
+  },
+  "minecraft:end_stone_brick_slab": {
+   "materials": {
+    "minecraft:end_stone_bricks": 3
+   },
+   "name_zh": "末地石砖台阶",
+   "yields": 6
+  },
+  "minecraft:end_stone_brick_stairs": {
+   "materials": {
+    "minecraft:end_stone_bricks": 6
+   },
+   "name_zh": "末地石砖楼梯",
+   "yields": 4
+  },
+  "minecraft:end_stone_brick_wall": {
+   "materials": {
+    "minecraft:end_stone_bricks": 6
+   },
+   "name_zh": "末地石砖墙",
+   "yields": 6
+  },
+  "minecraft:end_stone_bricks": {
+   "materials": {
+    "minecraft:end_stone": 4
+   },
+   "name_zh": "末地石砖",
+   "yields": 4
+  },
+  "minecraft:ender_chest": {
+   "materials": {
+    "minecraft:ender_eye": 1,
+    "minecraft:obsidian": 8
+   },
+   "name_zh": "末影箱"
+  },
+  "minecraft:ender_eye": {
+   "materials": {
+    "minecraft:blaze_powder": 1,
+    "minecraft:ender_pearl": 1
+   },
+   "name_zh": "末影之眼"
+  },
+  "minecraft:exposed_chiseled_copper": {
+   "materials": {
+    "minecraft:exposed_cut_copper_slab": 2
+   },
+   "name_zh": "斑驳的雕纹铜块"
+  },
+  "minecraft:exposed_copper_bulb": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:exposed_copper": 3,
+    "minecraft:redstone": 1
+   },
+   "name_zh": "斑驳的铜灯",
+   "yields": 4
+  },
+  "minecraft:exposed_copper_grate": {
+   "materials": {
+    "minecraft:exposed_copper": 4
+   },
+   "name_zh": "斑驳的铜格栅",
+   "yields": 4
+  },
+  "minecraft:exposed_cut_copper": {
+   "materials": {
+    "minecraft:exposed_copper": 4
+   },
+   "name_zh": "斑驳的切制铜块",
+   "yields": 4
+  },
+  "minecraft:exposed_cut_copper_slab": {
+   "materials": {
+    "minecraft:exposed_cut_copper": 3
+   },
+   "name_zh": "斑驳的切制铜台阶",
+   "yields": 6
+  },
+  "minecraft:exposed_cut_copper_stairs": {
+   "materials": {
+    "minecraft:exposed_cut_copper": 6
+   },
+   "name_zh": "斑驳的切制铜楼梯",
+   "yields": 4
+  },
+  "minecraft:eye_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:end_stone": 1,
+    "minecraft:eye_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:fermented_spider_eye": {
+   "materials": {
+    "minecraft:brown_mushroom": 1,
+    "minecraft:spider_eye": 1,
+    "minecraft:sugar": 1
+   },
+   "name_zh": "发酵蛛眼"
+  },
+  "minecraft:fire_charge": {
+   "materials": {
+    "minecraft:blaze_powder": 1,
+    "minecraft:coal": 1,
+    "minecraft:gunpowder": 1
+   },
+   "name_zh": "火焰弹",
+   "yields": 3
+  },
+  "minecraft:firework_rocket": {
+   "materials": {
+    "minecraft:gunpowder": 1,
+    "minecraft:paper": 1
+   },
+   "name_zh": "烟花火箭",
+   "yields": 3
+  },
+  "minecraft:fishing_rod": {
+   "materials": {
+    "minecraft:stick": 3,
+    "minecraft:string": 2
+   },
+   "name_zh": "钓鱼竿"
+  },
+  "minecraft:fletching_table": {
+   "materials": {
+    "minecraft:flint": 2,
+    "minecraft:oak_planks": 4
+   },
+   "name_zh": "制箭台"
+  },
+  "minecraft:flint_and_steel": {
+   "materials": {
+    "minecraft:flint": 1,
+    "minecraft:iron_ingot": 1
+   },
+   "name_zh": "打火石"
+  },
+  "minecraft:flow_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:breeze_rod": 1,
+    "minecraft:diamond": 7,
+    "minecraft:flow_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:flower_banner_pattern": {
+   "materials": {
+    "minecraft:oxeye_daisy": 1,
+    "minecraft:paper": 1
+   },
+   "name_zh": "旗帜图案"
+  },
+  "minecraft:flower_pot": {
+   "materials": {
+    "minecraft:brick": 3
+   },
+   "name_zh": "花盆"
+  },
+  "minecraft:furnace": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 8
+   },
+   "name_zh": "熔炉"
+  },
+  "minecraft:furnace_minecart": {
+   "materials": {
+    "minecraft:furnace": 1,
+    "minecraft:minecart": 1
+   },
+   "name_zh": "动力矿车"
+  },
+  "minecraft:glass_bottle": {
+   "materials": {
+    "minecraft:glass": 3
+   },
+   "name_zh": "玻璃瓶",
+   "yields": 3
+  },
+  "minecraft:glass_pane": {
+   "materials": {
+    "minecraft:glass": 6
+   },
+   "name_zh": "玻璃板",
+   "yields": 16
+  },
+  "minecraft:glistering_melon_slice": {
+   "materials": {
+    "minecraft:gold_nugget": 8,
+    "minecraft:melon_slice": 1
+   },
+   "name_zh": "闪烁的西瓜片"
+  },
+  "minecraft:glow_item_frame": {
+   "materials": {
+    "minecraft:glow_ink_sac": 1,
+    "minecraft:item_frame": 1
+   },
+   "name_zh": "荧光物品展示框"
+  },
+  "minecraft:glowstone": {
+   "materials": {
+    "minecraft:glowstone_dust": 4
+   },
+   "name_zh": "荧石"
+  },
+  "minecraft:gold_block": {
+   "materials": {
+    "minecraft:gold_ingot": 9
+   },
+   "name_zh": "金块"
+  },
+  "minecraft:gold_ingot": {
+   "materials": {
+    "minecraft:gold_block": 1
+   },
+   "name_zh": "金锭",
+   "yields": 9
+  },
+  "minecraft:gold_nugget": {
+   "materials": {
+    "minecraft:gold_ingot": 1
+   },
+   "name_zh": "金粒",
+   "yields": 9
+  },
+  "minecraft:golden_apple": {
+   "materials": {
+    "minecraft:apple": 1,
+    "minecraft:gold_ingot": 8
+   },
+   "name_zh": "金苹果",
+   "note": "1.21 苹果在中间，8个金锭环绕"
+  },
+  "minecraft:golden_axe": {
+   "materials": {
+    "minecraft:gold_ingot": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "金斧"
+  },
+  "minecraft:golden_boots": {
+   "materials": {
+    "minecraft:gold_ingot": 4
+   },
+   "name_zh": "金靴子"
+  },
+  "minecraft:golden_carrot": {
+   "materials": {
+    "minecraft:carrot": 1,
+    "minecraft:gold_nugget": 8
+   },
+   "name_zh": "金胡萝卜"
+  },
+  "minecraft:golden_chestplate": {
+   "materials": {
+    "minecraft:gold_ingot": 8
+   },
+   "name_zh": "金胸甲"
+  },
+  "minecraft:golden_helmet": {
+   "materials": {
+    "minecraft:gold_ingot": 5
+   },
+   "name_zh": "金头盔"
+  },
+  "minecraft:golden_hoe": {
+   "materials": {
+    "minecraft:gold_ingot": 2,
+    "minecraft:stick": 2
+   },
+   "name_zh": "金锄"
+  },
+  "minecraft:golden_leggings": {
+   "materials": {
+    "minecraft:gold_ingot": 7
+   },
+   "name_zh": "金护腿"
+  },
+  "minecraft:golden_pickaxe": {
+   "materials": {
+    "minecraft:gold_ingot": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "金镐"
+  },
+  "minecraft:golden_shovel": {
+   "materials": {
+    "minecraft:gold_ingot": 1,
+    "minecraft:stick": 2
+   },
+   "name_zh": "金锹"
+  },
+  "minecraft:golden_sword": {
+   "materials": {
+    "minecraft:gold_ingot": 2,
+    "minecraft:stick": 1
+   },
+   "name_zh": "金剑"
+  },
+  "minecraft:granite": {
+   "materials": {
+    "minecraft:diorite": 1,
+    "minecraft:quartz": 1
+   },
+   "name_zh": "花岗岩"
+  },
+  "minecraft:granite_slab": {
+   "materials": {
+    "minecraft:granite": 3
+   },
+   "name_zh": "花岗岩台阶",
+   "yields": 6
+  },
+  "minecraft:granite_stairs": {
+   "materials": {
+    "minecraft:granite": 6
+   },
+   "name_zh": "花岗岩楼梯",
+   "yields": 4
+  },
+  "minecraft:granite_wall": {
+   "materials": {
+    "minecraft:granite": 6
+   },
+   "name_zh": "花岗岩墙",
+   "yields": 6
+  },
+  "minecraft:gray_banner": {
+   "materials": {
+    "minecraft:gray_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "灰色旗帜"
+  },
+  "minecraft:gray_bed": {
+   "materials": {
+    "minecraft:gray_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "灰色床"
+  },
+  "minecraft:gray_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:gray_dye": 1
+   },
+   "name_zh": "灰色蜡烛"
+  },
+  "minecraft:gray_carpet": {
+   "materials": {
+    "minecraft:gray_wool": 2
+   },
+   "name_zh": "灰色地毯",
+   "yields": 3
+  },
+  "minecraft:gray_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:gray_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "灰色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:gray_dye": {
+   "materials": {
+    "minecraft:black_dye": 1,
+    "minecraft:white_dye": 1
+   },
+   "name_zh": "灰色染料",
+   "yields": 2
+  },
+  "minecraft:gray_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:gray_dye": 1
+   },
+   "name_zh": "灰色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:gray_stained_glass_pane": {
+   "materials": {
+    "minecraft:gray_stained_glass": 6
+   },
+   "name_zh": "灰色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:gray_terracotta": {
+   "materials": {
+    "minecraft:gray_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "灰色陶瓦",
+   "yields": 8
+  },
+  "minecraft:gray_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:gray_dye": 1
+   },
+   "name_zh": "灰色羊毛"
+  },
+  "minecraft:green_banner": {
+   "materials": {
+    "minecraft:green_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "绿色旗帜"
+  },
+  "minecraft:green_bed": {
+   "materials": {
+    "minecraft:green_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "绿色床"
+  },
+  "minecraft:green_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:green_dye": 1
+   },
+   "name_zh": "绿色蜡烛"
+  },
+  "minecraft:green_carpet": {
+   "materials": {
+    "minecraft:green_wool": 2
+   },
+   "name_zh": "绿色地毯",
+   "yields": 3
+  },
+  "minecraft:green_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:green_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "绿色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:green_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:green_dye": 1
+   },
+   "name_zh": "绿色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:green_stained_glass_pane": {
+   "materials": {
+    "minecraft:green_stained_glass": 6
+   },
+   "name_zh": "绿色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:green_terracotta": {
+   "materials": {
+    "minecraft:green_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "绿色陶瓦",
+   "yields": 8
+  },
+  "minecraft:green_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:green_dye": 1
+   },
+   "name_zh": "绿色羊毛"
+  },
+  "minecraft:grindstone": {
+   "materials": {
+    "minecraft:oak_planks": 2,
+    "minecraft:stick": 2,
+    "minecraft:stone_slab": 1
+   },
+   "name_zh": "砂轮"
+  },
+  "minecraft:hay_block": {
+   "materials": {
+    "minecraft:wheat": 9
+   },
+   "name_zh": "干草捆"
+  },
+  "minecraft:heavy_weighted_pressure_plate": {
+   "materials": {
+    "minecraft:iron_ingot": 2
+   },
+   "name_zh": "重质测重压力板"
+  },
+  "minecraft:honey_block": {
+   "materials": {
+    "minecraft:honey_bottle": 4
+   },
+   "name_zh": "蜂蜜块"
+  },
+  "minecraft:honey_bottle": {
+   "materials": {
+    "minecraft:glass_bottle": 4,
+    "minecraft:honey_block": 1
+   },
+   "name_zh": "蜂蜜瓶",
+   "yields": 4
+  },
+  "minecraft:honeycomb_block": {
+   "materials": {
+    "minecraft:honeycomb": 4
+   },
+   "name_zh": "蜜脾块"
+  },
+  "minecraft:hopper": {
+   "materials": {
+    "minecraft:chest": 1,
+    "minecraft:iron_ingot": 5
+   },
+   "name_zh": "漏斗"
+  },
+  "minecraft:hopper_minecart": {
+   "materials": {
+    "minecraft:hopper": 1,
+    "minecraft:minecart": 1
+   },
+   "name_zh": "漏斗矿车"
+  },
+  "minecraft:host_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:host_armor_trim_smithing_template": 1,
+    "minecraft:terracotta": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:iron_axe": {
+   "materials": {
+    "minecraft:iron_ingot": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "铁斧"
+  },
+  "minecraft:iron_bars": {
+   "materials": {
+    "minecraft:iron_ingot": 6
+   },
+   "name_zh": "铁栏杆",
+   "yields": 16
+  },
+  "minecraft:iron_block": {
+   "materials": {
+    "minecraft:iron_ingot": 9
+   },
+   "name_zh": "铁块"
+  },
+  "minecraft:iron_boots": {
+   "materials": {
+    "minecraft:iron_ingot": 4
+   },
+   "name_zh": "铁靴子"
+  },
+  "minecraft:iron_chestplate": {
+   "materials": {
+    "minecraft:iron_ingot": 8
+   },
+   "name_zh": "铁胸甲"
+  },
+  "minecraft:iron_door": {
+   "materials": {
+    "minecraft:iron_ingot": 6
+   },
+   "name_zh": "铁门",
+   "yields": 3
+  },
+  "minecraft:iron_helmet": {
+   "materials": {
+    "minecraft:iron_ingot": 5
+   },
+   "name_zh": "铁头盔"
+  },
+  "minecraft:iron_hoe": {
+   "materials": {
+    "minecraft:iron_ingot": 2,
+    "minecraft:stick": 2
+   },
+   "name_zh": "铁锄"
+  },
+  "minecraft:iron_ingot": {
+   "materials": {
+    "minecraft:iron_block": 1
+   },
+   "name_zh": "铁锭",
+   "yields": 9
+  },
+  "minecraft:iron_leggings": {
+   "materials": {
+    "minecraft:iron_ingot": 7
+   },
+   "name_zh": "铁护腿"
+  },
+  "minecraft:iron_nugget": {
+   "materials": {
+    "minecraft:iron_ingot": 1
+   },
+   "name_zh": "铁粒",
+   "yields": 9
+  },
+  "minecraft:iron_pickaxe": {
+   "materials": {
+    "minecraft:iron_ingot": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "铁镐"
+  },
+  "minecraft:iron_shovel": {
+   "materials": {
+    "minecraft:iron_ingot": 1,
+    "minecraft:stick": 2
+   },
+   "name_zh": "铁锹"
+  },
+  "minecraft:iron_sword": {
+   "materials": {
+    "minecraft:iron_ingot": 2,
+    "minecraft:stick": 1
+   },
+   "name_zh": "铁剑"
+  },
+  "minecraft:iron_trapdoor": {
+   "materials": {
+    "minecraft:iron_ingot": 4
+   },
+   "name_zh": "铁活板门"
+  },
+  "minecraft:item_frame": {
+   "materials": {
+    "minecraft:leather": 1,
+    "minecraft:stick": 8
+   },
+   "name_zh": "物品展示框"
+  },
+  "minecraft:jack_o_lantern": {
+   "materials": {
+    "minecraft:carved_pumpkin": 1,
+    "minecraft:torch": 1
+   },
+   "name_zh": "南瓜灯"
+  },
+  "minecraft:jukebox": {
+   "materials": {
+    "minecraft:diamond": 1,
+    "minecraft:oak_planks": 8
+   },
+   "name_zh": "唱片机"
+  },
+  "minecraft:jungle_boat": {
+   "materials": {
+    "minecraft:jungle_planks": 5
+   },
+   "name_zh": "丛林木船"
+  },
+  "minecraft:jungle_button": {
+   "materials": {
+    "minecraft:jungle_planks": 1
+   },
+   "name_zh": "丛林木按钮"
+  },
+  "minecraft:jungle_chest_boat": {
+   "materials": {
+    "minecraft:chest": 1,
+    "minecraft:jungle_boat": 1
+   },
+   "name_zh": "丛林木运输船"
+  },
+  "minecraft:jungle_door": {
+   "materials": {
+    "minecraft:jungle_planks": 6
+   },
+   "name_zh": "丛林木门",
+   "yields": 3
+  },
+  "minecraft:jungle_fence": {
+   "materials": {
+    "minecraft:jungle_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "丛林木栅栏",
+   "yields": 3
+  },
+  "minecraft:jungle_fence_gate": {
+   "materials": {
+    "minecraft:jungle_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "丛林木栅栏门"
+  },
+  "minecraft:jungle_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_jungle_log": 6
+   },
+   "name_zh": "悬挂式丛林木告示牌",
+   "yields": 6
+  },
+  "minecraft:jungle_planks": {
+   "materials": {
+    "minecraft:jungle_log": 1
+   },
+   "name_zh": "丛林木板",
+   "yields": 4
+  },
+  "minecraft:jungle_pressure_plate": {
+   "materials": {
+    "minecraft:jungle_planks": 2
+   },
+   "name_zh": "丛林木压力板"
+  },
+  "minecraft:jungle_sign": {
+   "materials": {
+    "minecraft:jungle_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "丛林木告示牌",
+   "yields": 3
+  },
+  "minecraft:jungle_slab": {
+   "materials": {
+    "minecraft:jungle_planks": 3
+   },
+   "name_zh": "丛林木台阶",
+   "yields": 6
+  },
+  "minecraft:jungle_stairs": {
+   "materials": {
+    "minecraft:jungle_planks": 6
+   },
+   "name_zh": "丛林木楼梯",
+   "yields": 4
+  },
+  "minecraft:jungle_trapdoor": {
+   "materials": {
+    "minecraft:jungle_planks": 6
+   },
+   "name_zh": "丛林木活板门",
+   "yields": 2
+  },
+  "minecraft:jungle_wood": {
+   "materials": {
+    "minecraft:jungle_log": 4
+   },
+   "name_zh": "丛林木",
+   "yields": 3
+  },
+  "minecraft:ladder": {
+   "materials": {
+    "minecraft:stick": 7
+   },
+   "name_zh": "梯子",
+   "yields": 3
+  },
+  "minecraft:lantern": {
+   "materials": {
+    "minecraft:iron_nugget": 8,
+    "minecraft:torch": 1
+   },
+   "name_zh": "灯笼"
+  },
+  "minecraft:lapis_block": {
+   "materials": {
+    "minecraft:lapis_lazuli": 9
+   },
+   "name_zh": "青金石块"
+  },
+  "minecraft:lapis_lazuli": {
+   "materials": {
+    "minecraft:lapis_block": 1
+   },
+   "name_zh": "青金石",
+   "yields": 9
+  },
+  "minecraft:lead": {
+   "materials": {
+    "minecraft:slime_ball": 1,
+    "minecraft:string": 4
+   },
+   "name_zh": "拴绳",
+   "yields": 2
+  },
+  "minecraft:leather": {
+   "materials": {
+    "minecraft:rabbit_hide": 4
+   },
+   "name_zh": "皮革"
+  },
+  "minecraft:leather_boots": {
+   "materials": {
+    "minecraft:leather": 4
+   },
+   "name_zh": "皮革靴子"
+  },
+  "minecraft:leather_chestplate": {
+   "materials": {
+    "minecraft:leather": 8
+   },
+   "name_zh": "皮革外套"
+  },
+  "minecraft:leather_helmet": {
+   "materials": {
+    "minecraft:leather": 5
+   },
+   "name_zh": "皮革帽子"
+  },
+  "minecraft:leather_horse_armor": {
+   "materials": {
+    "minecraft:leather": 7
+   },
+   "name_zh": "皮革马铠"
+  },
+  "minecraft:leather_leggings": {
+   "materials": {
+    "minecraft:leather": 7
+   },
+   "name_zh": "皮革裤子"
+  },
+  "minecraft:lectern": {
+   "materials": {
+    "minecraft:bookshelf": 1,
+    "minecraft:oak_slab": 4
+   },
+   "name_zh": "讲台"
+  },
+  "minecraft:lever": {
+   "materials": {
+    "minecraft:cobblestone": 1,
+    "minecraft:stick": 1
+   },
+   "name_zh": "拉杆"
+  },
+  "minecraft:light_blue_banner": {
+   "materials": {
+    "minecraft:light_blue_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "淡蓝色旗帜"
+  },
+  "minecraft:light_blue_bed": {
+   "materials": {
+    "minecraft:light_blue_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "淡蓝色床"
+  },
+  "minecraft:light_blue_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:light_blue_dye": 1
+   },
+   "name_zh": "淡蓝色蜡烛"
+  },
+  "minecraft:light_blue_carpet": {
+   "materials": {
+    "minecraft:light_blue_wool": 2
+   },
+   "name_zh": "淡蓝色地毯",
+   "yields": 3
+  },
+  "minecraft:light_blue_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:light_blue_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "淡蓝色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:light_blue_dye": {
+   "materials": {
+    "minecraft:blue_orchid": 1
+   },
+   "name_zh": "淡蓝色染料"
+  },
+  "minecraft:light_blue_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:light_blue_dye": 1
+   },
+   "name_zh": "淡蓝色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:light_blue_stained_glass_pane": {
+   "materials": {
+    "minecraft:light_blue_stained_glass": 6
+   },
+   "name_zh": "淡蓝色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:light_blue_terracotta": {
+   "materials": {
+    "minecraft:light_blue_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "淡蓝色陶瓦",
+   "yields": 8
+  },
+  "minecraft:light_blue_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:light_blue_dye": 1
+   },
+   "name_zh": "淡蓝色羊毛"
+  },
+  "minecraft:light_gray_banner": {
+   "materials": {
+    "minecraft:light_gray_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "淡灰色旗帜"
+  },
+  "minecraft:light_gray_bed": {
+   "materials": {
+    "minecraft:light_gray_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "淡灰色床"
+  },
+  "minecraft:light_gray_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:light_gray_dye": 1
+   },
+   "name_zh": "淡灰色蜡烛"
+  },
+  "minecraft:light_gray_carpet": {
+   "materials": {
+    "minecraft:light_gray_wool": 2
+   },
+   "name_zh": "淡灰色地毯",
+   "yields": 3
+  },
+  "minecraft:light_gray_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:light_gray_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "淡灰色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:light_gray_dye": {
+   "materials": {
+    "minecraft:oxeye_daisy": 1
+   },
+   "name_zh": "淡灰色染料"
+  },
+  "minecraft:light_gray_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:light_gray_dye": 1
+   },
+   "name_zh": "淡灰色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:light_gray_stained_glass_pane": {
+   "materials": {
+    "minecraft:light_gray_stained_glass": 6
+   },
+   "name_zh": "淡灰色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:light_gray_terracotta": {
+   "materials": {
+    "minecraft:light_gray_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "淡灰色陶瓦",
+   "yields": 8
+  },
+  "minecraft:light_gray_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:light_gray_dye": 1
+   },
+   "name_zh": "淡灰色羊毛"
+  },
+  "minecraft:light_weighted_pressure_plate": {
+   "materials": {
+    "minecraft:gold_ingot": 2
+   },
+   "name_zh": "轻质测重压力板"
+  },
+  "minecraft:lightning_rod": {
+   "materials": {
+    "minecraft:copper_ingot": 3
+   },
+   "name_zh": "避雷针"
+  },
+  "minecraft:lime_banner": {
+   "materials": {
+    "minecraft:lime_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "黄绿色旗帜"
+  },
+  "minecraft:lime_bed": {
+   "materials": {
+    "minecraft:lime_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "黄绿色床"
+  },
+  "minecraft:lime_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:lime_dye": 1
+   },
+   "name_zh": "黄绿色蜡烛"
+  },
+  "minecraft:lime_carpet": {
+   "materials": {
+    "minecraft:lime_wool": 2
+   },
+   "name_zh": "黄绿色地毯",
+   "yields": 3
+  },
+  "minecraft:lime_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:lime_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "黄绿色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:lime_dye": {
+   "materials": {
+    "minecraft:green_dye": 1,
+    "minecraft:white_dye": 1
+   },
+   "name_zh": "黄绿色染料",
+   "yields": 2
+  },
+  "minecraft:lime_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:lime_dye": 1
+   },
+   "name_zh": "黄绿色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:lime_stained_glass_pane": {
+   "materials": {
+    "minecraft:lime_stained_glass": 6
+   },
+   "name_zh": "黄绿色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:lime_terracotta": {
+   "materials": {
+    "minecraft:lime_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "黄绿色陶瓦",
+   "yields": 8
+  },
+  "minecraft:lime_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:lime_dye": 1
+   },
+   "name_zh": "黄绿色羊毛"
+  },
+  "minecraft:lodestone": {
+   "materials": {
+    "minecraft:chiseled_stone_bricks": 8,
+    "minecraft:netherite_ingot": 1
+   },
+   "name_zh": "磁石"
+  },
+  "minecraft:loom": {
+   "materials": {
+    "minecraft:oak_planks": 2,
+    "minecraft:string": 2
+   },
+   "name_zh": "织布机"
+  },
+  "minecraft:mace": {
+   "materials": {
+    "minecraft:breeze_rod": 1,
+    "minecraft:heavy_core": 1
+   },
+   "name_zh": "重锤"
+  },
+  "minecraft:magenta_banner": {
+   "materials": {
+    "minecraft:magenta_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "品红色旗帜"
+  },
+  "minecraft:magenta_bed": {
+   "materials": {
+    "minecraft:magenta_wool": 3,
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "品红色床"
+  },
+  "minecraft:magenta_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:magenta_dye": 1
+   },
+   "name_zh": "品红色蜡烛"
+  },
+  "minecraft:magenta_carpet": {
+   "materials": {
+    "minecraft:magenta_wool": 2
+   },
+   "name_zh": "品红色地毯",
+   "yields": 3
+  },
+  "minecraft:magenta_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:magenta_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "品红色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:magenta_dye": {
+   "materials": {
+    "minecraft:allium": 1
+   },
+   "name_zh": "品红色染料"
+  },
+  "minecraft:magenta_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:magenta_dye": 1
+   },
+   "name_zh": "品红色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:magenta_stained_glass_pane": {
+   "materials": {
+    "minecraft:magenta_stained_glass": 6
+   },
+   "name_zh": "品红色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:magenta_terracotta": {
+   "materials": {
+    "minecraft:magenta_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "品红色陶瓦",
+   "yields": 8
+  },
+  "minecraft:magenta_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:magenta_dye": 1
+   },
+   "name_zh": "品红色羊毛"
+  },
+  "minecraft:magma_block": {
+   "materials": {
+    "minecraft:magma_cream": 4
+   },
+   "name_zh": "岩浆块"
+  },
+  "minecraft:magma_cream": {
+   "materials": {
+    "minecraft:blaze_powder": 1,
+    "minecraft:slime_ball": 1
+   },
+   "name_zh": "岩浆膏"
+  },
+  "minecraft:mangrove_boat": {
+   "materials": {
+    "minecraft:mangrove_planks": 5
+   },
+   "name_zh": "红树木船"
+  },
+  "minecraft:mangrove_button": {
+   "materials": {
+    "minecraft:mangrove_planks": 1
+   },
+   "name_zh": "红树木按钮"
+  },
+  "minecraft:mangrove_chest_boat": {
+   "materials": {
+    "minecraft:chest": 1,
+    "minecraft:mangrove_boat": 1
+   },
+   "name_zh": "红树木运输船"
+  },
+  "minecraft:mangrove_door": {
+   "materials": {
+    "minecraft:mangrove_planks": 6
+   },
+   "name_zh": "红树木门",
+   "yields": 3
+  },
+  "minecraft:mangrove_fence": {
+   "materials": {
+    "minecraft:mangrove_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "红树木栅栏",
+   "yields": 3
+  },
+  "minecraft:mangrove_fence_gate": {
+   "materials": {
+    "minecraft:mangrove_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "红树木栅栏门"
+  },
+  "minecraft:mangrove_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_mangrove_log": 6
+   },
+   "name_zh": "悬挂式红树木告示牌",
+   "yields": 6
+  },
+  "minecraft:mangrove_planks": {
+   "materials": {
+    "minecraft:mangrove_log": 1
+   },
+   "name_zh": "红树木板",
+   "yields": 4
+  },
+  "minecraft:mangrove_pressure_plate": {
+   "materials": {
+    "minecraft:mangrove_planks": 2
+   },
+   "name_zh": "红树木压力板"
+  },
+  "minecraft:mangrove_sign": {
+   "materials": {
+    "minecraft:mangrove_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "红树木告示牌",
+   "yields": 3
+  },
+  "minecraft:mangrove_slab": {
+   "materials": {
+    "minecraft:mangrove_planks": 3
+   },
+   "name_zh": "红树木台阶",
+   "yields": 6
+  },
+  "minecraft:mangrove_stairs": {
+   "materials": {
+    "minecraft:mangrove_planks": 6
+   },
+   "name_zh": "红树木楼梯",
+   "yields": 4
+  },
+  "minecraft:mangrove_trapdoor": {
+   "materials": {
+    "minecraft:mangrove_planks": 6
+   },
+   "name_zh": "红树木活板门",
+   "yields": 2
+  },
+  "minecraft:mangrove_wood": {
+   "materials": {
+    "minecraft:mangrove_log": 4
+   },
+   "name_zh": "红树木",
+   "yields": 3
+  },
+  "minecraft:map": {
+   "materials": {
+    "minecraft:compass": 1,
+    "minecraft:paper": 8
+   },
+   "name_zh": "空地图"
+  },
+  "minecraft:melon": {
+   "materials": {
+    "minecraft:melon_slice": 9
+   },
+   "name_zh": "西瓜"
+  },
+  "minecraft:melon_seeds": {
+   "materials": {
+    "minecraft:melon_slice": 1
+   },
+   "name_zh": "西瓜种子"
+  },
+  "minecraft:minecart": {
+   "materials": {
+    "minecraft:iron_ingot": 5
+   },
+   "name_zh": "矿车"
+  },
+  "minecraft:mojang_banner_pattern": {
+   "materials": {
+    "minecraft:enchanted_golden_apple": 1,
+    "minecraft:paper": 1
+   },
+   "name_zh": "旗帜图案"
+  },
+  "minecraft:moss_carpet": {
+   "materials": {
+    "minecraft:moss_block": 2
+   },
+   "name_zh": "覆地苔藓",
+   "yields": 3
+  },
+  "minecraft:mossy_cobblestone": {
+   "materials": {
+    "minecraft:cobblestone": 1,
+    "minecraft:vine": 1
+   },
+   "name_zh": "苔石"
+  },
+  "minecraft:mossy_cobblestone_slab": {
+   "materials": {
+    "minecraft:mossy_cobblestone": 3
+   },
+   "name_zh": "苔石台阶",
+   "yields": 6
+  },
+  "minecraft:mossy_cobblestone_stairs": {
+   "materials": {
+    "minecraft:mossy_cobblestone": 6
+   },
+   "name_zh": "苔石楼梯",
+   "yields": 4
+  },
+  "minecraft:mossy_cobblestone_wall": {
+   "materials": {
+    "minecraft:mossy_cobblestone": 6
+   },
+   "name_zh": "苔石墙",
+   "yields": 6
+  },
+  "minecraft:mossy_stone_brick_slab": {
+   "materials": {
+    "minecraft:mossy_stone_bricks": 3
+   },
+   "name_zh": "苔石砖台阶",
+   "yields": 6
+  },
+  "minecraft:mossy_stone_brick_stairs": {
+   "materials": {
+    "minecraft:mossy_stone_bricks": 6
+   },
+   "name_zh": "苔石砖楼梯",
+   "yields": 4
+  },
+  "minecraft:mossy_stone_brick_wall": {
+   "materials": {
+    "minecraft:mossy_stone_bricks": 6
+   },
+   "name_zh": "苔石砖墙",
+   "yields": 6
+  },
+  "minecraft:mossy_stone_bricks": {
+   "materials": {
+    "minecraft:stone_bricks": 1,
+    "minecraft:vine": 1
+   },
+   "name_zh": "苔石砖"
+  },
+  "minecraft:mud_brick_slab": {
+   "materials": {
+    "minecraft:mud_bricks": 3
+   },
+   "name_zh": "泥砖台阶",
+   "yields": 6
+  },
+  "minecraft:mud_brick_stairs": {
+   "materials": {
+    "minecraft:mud_bricks": 6
+   },
+   "name_zh": "泥砖楼梯",
+   "yields": 4
+  },
+  "minecraft:mud_brick_wall": {
+   "materials": {
+    "minecraft:mud_bricks": 6
+   },
+   "name_zh": "泥砖墙",
+   "yields": 6
+  },
+  "minecraft:mud_bricks": {
+   "materials": {
+    "minecraft:packed_mud": 4
+   },
+   "name_zh": "泥砖",
+   "yields": 4
+  },
+  "minecraft:muddy_mangrove_roots": {
+   "materials": {
+    "minecraft:mangrove_roots": 1,
+    "minecraft:mud": 1
+   },
+   "name_zh": "沾泥的红树根"
+  },
+  "minecraft:mushroom_stew": {
+   "materials": {
+    "minecraft:bowl": 1,
+    "minecraft:brown_mushroom": 1,
+    "minecraft:red_mushroom": 1
+   },
+   "name_zh": "蘑菇煲"
+  },
+  "minecraft:music_disc_5": {
+   "materials": {
+    "minecraft:disc_fragment_5": 9
+   },
+   "name_zh": "音乐唱片"
+  },
+  "minecraft:nether_brick_fence": {
+   "materials": {
+    "minecraft:nether_brick": 2,
+    "minecraft:nether_bricks": 4
+   },
+   "name_zh": "下界砖栅栏",
+   "yields": 6
+  },
+  "minecraft:nether_brick_slab": {
+   "materials": {
+    "minecraft:nether_bricks": 3
+   },
+   "name_zh": "下界砖台阶",
+   "yields": 6
+  },
+  "minecraft:nether_brick_stairs": {
+   "materials": {
+    "minecraft:nether_bricks": 6
+   },
+   "name_zh": "下界砖楼梯",
+   "yields": 4
+  },
+  "minecraft:nether_brick_wall": {
+   "materials": {
+    "minecraft:nether_bricks": 6
+   },
+   "name_zh": "下界砖墙",
+   "yields": 6
+  },
+  "minecraft:nether_bricks": {
+   "materials": {
+    "minecraft:nether_brick": 4
+   },
+   "name_zh": "下界砖块"
+  },
+  "minecraft:nether_wart_block": {
+   "materials": {
+    "minecraft:nether_wart": 9
+   },
+   "name_zh": "下界疣块"
+  },
+  "minecraft:netherite_axe": {
+   "materials": {
+    "minecraft:diamond_axe": 1,
+    "minecraft:netherite_ingot": 1,
+    "minecraft:netherite_upgrade_smithing_template": 1
+   },
+   "name_zh": "下界合金斧",
+   "note": "锻造台升级：钻石装备 + 下界合金锭 + 升级锻造模板"
+  },
+  "minecraft:netherite_block": {
+   "materials": {
+    "minecraft:netherite_ingot": 9
+   },
+   "name_zh": "下界合金块"
+  },
+  "minecraft:netherite_boots": {
+   "materials": {
+    "minecraft:diamond_boots": 1,
+    "minecraft:netherite_ingot": 1,
+    "minecraft:netherite_upgrade_smithing_template": 1
+   },
+   "name_zh": "下界合金靴子",
+   "note": "锻造台升级：钻石装备 + 下界合金锭 + 升级锻造模板"
+  },
+  "minecraft:netherite_chestplate": {
+   "materials": {
+    "minecraft:diamond_chestplate": 1,
+    "minecraft:netherite_ingot": 1,
+    "minecraft:netherite_upgrade_smithing_template": 1
+   },
+   "name_zh": "下界合金胸甲",
+   "note": "锻造台升级：钻石装备 + 下界合金锭 + 升级锻造模板"
+  },
+  "minecraft:netherite_helmet": {
+   "materials": {
+    "minecraft:diamond_helmet": 1,
+    "minecraft:netherite_ingot": 1,
+    "minecraft:netherite_upgrade_smithing_template": 1
+   },
+   "name_zh": "下界合金头盔",
+   "note": "锻造台升级：钻石装备 + 下界合金锭 + 升级锻造模板"
+  },
+  "minecraft:netherite_hoe": {
+   "materials": {
+    "minecraft:diamond_hoe": 1,
+    "minecraft:netherite_ingot": 1,
+    "minecraft:netherite_upgrade_smithing_template": 1
+   },
+   "name_zh": "下界合金锄",
+   "note": "锻造台升级：钻石装备 + 下界合金锭 + 升级锻造模板"
+  },
+  "minecraft:netherite_ingot": {
+   "materials": {
+    "minecraft:netherite_block": 1
+   },
+   "name_zh": "下界合金锭",
+   "yields": 9
+  },
+  "minecraft:netherite_leggings": {
+   "materials": {
+    "minecraft:diamond_leggings": 1,
+    "minecraft:netherite_ingot": 1,
+    "minecraft:netherite_upgrade_smithing_template": 1
+   },
+   "name_zh": "下界合金护腿",
+   "note": "锻造台升级：钻石装备 + 下界合金锭 + 升级锻造模板"
+  },
+  "minecraft:netherite_pickaxe": {
+   "materials": {
+    "minecraft:diamond_pickaxe": 1,
+    "minecraft:netherite_ingot": 1,
+    "minecraft:netherite_upgrade_smithing_template": 1
+   },
+   "name_zh": "下界合金镐",
+   "note": "锻造台升级：钻石装备 + 下界合金锭 + 升级锻造模板"
+  },
+  "minecraft:netherite_shovel": {
+   "materials": {
+    "minecraft:diamond_shovel": 1,
+    "minecraft:netherite_ingot": 1,
+    "minecraft:netherite_upgrade_smithing_template": 1
+   },
+   "name_zh": "下界合金锹",
+   "note": "锻造台升级：钻石装备 + 下界合金锭 + 升级锻造模板"
+  },
+  "minecraft:netherite_sword": {
+   "materials": {
+    "minecraft:diamond_sword": 1,
+    "minecraft:netherite_ingot": 1,
+    "minecraft:netherite_upgrade_smithing_template": 1
+   },
+   "name_zh": "下界合金剑",
+   "note": "锻造台升级：钻石装备 + 下界合金锭 + 升级锻造模板"
+  },
+  "minecraft:netherite_upgrade_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:netherite_upgrade_smithing_template": 1,
+    "minecraft:netherrack": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:note_block": {
+   "materials": {
+    "minecraft:oak_planks": 8,
+    "minecraft:redstone": 1
+   },
+   "name_zh": "音符盒"
+  },
+  "minecraft:oak_boat": {
+   "materials": {
+    "minecraft:oak_planks": 5
+   },
+   "name_zh": "橡木船"
+  },
+  "minecraft:oak_button": {
+   "materials": {
+    "minecraft:oak_planks": 1
+   },
+   "name_zh": "橡木按钮"
+  },
+  "minecraft:oak_chest_boat": {
+   "materials": {
+    "minecraft:chest": 1,
+    "minecraft:oak_boat": 1
+   },
+   "name_zh": "橡木运输船"
+  },
+  "minecraft:oak_door": {
+   "materials": {
+    "minecraft:oak_planks": 6
+   },
+   "name_zh": "橡木门",
+   "yields": 3
+  },
+  "minecraft:oak_fence": {
+   "materials": {
+    "minecraft:oak_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "橡木栅栏",
+   "yields": 3
+  },
+  "minecraft:oak_fence_gate": {
+   "materials": {
+    "minecraft:oak_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "橡木栅栏门"
+  },
+  "minecraft:oak_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_oak_log": 6
+   },
+   "name_zh": "悬挂式橡木告示牌",
+   "yields": 6
+  },
+  "minecraft:oak_planks": {
+   "materials": {
+    "minecraft:oak_log": 1
+   },
+   "name_zh": "橡木木板",
+   "yields": 4
+  },
+  "minecraft:oak_pressure_plate": {
+   "materials": {
+    "minecraft:oak_planks": 2
+   },
+   "name_zh": "橡木压力板"
+  },
+  "minecraft:oak_sign": {
+   "materials": {
+    "minecraft:oak_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "橡木告示牌",
+   "yields": 3
+  },
+  "minecraft:oak_slab": {
+   "materials": {
+    "minecraft:oak_planks": 3
+   },
+   "name_zh": "橡木台阶",
+   "yields": 6
+  },
+  "minecraft:oak_stairs": {
+   "materials": {
+    "minecraft:oak_planks": 6
+   },
+   "name_zh": "橡木楼梯",
+   "yields": 4
+  },
+  "minecraft:oak_trapdoor": {
+   "materials": {
+    "minecraft:oak_planks": 6
+   },
+   "name_zh": "橡木活板门",
+   "yields": 2
+  },
+  "minecraft:oak_wood": {
+   "materials": {
+    "minecraft:oak_log": 4
+   },
+   "name_zh": "橡木",
+   "yields": 3
+  },
+  "minecraft:observer": {
+   "materials": {
+    "minecraft:cobblestone": 6,
+    "minecraft:quartz": 1,
+    "minecraft:redstone": 2
+   },
+   "name_zh": "侦测器"
+  },
+  "minecraft:orange_banner": {
+   "materials": {
+    "minecraft:orange_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "橙色旗帜"
+  },
+  "minecraft:orange_bed": {
+   "materials": {
+    "minecraft:oak_planks": 3,
+    "minecraft:orange_wool": 3
+   },
+   "name_zh": "橙色床"
+  },
+  "minecraft:orange_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:orange_dye": 1
+   },
+   "name_zh": "橙色蜡烛"
+  },
+  "minecraft:orange_carpet": {
+   "materials": {
+    "minecraft:orange_wool": 2
+   },
+   "name_zh": "橙色地毯",
+   "yields": 3
+  },
+  "minecraft:orange_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:orange_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "橙色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:orange_dye": {
+   "materials": {
+    "minecraft:torchflower": 1
+   },
+   "name_zh": "橙色染料"
+  },
+  "minecraft:orange_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:orange_dye": 1
+   },
+   "name_zh": "橙色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:orange_stained_glass_pane": {
+   "materials": {
+    "minecraft:orange_stained_glass": 6
+   },
+   "name_zh": "橙色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:orange_terracotta": {
+   "materials": {
+    "minecraft:orange_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "橙色陶瓦",
+   "yields": 8
+  },
+  "minecraft:orange_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:orange_dye": 1
+   },
+   "name_zh": "橙色羊毛"
+  },
+  "minecraft:oxidized_chiseled_copper": {
+   "materials": {
+    "minecraft:oxidized_cut_copper_slab": 2
+   },
+   "name_zh": "氧化的雕纹铜块"
+  },
+  "minecraft:oxidized_copper_bulb": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:oxidized_copper": 3,
+    "minecraft:redstone": 1
+   },
+   "name_zh": "氧化的铜灯",
+   "yields": 4
+  },
+  "minecraft:oxidized_copper_grate": {
+   "materials": {
+    "minecraft:oxidized_copper": 4
+   },
+   "name_zh": "氧化的铜格栅",
+   "yields": 4
+  },
+  "minecraft:oxidized_cut_copper": {
+   "materials": {
+    "minecraft:oxidized_copper": 4
+   },
+   "name_zh": "氧化的切制铜块",
+   "yields": 4
+  },
+  "minecraft:oxidized_cut_copper_slab": {
+   "materials": {
+    "minecraft:oxidized_cut_copper": 3
+   },
+   "name_zh": "氧化的切制铜台阶",
+   "yields": 6
+  },
+  "minecraft:oxidized_cut_copper_stairs": {
+   "materials": {
+    "minecraft:oxidized_cut_copper": 6
+   },
+   "name_zh": "氧化的切制铜楼梯",
+   "yields": 4
+  },
+  "minecraft:packed_ice": {
+   "materials": {
+    "minecraft:ice": 9
+   },
+   "name_zh": "浮冰"
+  },
+  "minecraft:packed_mud": {
+   "materials": {
+    "minecraft:mud": 1,
+    "minecraft:wheat": 1
+   },
+   "name_zh": "泥坯"
+  },
+  "minecraft:painting": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:stick": 8
+   },
+   "name_zh": "画"
+  },
+  "minecraft:paper": {
+   "materials": {
+    "minecraft:sugar_cane": 3
+   },
+   "name_zh": "纸",
+   "yields": 3
+  },
+  "minecraft:pink_banner": {
+   "materials": {
+    "minecraft:pink_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "粉红色旗帜"
+  },
+  "minecraft:pink_bed": {
+   "materials": {
+    "minecraft:oak_planks": 3,
+    "minecraft:pink_wool": 3
+   },
+   "name_zh": "粉红色床"
+  },
+  "minecraft:pink_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:pink_dye": 1
+   },
+   "name_zh": "粉红色蜡烛"
+  },
+  "minecraft:pink_carpet": {
+   "materials": {
+    "minecraft:pink_wool": 2
+   },
+   "name_zh": "粉红色地毯",
+   "yields": 3
+  },
+  "minecraft:pink_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:pink_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "粉红色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:pink_dye": {
+   "materials": {
+    "minecraft:pink_petals": 1
+   },
+   "name_zh": "粉红色染料"
+  },
+  "minecraft:pink_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:pink_dye": 1
+   },
+   "name_zh": "粉红色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:pink_stained_glass_pane": {
+   "materials": {
+    "minecraft:pink_stained_glass": 6
+   },
+   "name_zh": "粉红色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:pink_terracotta": {
+   "materials": {
+    "minecraft:pink_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "粉红色陶瓦",
+   "yields": 8
+  },
+  "minecraft:pink_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:pink_dye": 1
+   },
+   "name_zh": "粉红色羊毛"
+  },
+  "minecraft:piston": {
+   "materials": {
+    "minecraft:cobblestone": 4,
+    "minecraft:iron_ingot": 1,
+    "minecraft:oak_planks": 3,
+    "minecraft:redstone": 1
+   },
+   "name_zh": "活塞"
+  },
+  "minecraft:polished_andesite": {
+   "materials": {
+    "minecraft:andesite": 4
+   },
+   "name_zh": "磨制安山岩",
+   "yields": 4
+  },
+  "minecraft:polished_andesite_slab": {
+   "materials": {
+    "minecraft:polished_andesite": 3
+   },
+   "name_zh": "磨制安山岩台阶",
+   "yields": 6
+  },
+  "minecraft:polished_andesite_stairs": {
+   "materials": {
+    "minecraft:polished_andesite": 6
+   },
+   "name_zh": "磨制安山岩楼梯",
+   "yields": 4
+  },
+  "minecraft:polished_basalt": {
+   "materials": {
+    "minecraft:basalt": 4
+   },
+   "name_zh": "磨制玄武岩",
+   "yields": 4
+  },
+  "minecraft:polished_blackstone": {
+   "materials": {
+    "minecraft:blackstone": 4
+   },
+   "name_zh": "磨制黑石",
+   "yields": 4
+  },
+  "minecraft:polished_blackstone_brick_slab": {
+   "materials": {
+    "minecraft:polished_blackstone_bricks": 3
+   },
+   "name_zh": "磨制黑石砖台阶",
+   "yields": 6
+  },
+  "minecraft:polished_blackstone_brick_stairs": {
+   "materials": {
+    "minecraft:polished_blackstone_bricks": 6
+   },
+   "name_zh": "磨制黑石砖楼梯",
+   "yields": 4
+  },
+  "minecraft:polished_blackstone_brick_wall": {
+   "materials": {
+    "minecraft:polished_blackstone_bricks": 6
+   },
+   "name_zh": "磨制黑石砖墙",
+   "yields": 6
+  },
+  "minecraft:polished_blackstone_bricks": {
+   "materials": {
+    "minecraft:polished_blackstone": 4
+   },
+   "name_zh": "磨制黑石砖",
+   "yields": 4
+  },
+  "minecraft:polished_blackstone_button": {
+   "materials": {
+    "minecraft:polished_blackstone": 1
+   },
+   "name_zh": "磨制黑石按钮"
+  },
+  "minecraft:polished_blackstone_pressure_plate": {
+   "materials": {
+    "minecraft:polished_blackstone": 2
+   },
+   "name_zh": "磨制黑石压力板"
+  },
+  "minecraft:polished_blackstone_slab": {
+   "materials": {
+    "minecraft:polished_blackstone": 3
+   },
+   "name_zh": "磨制黑石台阶",
+   "yields": 6
+  },
+  "minecraft:polished_blackstone_stairs": {
+   "materials": {
+    "minecraft:polished_blackstone": 6
+   },
+   "name_zh": "磨制黑石楼梯",
+   "yields": 4
+  },
+  "minecraft:polished_blackstone_wall": {
+   "materials": {
+    "minecraft:polished_blackstone": 6
+   },
+   "name_zh": "磨制黑石墙",
+   "yields": 6
+  },
+  "minecraft:polished_deepslate": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 4
+   },
+   "name_zh": "磨制深板岩",
+   "yields": 4
+  },
+  "minecraft:polished_deepslate_slab": {
+   "materials": {
+    "minecraft:polished_deepslate": 3
+   },
+   "name_zh": "磨制深板岩台阶",
+   "yields": 6
+  },
+  "minecraft:polished_deepslate_stairs": {
+   "materials": {
+    "minecraft:polished_deepslate": 6
+   },
+   "name_zh": "磨制深板岩楼梯",
+   "yields": 4
+  },
+  "minecraft:polished_deepslate_wall": {
+   "materials": {
+    "minecraft:polished_deepslate": 6
+   },
+   "name_zh": "磨制深板岩墙",
+   "yields": 6
+  },
+  "minecraft:polished_diorite": {
+   "materials": {
+    "minecraft:diorite": 4
+   },
+   "name_zh": "磨制闪长岩",
+   "yields": 4
+  },
+  "minecraft:polished_diorite_slab": {
+   "materials": {
+    "minecraft:polished_diorite": 3
+   },
+   "name_zh": "磨制闪长岩台阶",
+   "yields": 6
+  },
+  "minecraft:polished_diorite_stairs": {
+   "materials": {
+    "minecraft:polished_diorite": 6
+   },
+   "name_zh": "磨制闪长岩楼梯",
+   "yields": 4
+  },
+  "minecraft:polished_granite": {
+   "materials": {
+    "minecraft:granite": 4
+   },
+   "name_zh": "磨制花岗岩",
+   "yields": 4
+  },
+  "minecraft:polished_granite_slab": {
+   "materials": {
+    "minecraft:polished_granite": 3
+   },
+   "name_zh": "磨制花岗岩台阶",
+   "yields": 6
+  },
+  "minecraft:polished_granite_stairs": {
+   "materials": {
+    "minecraft:polished_granite": 6
+   },
+   "name_zh": "磨制花岗岩楼梯",
+   "yields": 4
+  },
+  "minecraft:polished_tuff": {
+   "materials": {
+    "minecraft:tuff": 4
+   },
+   "name_zh": "磨制凝灰岩",
+   "yields": 4
+  },
+  "minecraft:polished_tuff_slab": {
+   "materials": {
+    "minecraft:polished_tuff": 3
+   },
+   "name_zh": "磨制凝灰岩台阶",
+   "yields": 6
+  },
+  "minecraft:polished_tuff_stairs": {
+   "materials": {
+    "minecraft:polished_tuff": 6
+   },
+   "name_zh": "磨制凝灰岩楼梯",
+   "yields": 4
+  },
+  "minecraft:polished_tuff_wall": {
+   "materials": {
+    "minecraft:polished_tuff": 6
+   },
+   "name_zh": "磨制凝灰岩墙",
+   "yields": 6
+  },
+  "minecraft:powered_rail": {
+   "materials": {
+    "minecraft:gold_ingot": 6,
+    "minecraft:redstone": 1,
+    "minecraft:stick": 1
+   },
+   "name_zh": "动力铁轨",
+   "yields": 6
+  },
+  "minecraft:prismarine": {
+   "materials": {
+    "minecraft:prismarine_shard": 4
+   },
+   "name_zh": "海晶石"
+  },
+  "minecraft:prismarine_brick_slab": {
+   "materials": {
+    "minecraft:prismarine_bricks": 3
+   },
+   "name_zh": "海晶石砖台阶",
+   "yields": 6
+  },
+  "minecraft:prismarine_brick_stairs": {
+   "materials": {
+    "minecraft:prismarine_bricks": 6
+   },
+   "name_zh": "海晶石砖楼梯",
+   "yields": 4
+  },
+  "minecraft:prismarine_bricks": {
+   "materials": {
+    "minecraft:prismarine_shard": 9
+   },
+   "name_zh": "海晶石砖"
+  },
+  "minecraft:prismarine_slab": {
+   "materials": {
+    "minecraft:prismarine": 3
+   },
+   "name_zh": "海晶石台阶",
+   "yields": 6
+  },
+  "minecraft:prismarine_stairs": {
+   "materials": {
+    "minecraft:prismarine": 6
+   },
+   "name_zh": "海晶石楼梯",
+   "yields": 4
+  },
+  "minecraft:prismarine_wall": {
+   "materials": {
+    "minecraft:prismarine": 6
+   },
+   "name_zh": "海晶石墙",
+   "yields": 6
+  },
+  "minecraft:pumpkin_pie": {
+   "materials": {
+    "minecraft:egg": 1,
+    "minecraft:pumpkin": 1,
+    "minecraft:sugar": 1
+   },
+   "name_zh": "南瓜派"
+  },
+  "minecraft:pumpkin_seeds": {
+   "materials": {
+    "minecraft:pumpkin": 1
+   },
+   "name_zh": "南瓜种子",
+   "yields": 4
+  },
+  "minecraft:purple_banner": {
+   "materials": {
+    "minecraft:purple_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "紫色旗帜"
+  },
+  "minecraft:purple_bed": {
+   "materials": {
+    "minecraft:oak_planks": 3,
+    "minecraft:purple_wool": 3
+   },
+   "name_zh": "紫色床"
+  },
+  "minecraft:purple_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:purple_dye": 1
+   },
+   "name_zh": "紫色蜡烛"
+  },
+  "minecraft:purple_carpet": {
+   "materials": {
+    "minecraft:purple_wool": 2
+   },
+   "name_zh": "紫色地毯",
+   "yields": 3
+  },
+  "minecraft:purple_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:purple_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "紫色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:purple_dye": {
+   "materials": {
+    "minecraft:blue_dye": 1,
+    "minecraft:red_dye": 1
+   },
+   "name_zh": "紫色染料",
+   "yields": 2
+  },
+  "minecraft:purple_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:purple_dye": 1
+   },
+   "name_zh": "紫色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:purple_stained_glass_pane": {
+   "materials": {
+    "minecraft:purple_stained_glass": 6
+   },
+   "name_zh": "紫色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:purple_terracotta": {
+   "materials": {
+    "minecraft:purple_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "紫色陶瓦",
+   "yields": 8
+  },
+  "minecraft:purple_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:purple_dye": 1
+   },
+   "name_zh": "紫色羊毛"
+  },
+  "minecraft:purpur_block": {
+   "materials": {
+    "minecraft:popped_chorus_fruit": 4
+   },
+   "name_zh": "紫珀块",
+   "yields": 4
+  },
+  "minecraft:purpur_pillar": {
+   "materials": {
+    "minecraft:purpur_slab": 2
+   },
+   "name_zh": "紫珀柱"
+  },
+  "minecraft:purpur_slab": {
+   "materials": {
+    "minecraft:purpur_pillar": 3
+   },
+   "name_zh": "紫珀台阶",
+   "yields": 6
+  },
+  "minecraft:purpur_stairs": {
+   "materials": {
+    "minecraft:purpur_pillar": 6
+   },
+   "name_zh": "紫珀楼梯",
+   "yields": 4
+  },
+  "minecraft:quartz_block": {
+   "materials": {
+    "minecraft:quartz": 4
+   },
+   "name_zh": "石英块"
+  },
+  "minecraft:quartz_bricks": {
+   "materials": {
+    "minecraft:quartz_block": 4
+   },
+   "name_zh": "石英砖",
+   "yields": 4
+  },
+  "minecraft:quartz_pillar": {
+   "materials": {
+    "minecraft:quartz_block": 2
+   },
+   "name_zh": "石英柱",
+   "yields": 2
+  },
+  "minecraft:quartz_slab": {
+   "materials": {
+    "minecraft:quartz_pillar": 3
+   },
+   "name_zh": "石英台阶",
+   "yields": 6
+  },
+  "minecraft:quartz_stairs": {
+   "materials": {
+    "minecraft:quartz_pillar": 6
+   },
+   "name_zh": "石英楼梯",
+   "yields": 4
+  },
+  "minecraft:rabbit_stew": {
+   "materials": {
+    "minecraft:baked_potato": 1,
+    "minecraft:bowl": 1,
+    "minecraft:brown_mushroom": 1,
+    "minecraft:carrot": 1,
+    "minecraft:cooked_rabbit": 1
+   },
+   "name_zh": "兔肉煲"
+  },
+  "minecraft:rail": {
+   "materials": {
+    "minecraft:iron_ingot": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "铁轨",
+   "yields": 16
+  },
+  "minecraft:raiser_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:raiser_armor_trim_smithing_template": 1,
+    "minecraft:terracotta": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:raw_copper": {
+   "materials": {
+    "minecraft:raw_copper_block": 1
+   },
+   "name_zh": "粗铜",
+   "yields": 9
+  },
+  "minecraft:raw_copper_block": {
+   "materials": {
+    "minecraft:raw_copper": 9
+   },
+   "name_zh": "粗铜块"
+  },
+  "minecraft:raw_gold": {
+   "materials": {
+    "minecraft:raw_gold_block": 1
+   },
+   "name_zh": "粗金",
+   "yields": 9
+  },
+  "minecraft:raw_gold_block": {
+   "materials": {
+    "minecraft:raw_gold": 9
+   },
+   "name_zh": "粗金块"
+  },
+  "minecraft:raw_iron": {
+   "materials": {
+    "minecraft:raw_iron_block": 1
+   },
+   "name_zh": "粗铁",
+   "yields": 9
+  },
+  "minecraft:raw_iron_block": {
+   "materials": {
+    "minecraft:raw_iron": 9
+   },
+   "name_zh": "粗铁块"
+  },
+  "minecraft:recovery_compass": {
+   "materials": {
+    "minecraft:compass": 1,
+    "minecraft:echo_shard": 8
+   },
+   "name_zh": "追溯指针"
+  },
+  "minecraft:red_banner": {
+   "materials": {
+    "minecraft:red_wool": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "红色旗帜"
+  },
+  "minecraft:red_bed": {
+   "materials": {
+    "minecraft:oak_planks": 3,
+    "minecraft:red_wool": 3
+   },
+   "name_zh": "红色床"
+  },
+  "minecraft:red_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:red_dye": 1
+   },
+   "name_zh": "红色蜡烛"
+  },
+  "minecraft:red_carpet": {
+   "materials": {
+    "minecraft:red_wool": 2
+   },
+   "name_zh": "红色地毯",
+   "yields": 3
+  },
+  "minecraft:red_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:red_dye": 1,
+    "minecraft:sand": 4
+   },
+   "name_zh": "红色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:red_dye": {
+   "materials": {
+    "minecraft:red_tulip": 1
+   },
+   "name_zh": "红色染料"
+  },
+  "minecraft:red_nether_brick_slab": {
+   "materials": {
+    "minecraft:red_nether_bricks": 3
+   },
+   "name_zh": "红色下界砖台阶",
+   "yields": 6
+  },
+  "minecraft:red_nether_brick_stairs": {
+   "materials": {
+    "minecraft:red_nether_bricks": 6
+   },
+   "name_zh": "红色下界砖楼梯",
+   "yields": 4
+  },
+  "minecraft:red_nether_brick_wall": {
+   "materials": {
+    "minecraft:red_nether_bricks": 6
+   },
+   "name_zh": "红色下界砖墙",
+   "yields": 6
+  },
+  "minecraft:red_nether_bricks": {
+   "materials": {
+    "minecraft:nether_brick": 2,
+    "minecraft:nether_wart": 2
+   },
+   "name_zh": "红色下界砖块"
+  },
+  "minecraft:red_sandstone": {
+   "materials": {
+    "minecraft:red_sand": 4
+   },
+   "name_zh": "红砂岩"
+  },
+  "minecraft:red_sandstone_slab": {
+   "materials": {
+    "minecraft:chiseled_red_sandstone": 3
+   },
+   "name_zh": "红砂岩台阶",
+   "yields": 6
+  },
+  "minecraft:red_sandstone_stairs": {
+   "materials": {
+    "minecraft:cut_red_sandstone": 6
+   },
+   "name_zh": "红砂岩楼梯",
+   "yields": 4
+  },
+  "minecraft:red_sandstone_wall": {
+   "materials": {
+    "minecraft:red_sandstone": 6
+   },
+   "name_zh": "红砂岩墙",
+   "yields": 6
+  },
+  "minecraft:red_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:red_dye": 1
+   },
+   "name_zh": "红色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:red_stained_glass_pane": {
+   "materials": {
+    "minecraft:red_stained_glass": 6
+   },
+   "name_zh": "红色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:red_terracotta": {
+   "materials": {
+    "minecraft:red_dye": 1,
+    "minecraft:terracotta": 8
+   },
+   "name_zh": "红色陶瓦",
+   "yields": 8
+  },
+  "minecraft:red_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:red_dye": 1
+   },
+   "name_zh": "红色羊毛"
+  },
+  "minecraft:redstone": {
+   "materials": {
+    "minecraft:redstone_block": 1
+   },
+   "name_zh": "红石粉",
+   "yields": 9
+  },
+  "minecraft:redstone_block": {
+   "materials": {
+    "minecraft:redstone": 9
+   },
+   "name_zh": "红石块"
+  },
+  "minecraft:redstone_lamp": {
+   "materials": {
+    "minecraft:glowstone": 1,
+    "minecraft:redstone": 4
+   },
+   "name_zh": "红石灯"
+  },
+  "minecraft:redstone_torch": {
+   "materials": {
+    "minecraft:redstone": 1,
+    "minecraft:stick": 1
+   },
+   "name_zh": "红石火把"
+  },
+  "minecraft:repeater": {
+   "materials": {
+    "minecraft:redstone": 1,
+    "minecraft:redstone_torch": 2,
+    "minecraft:stone": 3
+   },
+   "name_zh": "红石中继器"
+  },
+  "minecraft:respawn_anchor": {
+   "materials": {
+    "minecraft:crying_obsidian": 6,
+    "minecraft:glowstone": 3
+   },
+   "name_zh": "重生锚"
+  },
+  "minecraft:rib_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:netherrack": 1,
+    "minecraft:rib_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:sandstone": {
+   "materials": {
+    "minecraft:sand": 4
+   },
+   "name_zh": "砂岩"
+  },
+  "minecraft:sandstone_slab": {
+   "materials": {
+    "minecraft:chiseled_sandstone": 3
+   },
+   "name_zh": "砂岩台阶",
+   "yields": 6
+  },
+  "minecraft:sandstone_stairs": {
+   "materials": {
+    "minecraft:cut_sandstone": 6
+   },
+   "name_zh": "砂岩楼梯",
+   "yields": 4
+  },
+  "minecraft:sandstone_wall": {
+   "materials": {
+    "minecraft:sandstone": 6
+   },
+   "name_zh": "砂岩墙",
+   "yields": 6
+  },
+  "minecraft:scaffolding": {
+   "materials": {
+    "minecraft:bamboo": 6,
+    "minecraft:string": 1
+   },
+   "name_zh": "脚手架",
+   "yields": 6
+  },
+  "minecraft:sea_lantern": {
+   "materials": {
+    "minecraft:prismarine_crystals": 5,
+    "minecraft:prismarine_shard": 4
+   },
+   "name_zh": "海晶灯"
+  },
+  "minecraft:sentry_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:cobblestone": 1,
+    "minecraft:diamond": 7,
+    "minecraft:sentry_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:shaper_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:shaper_armor_trim_smithing_template": 1,
+    "minecraft:terracotta": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:shears": {
+   "materials": {
+    "minecraft:iron_ingot": 2
+   },
+   "name_zh": "剪刀"
+  },
+  "minecraft:shield": {
+   "materials": {
+    "minecraft:iron_ingot": 1,
+    "minecraft:oak_planks": 6
+   },
+   "name_zh": "盾牌"
+  },
+  "minecraft:shulker_box": {
+   "materials": {
+    "minecraft:chest": 1,
+    "minecraft:shulker_shell": 2
+   },
+   "name_zh": "潜影盒"
+  },
+  "minecraft:silence_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 1,
+    "minecraft:diamond": 7,
+    "minecraft:silence_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:skull_banner_pattern": {
+   "materials": {
+    "minecraft:paper": 1,
+    "minecraft:wither_skeleton_skull": 1
+   },
+   "name_zh": "旗帜图案"
+  },
+  "minecraft:slime_ball": {
+   "materials": {
+    "minecraft:slime_block": 1
+   },
+   "name_zh": "黏液球",
+   "yields": 9
+  },
+  "minecraft:slime_block": {
+   "materials": {
+    "minecraft:slime_ball": 9
+   },
+   "name_zh": "黏液块"
+  },
+  "minecraft:smithing_table": {
+   "materials": {
+    "minecraft:iron_ingot": 2,
+    "minecraft:oak_planks": 4
+   },
+   "name_zh": "锻造台"
+  },
+  "minecraft:smoker": {
+   "materials": {
+    "minecraft:furnace": 1,
+    "minecraft:oak_wood": 4
+   },
+   "name_zh": "烟熏炉"
+  },
+  "minecraft:smooth_quartz_slab": {
+   "materials": {
+    "minecraft:smooth_quartz": 3
+   },
+   "name_zh": "平滑石英台阶",
+   "yields": 6
+  },
+  "minecraft:smooth_quartz_stairs": {
+   "materials": {
+    "minecraft:smooth_quartz": 6
+   },
+   "name_zh": "平滑石英楼梯",
+   "yields": 4
+  },
+  "minecraft:smooth_red_sandstone_slab": {
+   "materials": {
+    "minecraft:smooth_red_sandstone": 3
+   },
+   "name_zh": "平滑红砂岩台阶",
+   "yields": 6
+  },
+  "minecraft:smooth_red_sandstone_stairs": {
+   "materials": {
+    "minecraft:smooth_red_sandstone": 6
+   },
+   "name_zh": "平滑红砂岩楼梯",
+   "yields": 4
+  },
+  "minecraft:smooth_sandstone_slab": {
+   "materials": {
+    "minecraft:smooth_sandstone": 3
+   },
+   "name_zh": "平滑砂岩台阶",
+   "yields": 6
+  },
+  "minecraft:smooth_sandstone_stairs": {
+   "materials": {
+    "minecraft:smooth_sandstone": 6
+   },
+   "name_zh": "平滑砂岩楼梯",
+   "yields": 4
+  },
+  "minecraft:smooth_stone_slab": {
+   "materials": {
+    "minecraft:smooth_stone": 3
+   },
+   "name_zh": "平滑石头台阶",
+   "yields": 6
+  },
+  "minecraft:snout_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:blackstone": 1,
+    "minecraft:diamond": 7,
+    "minecraft:snout_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:snow": {
+   "materials": {
+    "minecraft:snow_block": 3
+   },
+   "name_zh": "雪",
+   "yields": 6
+  },
+  "minecraft:snow_block": {
+   "materials": {
+    "minecraft:snowball": 4
+   },
+   "name_zh": "雪块"
+  },
+  "minecraft:soul_campfire": {
+   "materials": {
+    "minecraft:oak_wood": 3,
+    "minecraft:soul_sand": 1,
+    "minecraft:stick": 3
+   },
+   "name_zh": "灵魂营火"
+  },
+  "minecraft:soul_lantern": {
+   "materials": {
+    "minecraft:iron_nugget": 8,
+    "minecraft:soul_torch": 1
+   },
+   "name_zh": "灵魂灯笼"
+  },
+  "minecraft:soul_torch": {
+   "materials": {
+    "minecraft:charcoal": 1,
+    "minecraft:soul_soil": 1,
+    "minecraft:stick": 1
+   },
+   "name_zh": "灵魂火把",
+   "yields": 4
+  },
+  "minecraft:spectral_arrow": {
+   "materials": {
+    "minecraft:arrow": 1,
+    "minecraft:glowstone_dust": 4
+   },
+   "name_zh": "光灵箭",
+   "yields": 2
+  },
+  "minecraft:spire_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:purpur_block": 1,
+    "minecraft:spire_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:spruce_boat": {
+   "materials": {
+    "minecraft:spruce_planks": 5
+   },
+   "name_zh": "云杉木船"
+  },
+  "minecraft:spruce_button": {
+   "materials": {
+    "minecraft:spruce_planks": 1
+   },
+   "name_zh": "云杉木按钮"
+  },
+  "minecraft:spruce_chest_boat": {
+   "materials": {
+    "minecraft:chest": 1,
+    "minecraft:spruce_boat": 1
+   },
+   "name_zh": "云杉木运输船"
+  },
+  "minecraft:spruce_door": {
+   "materials": {
+    "minecraft:spruce_planks": 6
+   },
+   "name_zh": "云杉木门",
+   "yields": 3
+  },
+  "minecraft:spruce_fence": {
+   "materials": {
+    "minecraft:spruce_planks": 4,
+    "minecraft:stick": 2
+   },
+   "name_zh": "云杉木栅栏",
+   "yields": 3
+  },
+  "minecraft:spruce_fence_gate": {
+   "materials": {
+    "minecraft:spruce_planks": 2,
+    "minecraft:stick": 4
+   },
+   "name_zh": "云杉木栅栏门"
+  },
+  "minecraft:spruce_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_spruce_log": 6
+   },
+   "name_zh": "悬挂式云杉木告示牌",
+   "yields": 6
+  },
+  "minecraft:spruce_planks": {
+   "materials": {
+    "minecraft:spruce_log": 1
+   },
+   "name_zh": "云杉木板",
+   "yields": 4
+  },
+  "minecraft:spruce_pressure_plate": {
+   "materials": {
+    "minecraft:spruce_planks": 2
+   },
+   "name_zh": "云杉木压力板"
+  },
+  "minecraft:spruce_sign": {
+   "materials": {
+    "minecraft:spruce_planks": 6,
+    "minecraft:stick": 1
+   },
+   "name_zh": "云杉木告示牌",
+   "yields": 3
+  },
+  "minecraft:spruce_slab": {
+   "materials": {
+    "minecraft:spruce_planks": 3
+   },
+   "name_zh": "云杉木台阶",
+   "yields": 6
+  },
+  "minecraft:spruce_stairs": {
+   "materials": {
+    "minecraft:spruce_planks": 6
+   },
+   "name_zh": "云杉木楼梯",
+   "yields": 4
+  },
+  "minecraft:spruce_trapdoor": {
+   "materials": {
+    "minecraft:spruce_planks": 6
+   },
+   "name_zh": "云杉木活板门",
+   "yields": 2
+  },
+  "minecraft:spruce_wood": {
+   "materials": {
+    "minecraft:spruce_log": 4
+   },
+   "name_zh": "云杉木",
+   "yields": 3
+  },
+  "minecraft:spyglass": {
+   "materials": {
+    "minecraft:amethyst_shard": 1,
+    "minecraft:copper_ingot": 2
+   },
+   "name_zh": "望远镜"
+  },
+  "minecraft:stick": {
+   "materials": {
+    "minecraft:oak_planks": 2
+   },
+   "name_zh": "木棍",
+   "yields": 4
+  },
+  "minecraft:sticky_piston": {
+   "materials": {
+    "minecraft:piston": 1,
+    "minecraft:slime_ball": 1
+   },
+   "name_zh": "黏性活塞"
+  },
+  "minecraft:stone_axe": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "石斧"
+  },
+  "minecraft:stone_brick_slab": {
+   "materials": {
+    "minecraft:stone_bricks": 3
+   },
+   "name_zh": "石砖台阶",
+   "yields": 6
+  },
+  "minecraft:stone_brick_stairs": {
+   "materials": {
+    "minecraft:stone_bricks": 6
+   },
+   "name_zh": "石砖楼梯",
+   "yields": 4
+  },
+  "minecraft:stone_brick_wall": {
+   "materials": {
+    "minecraft:stone_bricks": 6
+   },
+   "name_zh": "石砖墙",
+   "yields": 6
+  },
+  "minecraft:stone_bricks": {
+   "materials": {
+    "minecraft:stone": 4
+   },
+   "name_zh": "石砖",
+   "yields": 4
+  },
+  "minecraft:stone_button": {
+   "materials": {
+    "minecraft:stone": 1
+   },
+   "name_zh": "石头按钮"
+  },
+  "minecraft:stone_hoe": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 2,
+    "minecraft:stick": 2
+   },
+   "name_zh": "石锄"
+  },
+  "minecraft:stone_pickaxe": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "石镐"
+  },
+  "minecraft:stone_pressure_plate": {
+   "materials": {
+    "minecraft:stone": 2
+   },
+   "name_zh": "石头压力板"
+  },
+  "minecraft:stone_shovel": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 1,
+    "minecraft:stick": 2
+   },
+   "name_zh": "石锹"
+  },
+  "minecraft:stone_slab": {
+   "materials": {
+    "minecraft:stone": 3
+   },
+   "name_zh": "石头台阶",
+   "yields": 6
+  },
+  "minecraft:stone_stairs": {
+   "materials": {
+    "minecraft:stone": 6
+   },
+   "name_zh": "石头楼梯",
+   "yields": 4
+  },
+  "minecraft:stone_sword": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 2,
+    "minecraft:stick": 1
+   },
+   "name_zh": "石剑"
+  },
+  "minecraft:stonecutter": {
+   "materials": {
+    "minecraft:iron_ingot": 1,
+    "minecraft:stone": 3
+   },
+   "name_zh": "切石机"
+  },
+  "minecraft:stripped_acacia_wood": {
+   "materials": {
+    "minecraft:stripped_acacia_log": 4
+   },
+   "name_zh": "去皮金合欢木",
+   "yields": 3
+  },
+  "minecraft:stripped_birch_wood": {
+   "materials": {
+    "minecraft:stripped_birch_log": 4
+   },
+   "name_zh": "去皮白桦木",
+   "yields": 3
+  },
+  "minecraft:stripped_cherry_wood": {
+   "materials": {
+    "minecraft:stripped_cherry_log": 4
+   },
+   "name_zh": "去皮樱花木",
+   "yields": 3
+  },
+  "minecraft:stripped_crimson_hyphae": {
+   "materials": {
+    "minecraft:stripped_crimson_stem": 4
+   },
+   "name_zh": "去皮绯红菌核",
+   "yields": 3
+  },
+  "minecraft:stripped_dark_oak_wood": {
+   "materials": {
+    "minecraft:stripped_dark_oak_log": 4
+   },
+   "name_zh": "去皮深色橡木",
+   "yields": 3
+  },
+  "minecraft:stripped_jungle_wood": {
+   "materials": {
+    "minecraft:stripped_jungle_log": 4
+   },
+   "name_zh": "去皮丛林木",
+   "yields": 3
+  },
+  "minecraft:stripped_mangrove_wood": {
+   "materials": {
+    "minecraft:stripped_mangrove_log": 4
+   },
+   "name_zh": "去皮红树木",
+   "yields": 3
+  },
+  "minecraft:stripped_oak_wood": {
+   "materials": {
+    "minecraft:stripped_oak_log": 4
+   },
+   "name_zh": "去皮橡木",
+   "yields": 3
+  },
+  "minecraft:stripped_spruce_wood": {
+   "materials": {
+    "minecraft:stripped_spruce_log": 4
+   },
+   "name_zh": "去皮云杉木",
+   "yields": 3
+  },
+  "minecraft:stripped_warped_hyphae": {
+   "materials": {
+    "minecraft:stripped_warped_stem": 4
+   },
+   "name_zh": "去皮诡异菌核",
+   "yields": 3
+  },
+  "minecraft:sugar": {
+   "materials": {
+    "minecraft:honey_bottle": 1
+   },
+   "name_zh": "糖",
+   "yields": 3
+  },
+  "minecraft:target": {
+   "materials": {
+    "minecraft:hay_block": 1,
+    "minecraft:redstone": 4
+   },
+   "name_zh": "标靶"
+  },
+  "minecraft:tide_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:prismarine": 1,
+    "minecraft:tide_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:tinted_glass": {
+   "materials": {
+    "minecraft:amethyst_shard": 4,
+    "minecraft:glass": 1
+   },
+   "name_zh": "遮光玻璃",
+   "yields": 2
+  },
+  "minecraft:tnt": {
+   "materials": {
+    "minecraft:gunpowder": 5,
+    "minecraft:red_sand": 4
+   },
+   "name_zh": "TNT"
+  },
+  "minecraft:tnt_minecart": {
+   "materials": {
+    "minecraft:minecart": 1,
+    "minecraft:tnt": 1
+   },
+   "name_zh": "TNT矿车"
+  },
+  "minecraft:torch": {
+   "materials": {
+    "minecraft:charcoal": 1,
+    "minecraft:stick": 1
+   },
+   "name_zh": "火把",
+   "yields": 4
+  },
+  "minecraft:trapped_chest": {
+   "materials": {
+    "minecraft:chest": 1,
+    "minecraft:tripwire_hook": 1
+   },
+   "name_zh": "陷阱箱"
+  },
+  "minecraft:tripwire_hook": {
+   "materials": {
+    "minecraft:iron_ingot": 1,
+    "minecraft:oak_planks": 1,
+    "minecraft:stick": 1
+   },
+   "name_zh": "绊线钩",
+   "yields": 2
+  },
+  "minecraft:tuff_brick_slab": {
+   "materials": {
+    "minecraft:tuff_bricks": 3
+   },
+   "name_zh": "凝灰岩砖台阶",
+   "yields": 6
+  },
+  "minecraft:tuff_brick_stairs": {
+   "materials": {
+    "minecraft:tuff_bricks": 6
+   },
+   "name_zh": "凝灰岩砖楼梯",
+   "yields": 4
+  },
+  "minecraft:tuff_brick_wall": {
+   "materials": {
+    "minecraft:tuff_bricks": 6
+   },
+   "name_zh": "凝灰岩砖墙",
+   "yields": 6
+  },
+  "minecraft:tuff_bricks": {
+   "materials": {
+    "minecraft:polished_tuff": 4
+   },
+   "name_zh": "凝灰岩砖",
+   "yields": 4
+  },
+  "minecraft:tuff_slab": {
+   "materials": {
+    "minecraft:tuff": 3
+   },
+   "name_zh": "凝灰岩台阶",
+   "yields": 6
+  },
+  "minecraft:tuff_stairs": {
+   "materials": {
+    "minecraft:tuff": 6
+   },
+   "name_zh": "凝灰岩楼梯",
+   "yields": 4
+  },
+  "minecraft:tuff_wall": {
+   "materials": {
+    "minecraft:tuff": 6
+   },
+   "name_zh": "凝灰岩墙",
+   "yields": 6
+  },
+  "minecraft:turtle_helmet": {
+   "materials": {
+    "minecraft:turtle_scute": 5
+   },
+   "name_zh": "海龟壳"
+  },
+  "minecraft:vex_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:cobblestone": 1,
+    "minecraft:diamond": 7,
+    "minecraft:vex_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:ward_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:cobbled_deepslate": 1,
+    "minecraft:diamond": 7,
+    "minecraft:ward_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:warped_button": {
+   "materials": {
+    "minecraft:warped_planks": 1
+   },
+   "name_zh": "诡异木按钮"
+  },
+  "minecraft:warped_door": {
+   "materials": {
+    "minecraft:warped_planks": 6
+   },
+   "name_zh": "诡异木门",
+   "yields": 3
+  },
+  "minecraft:warped_fence": {
+   "materials": {
+    "minecraft:stick": 2,
+    "minecraft:warped_planks": 4
+   },
+   "name_zh": "诡异木栅栏",
+   "yields": 3
+  },
+  "minecraft:warped_fence_gate": {
+   "materials": {
+    "minecraft:stick": 4,
+    "minecraft:warped_planks": 2
+   },
+   "name_zh": "诡异木栅栏门"
+  },
+  "minecraft:warped_fungus_on_a_stick": {
+   "materials": {
+    "minecraft:fishing_rod": 1,
+    "minecraft:warped_fungus": 1
+   },
+   "name_zh": "诡异菌钓竿"
+  },
+  "minecraft:warped_hanging_sign": {
+   "materials": {
+    "minecraft:chain": 2,
+    "minecraft:stripped_warped_stem": 6
+   },
+   "name_zh": "悬挂式诡异木告示牌",
+   "yields": 6
+  },
+  "minecraft:warped_hyphae": {
+   "materials": {
+    "minecraft:warped_stem": 4
+   },
+   "name_zh": "诡异菌核",
+   "yields": 3
+  },
+  "minecraft:warped_planks": {
+   "materials": {
+    "minecraft:warped_stem": 1
+   },
+   "name_zh": "诡异木板",
+   "yields": 4
+  },
+  "minecraft:warped_pressure_plate": {
+   "materials": {
+    "minecraft:warped_planks": 2
+   },
+   "name_zh": "诡异木压力板"
+  },
+  "minecraft:warped_sign": {
+   "materials": {
+    "minecraft:stick": 1,
+    "minecraft:warped_planks": 6
+   },
+   "name_zh": "诡异木告示牌",
+   "yields": 3
+  },
+  "minecraft:warped_slab": {
+   "materials": {
+    "minecraft:warped_planks": 3
+   },
+   "name_zh": "诡异木台阶",
+   "yields": 6
+  },
+  "minecraft:warped_stairs": {
+   "materials": {
+    "minecraft:warped_planks": 6
+   },
+   "name_zh": "诡异木楼梯",
+   "yields": 4
+  },
+  "minecraft:warped_trapdoor": {
+   "materials": {
+    "minecraft:warped_planks": 6
+   },
+   "name_zh": "诡异木活板门",
+   "yields": 2
+  },
+  "minecraft:waxed_chiseled_copper": {
+   "materials": {
+    "minecraft:waxed_cut_copper_slab": 2
+   },
+   "name_zh": "涂蜡的雕纹铜块"
+  },
+  "minecraft:waxed_copper_block": {
+   "materials": {
+    "minecraft:copper_block": 1,
+    "minecraft:honeycomb": 1
+   },
+   "name_zh": "涂蜡的铜块"
+  },
+  "minecraft:waxed_copper_bulb": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:redstone": 1,
+    "minecraft:waxed_copper_block": 3
+   },
+   "name_zh": "涂蜡的铜灯",
+   "yields": 4
+  },
+  "minecraft:waxed_copper_door": {
+   "materials": {
+    "minecraft:copper_door": 1,
+    "minecraft:honeycomb": 1
+   },
+   "name_zh": "涂蜡的铜门"
+  },
+  "minecraft:waxed_copper_grate": {
+   "materials": {
+    "minecraft:waxed_copper_block": 4
+   },
+   "name_zh": "涂蜡的铜格栅",
+   "yields": 4
+  },
+  "minecraft:waxed_copper_trapdoor": {
+   "materials": {
+    "minecraft:copper_trapdoor": 1,
+    "minecraft:honeycomb": 1
+   },
+   "name_zh": "涂蜡的铜活板门"
+  },
+  "minecraft:waxed_cut_copper": {
+   "materials": {
+    "minecraft:waxed_copper_block": 4
+   },
+   "name_zh": "涂蜡的切制铜块",
+   "yields": 4
+  },
+  "minecraft:waxed_cut_copper_slab": {
+   "materials": {
+    "minecraft:waxed_cut_copper": 3
+   },
+   "name_zh": "涂蜡的切制铜台阶",
+   "yields": 6
+  },
+  "minecraft:waxed_cut_copper_stairs": {
+   "materials": {
+    "minecraft:waxed_cut_copper": 6
+   },
+   "name_zh": "涂蜡的切制铜楼梯",
+   "yields": 4
+  },
+  "minecraft:waxed_exposed_chiseled_copper": {
+   "materials": {
+    "minecraft:waxed_exposed_cut_copper_slab": 2
+   },
+   "name_zh": "涂蜡的斑驳雕纹铜块"
+  },
+  "minecraft:waxed_exposed_copper": {
+   "materials": {
+    "minecraft:exposed_copper": 1,
+    "minecraft:honeycomb": 1
+   },
+   "name_zh": "涂蜡的斑驳铜块"
+  },
+  "minecraft:waxed_exposed_copper_bulb": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:redstone": 1,
+    "minecraft:waxed_exposed_copper": 3
+   },
+   "name_zh": "涂蜡的斑驳铜灯",
+   "yields": 4
+  },
+  "minecraft:waxed_exposed_copper_door": {
+   "materials": {
+    "minecraft:exposed_copper_door": 1,
+    "minecraft:honeycomb": 1
+   },
+   "name_zh": "涂蜡的斑驳铜门"
+  },
+  "minecraft:waxed_exposed_copper_grate": {
+   "materials": {
+    "minecraft:waxed_exposed_copper": 4
+   },
+   "name_zh": "涂蜡的斑驳铜格栅",
+   "yields": 4
+  },
+  "minecraft:waxed_exposed_copper_trapdoor": {
+   "materials": {
+    "minecraft:exposed_copper_trapdoor": 1,
+    "minecraft:honeycomb": 1
+   },
+   "name_zh": "涂蜡的斑驳铜活板门"
+  },
+  "minecraft:waxed_exposed_cut_copper": {
+   "materials": {
+    "minecraft:waxed_exposed_copper": 4
+   },
+   "name_zh": "涂蜡的斑驳切制铜块",
+   "yields": 4
+  },
+  "minecraft:waxed_exposed_cut_copper_slab": {
+   "materials": {
+    "minecraft:waxed_exposed_cut_copper": 3
+   },
+   "name_zh": "涂蜡的斑驳切制铜台阶",
+   "yields": 6
+  },
+  "minecraft:waxed_exposed_cut_copper_stairs": {
+   "materials": {
+    "minecraft:waxed_exposed_cut_copper": 6
+   },
+   "name_zh": "涂蜡的斑驳切制铜楼梯",
+   "yields": 4
+  },
+  "minecraft:waxed_oxidized_chiseled_copper": {
+   "materials": {
+    "minecraft:waxed_oxidized_cut_copper_slab": 2
+   },
+   "name_zh": "涂蜡的氧化雕纹铜块"
+  },
+  "minecraft:waxed_oxidized_copper": {
+   "materials": {
+    "minecraft:honeycomb": 1,
+    "minecraft:oxidized_copper": 1
+   },
+   "name_zh": "涂蜡的氧化铜块"
+  },
+  "minecraft:waxed_oxidized_copper_bulb": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:redstone": 1,
+    "minecraft:waxed_oxidized_copper": 3
+   },
+   "name_zh": "涂蜡的氧化铜灯",
+   "yields": 4
+  },
+  "minecraft:waxed_oxidized_copper_door": {
+   "materials": {
+    "minecraft:honeycomb": 1,
+    "minecraft:oxidized_copper_door": 1
+   },
+   "name_zh": "涂蜡的氧化铜门"
+  },
+  "minecraft:waxed_oxidized_copper_grate": {
+   "materials": {
+    "minecraft:waxed_oxidized_copper": 4
+   },
+   "name_zh": "涂蜡的氧化铜格栅",
+   "yields": 4
+  },
+  "minecraft:waxed_oxidized_copper_trapdoor": {
+   "materials": {
+    "minecraft:honeycomb": 1,
+    "minecraft:oxidized_copper_trapdoor": 1
+   },
+   "name_zh": "涂蜡的氧化铜活板门"
+  },
+  "minecraft:waxed_oxidized_cut_copper": {
+   "materials": {
+    "minecraft:waxed_oxidized_copper": 4
+   },
+   "name_zh": "涂蜡的氧化切制铜块",
+   "yields": 4
+  },
+  "minecraft:waxed_oxidized_cut_copper_slab": {
+   "materials": {
+    "minecraft:waxed_oxidized_cut_copper": 3
+   },
+   "name_zh": "涂蜡的氧化切制铜台阶",
+   "yields": 6
+  },
+  "minecraft:waxed_oxidized_cut_copper_stairs": {
+   "materials": {
+    "minecraft:waxed_oxidized_cut_copper": 6
+   },
+   "name_zh": "涂蜡的氧化切制铜楼梯",
+   "yields": 4
+  },
+  "minecraft:waxed_weathered_chiseled_copper": {
+   "materials": {
+    "minecraft:waxed_weathered_cut_copper_slab": 2
+   },
+   "name_zh": "涂蜡的锈蚀雕纹铜块"
+  },
+  "minecraft:waxed_weathered_copper": {
+   "materials": {
+    "minecraft:honeycomb": 1,
+    "minecraft:weathered_copper": 1
+   },
+   "name_zh": "涂蜡的锈蚀铜块"
+  },
+  "minecraft:waxed_weathered_copper_bulb": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:redstone": 1,
+    "minecraft:waxed_weathered_copper": 3
+   },
+   "name_zh": "涂蜡的锈蚀铜灯",
+   "yields": 4
+  },
+  "minecraft:waxed_weathered_copper_door": {
+   "materials": {
+    "minecraft:honeycomb": 1,
+    "minecraft:weathered_copper_door": 1
+   },
+   "name_zh": "涂蜡的锈蚀铜门"
+  },
+  "minecraft:waxed_weathered_copper_grate": {
+   "materials": {
+    "minecraft:waxed_weathered_copper": 4
+   },
+   "name_zh": "涂蜡的锈蚀铜格栅",
+   "yields": 4
+  },
+  "minecraft:waxed_weathered_copper_trapdoor": {
+   "materials": {
+    "minecraft:honeycomb": 1,
+    "minecraft:weathered_copper_trapdoor": 1
+   },
+   "name_zh": "涂蜡的锈蚀铜活板门"
+  },
+  "minecraft:waxed_weathered_cut_copper": {
+   "materials": {
+    "minecraft:waxed_weathered_copper": 4
+   },
+   "name_zh": "涂蜡的锈蚀切制铜块",
+   "yields": 4
+  },
+  "minecraft:waxed_weathered_cut_copper_slab": {
+   "materials": {
+    "minecraft:waxed_weathered_cut_copper": 3
+   },
+   "name_zh": "涂蜡的锈蚀切制铜台阶",
+   "yields": 6
+  },
+  "minecraft:waxed_weathered_cut_copper_stairs": {
+   "materials": {
+    "minecraft:waxed_weathered_cut_copper": 6
+   },
+   "name_zh": "涂蜡的锈蚀切制铜楼梯",
+   "yields": 4
+  },
+  "minecraft:wayfinder_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:terracotta": 1,
+    "minecraft:wayfinder_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:weathered_chiseled_copper": {
+   "materials": {
+    "minecraft:weathered_cut_copper_slab": 2
+   },
+   "name_zh": "锈蚀的雕纹铜块"
+  },
+  "minecraft:weathered_copper_bulb": {
+   "materials": {
+    "minecraft:blaze_rod": 1,
+    "minecraft:redstone": 1,
+    "minecraft:weathered_copper": 3
+   },
+   "name_zh": "锈蚀的铜灯",
+   "yields": 4
+  },
+  "minecraft:weathered_copper_grate": {
+   "materials": {
+    "minecraft:weathered_copper": 4
+   },
+   "name_zh": "锈蚀的铜格栅",
+   "yields": 4
+  },
+  "minecraft:weathered_cut_copper": {
+   "materials": {
+    "minecraft:weathered_copper": 4
+   },
+   "name_zh": "锈蚀的切制铜块",
+   "yields": 4
+  },
+  "minecraft:weathered_cut_copper_slab": {
+   "materials": {
+    "minecraft:weathered_cut_copper": 3
+   },
+   "name_zh": "锈蚀的切制铜台阶",
+   "yields": 6
+  },
+  "minecraft:weathered_cut_copper_stairs": {
+   "materials": {
+    "minecraft:weathered_cut_copper": 6
+   },
+   "name_zh": "锈蚀的切制铜楼梯",
+   "yields": 4
+  },
+  "minecraft:wheat": {
+   "materials": {
+    "minecraft:hay_block": 1
+   },
+   "name_zh": "小麦",
+   "yields": 9
+  },
+  "minecraft:white_banner": {
+   "materials": {
+    "minecraft:stick": 1,
+    "minecraft:white_wool": 6
+   },
+   "name_zh": "白色旗帜"
+  },
+  "minecraft:white_bed": {
+   "materials": {
+    "minecraft:oak_planks": 3,
+    "minecraft:white_wool": 3
+   },
+   "name_zh": "白色床"
+  },
+  "minecraft:white_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:white_dye": 1
+   },
+   "name_zh": "白色蜡烛"
+  },
+  "minecraft:white_carpet": {
+   "materials": {
+    "minecraft:white_wool": 2
+   },
+   "name_zh": "白色地毯",
+   "yields": 3
+  },
+  "minecraft:white_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:sand": 4,
+    "minecraft:white_dye": 1
+   },
+   "name_zh": "白色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:white_dye": {
+   "materials": {
+    "minecraft:bone_meal": 1
+   },
+   "name_zh": "白色染料"
+  },
+  "minecraft:white_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:white_dye": 1
+   },
+   "name_zh": "白色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:white_stained_glass_pane": {
+   "materials": {
+    "minecraft:white_stained_glass": 6
+   },
+   "name_zh": "白色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:white_terracotta": {
+   "materials": {
+    "minecraft:terracotta": 8,
+    "minecraft:white_dye": 1
+   },
+   "name_zh": "白色陶瓦",
+   "yields": 8
+  },
+  "minecraft:white_wool": {
+   "materials": {
+    "minecraft:string": 4
+   },
+   "name_zh": "白色羊毛"
+  },
+  "minecraft:wild_armor_trim_smithing_template": {
+   "materials": {
+    "minecraft:diamond": 7,
+    "minecraft:mossy_cobblestone": 1,
+    "minecraft:wild_armor_trim_smithing_template": 1
+   },
+   "name_zh": "锻造模板",
+   "yields": 2
+  },
+  "minecraft:wind_charge": {
+   "materials": {
+    "minecraft:breeze_rod": 1
+   },
+   "name_zh": "风弹",
+   "yields": 4
+  },
+  "minecraft:wolf_armor": {
+   "materials": {
+    "minecraft:armadillo_scute": 6
+   },
+   "name_zh": "狼铠"
+  },
+  "minecraft:wooden_axe": {
+   "materials": {
+    "minecraft:oak_planks": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "木斧"
+  },
+  "minecraft:wooden_hoe": {
+   "materials": {
+    "minecraft:oak_planks": 2,
+    "minecraft:stick": 2
+   },
+   "name_zh": "木锄"
+  },
+  "minecraft:wooden_pickaxe": {
+   "materials": {
+    "minecraft:oak_planks": 3,
+    "minecraft:stick": 2
+   },
+   "name_zh": "木镐"
+  },
+  "minecraft:wooden_shovel": {
+   "materials": {
+    "minecraft:oak_planks": 1,
+    "minecraft:stick": 2
+   },
+   "name_zh": "木锹"
+  },
+  "minecraft:wooden_sword": {
+   "materials": {
+    "minecraft:oak_planks": 2,
+    "minecraft:stick": 1
+   },
+   "name_zh": "木剑"
+  },
+  "minecraft:writable_book": {
+   "materials": {
+    "minecraft:book": 1,
+    "minecraft:feather": 1,
+    "minecraft:ink_sac": 1
+   },
+   "name_zh": "书与笔"
+  },
+  "minecraft:yellow_banner": {
+   "materials": {
+    "minecraft:stick": 1,
+    "minecraft:yellow_wool": 6
+   },
+   "name_zh": "黄色旗帜"
+  },
+  "minecraft:yellow_bed": {
+   "materials": {
+    "minecraft:oak_planks": 3,
+    "minecraft:yellow_wool": 3
+   },
+   "name_zh": "黄色床"
+  },
+  "minecraft:yellow_candle": {
+   "materials": {
+    "minecraft:candle": 1,
+    "minecraft:yellow_dye": 1
+   },
+   "name_zh": "黄色蜡烛"
+  },
+  "minecraft:yellow_carpet": {
+   "materials": {
+    "minecraft:yellow_wool": 2
+   },
+   "name_zh": "黄色地毯",
+   "yields": 3
+  },
+  "minecraft:yellow_concrete_powder": {
+   "materials": {
+    "minecraft:gravel": 4,
+    "minecraft:sand": 4,
+    "minecraft:yellow_dye": 1
+   },
+   "name_zh": "黄色混凝土粉末",
+   "yields": 8
+  },
+  "minecraft:yellow_dye": {
+   "materials": {
+    "minecraft:dandelion": 1
+   },
+   "name_zh": "黄色染料"
+  },
+  "minecraft:yellow_stained_glass": {
+   "materials": {
+    "minecraft:glass": 8,
+    "minecraft:yellow_dye": 1
+   },
+   "name_zh": "黄色染色玻璃",
+   "yields": 8
+  },
+  "minecraft:yellow_stained_glass_pane": {
+   "materials": {
+    "minecraft:yellow_stained_glass": 6
+   },
+   "name_zh": "黄色染色玻璃板",
+   "yields": 16
+  },
+  "minecraft:yellow_terracotta": {
+   "materials": {
+    "minecraft:terracotta": 8,
+    "minecraft:yellow_dye": 1
+   },
+   "name_zh": "黄色陶瓦",
+   "yields": 8
+  },
+  "minecraft:yellow_wool": {
+   "materials": {
+    "minecraft:black_wool": 1,
+    "minecraft:yellow_dye": 1
+   },
+   "name_zh": "黄色羊毛"
+  }
+ }
+}

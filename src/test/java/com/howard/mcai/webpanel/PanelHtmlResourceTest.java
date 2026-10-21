@@ -37,6 +37,12 @@ class PanelHtmlResourceTest {
         assertTrue(html.contains("data-export-data"), "数据页应有导出");
         assertTrue(html.contains("data-import-data"), "数据页应有导入");
         assertTrue(html.contains("resetAllBtn"), "应有全部恢复默认");
+        // v0.2.0 新页签与选物器
+        assertTrue(html.contains("data-tab=\"prompts\""), "应有提示词页签");
+        assertTrue(html.contains("data-tab=\"prices\""), "应有定价表页签");
+        assertTrue(html.contains("data-tab=\"pools\""), "应有职业货池页签");
+        assertTrue(html.contains("createItemPicker"), "应有中文选物器");
+        assertTrue(html.contains("renderPrompts"), "应有提示词编辑器");
     }
 
     @Test

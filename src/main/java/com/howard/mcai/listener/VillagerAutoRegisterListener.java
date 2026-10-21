@@ -19,7 +19,7 @@ import java.util.UUID;
  * <p>
  * 为什么需要这个？
  * 原版世界里的村庄会自然 spawn 村民——农夫、牧师、铁匠、屠夫……
- * 这些村民不是通过 /ai spawn 或 spawnOrLoadBlacksmith 创建的，
+ * 这些村民不是通过 /ai spawn 创建的，
  * 所以不会被自动注册到 villagers map → 不会有 VillagerState → 不会有专属配方。
  * 结果就是：
  * 1. 右键这个村民 → PlayerInteractListener 找不到 VillagerState → 触发不了 LLM

@@ -78,12 +78,6 @@ public final class ConfigPanelSchema {
             // ===== 调试 =====
             f("debug.enabled", "调试", "调试消息进聊天框", "打开后 MC-AI 的调试行会发到玩家聊天框（平时只进控制台）", Type.BOOL, null, null, false, true),
             // ===== 村民出生点 =====
-            f("villagers.blacksmith.name", "村民出生点", "铁匠名字", "", Type.STRING, null, null, "老王", false),
-            f("villagers.blacksmith.spawn-world", "村民出生点", "出生世界", "", Type.STRING, null, null, "world", false),
-            f("villagers.blacksmith.spawn-x", "村民出生点", "出生点 X", "", Type.DOUBLE, -30000000.0, 30000000.0, 100.0, false),
-            f("villagers.blacksmith.spawn-y", "村民出生点", "出生点 Y", "", Type.DOUBLE, -512.0, 1024.0, 64.0, false),
-            f("villagers.blacksmith.spawn-z", "村民出生点", "出生点 Z", "", Type.DOUBLE, -30000000.0, 30000000.0, 100.0, false),
-            // ===== 商店与资源包 =====
             f("shop.resource-pack-skin", "商店与资源包", "商店资源包皮肤", "打开后开店是木柜台界面，进服自动发资源包", Type.BOOL, null, null, false, true),
             f("shop.resource-pack-port", "商店与资源包", "资源包下载端口", "外网玩家进服时，路由器要放行这个端口", Type.INT, 1.0, 65535.0, 8765, true),
             f("shop.resource-pack-host", "商店与资源包", "资源包主机名覆盖", "留空 = 按玩家连入地址自动推导；穿透/代理时才填", Type.STRING, null, null, "", true),
@@ -101,7 +95,7 @@ public final class ConfigPanelSchema {
     /** 必须非空的字符串项 */
     private static boolean required(Field field) {
         return switch (field.path()) {
-            case "llm.url", "llm.model", "villagers.blacksmith.name", "villagers.blacksmith.spawn-world" -> true;
+            case "llm.url", "llm.model" -> true;
             default -> false;
         };
     }
