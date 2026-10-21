@@ -79,4 +79,37 @@ class BargainPolicyTest {
         assertFalse(out.accepted());
         assertEquals(1, out.agreedPrice());
     }
+
+    // ===== 卖货方向：抬价裁决（与砍价同档位镜像） =====
+
+    @Test
+    void raiseTiersMirrorCutTiers() {
+        assertEquals(1, BargainPolicy.maxRaise(20, 0));
+        assertEquals(1 + 4, BargainPolicy.maxRaise(20, 10));
+        assertEquals(2 + 5, BargainPolicy.maxRaise(20, 30));
+        assertEquals(3 + 6, BargainPolicy.maxRaise(20, 60));
+        assertEquals(20 + 1, BargainPolicy.maxPay(20, 0));
+    }
+
+    @Test
+    void decideSellAcceptsWithinCap() {
+        var out = BargainPolicy.decideSell(20, 0, 1);
+        assertTrue(out.accepted());
+        assertEquals(21, out.agreedPay());
+    }
+
+    @Test
+    void decideSellCountersAtCapWhenOver() {
+        var out = BargainPolicy.decideSell(20, 0, 5);
+        assertFalse(out.accepted());
+        assertEquals(21, out.agreedPay(), "抬超了还价到他肯出的最高价");
+        assertEquals(21, out.maxPay());
+    }
+
+    @Test
+    void decideSellZeroRaiseIsListPay() {
+        var out = BargainPolicy.decideSell(20, 60, 0);
+        assertTrue(out.accepted());
+        assertEquals(20, out.agreedPay());
+    }
 }
