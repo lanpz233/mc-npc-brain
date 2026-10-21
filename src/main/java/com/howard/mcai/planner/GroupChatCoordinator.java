@@ -70,7 +70,8 @@ public final class GroupChatCoordinator {
         for (VillagerState vs : villagers.values()) {
             if (vs == primary) continue;
             Villager v = vs.entity();
-            if (!v.isValid()) continue;
+            // 睡着了不旁听附和（与自动闲聊同一条规矩：睡觉的村民不参与社交）
+            if (!v.isValid() || v.isSleeping()) continue;
             // 跨世界不能直接 distance（不同 world 的 Location.distance 会抛
             // IllegalArgumentException），先比对世界：不同世界视为"不在范围内"
             if (v.getWorld().equals(player.getWorld())
