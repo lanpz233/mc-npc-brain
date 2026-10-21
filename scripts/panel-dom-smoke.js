@@ -79,13 +79,13 @@ setTimeout(() => {
   console.log('toast text:', JSON.stringify(tst && tst.textContent));
   const st = byId.get('#status');
   console.log('status text:', JSON.stringify(st && st.textContent));
-  for (const sel of ['#recipeRows', '#priceRows', '#poolRows', '#promptRows']) {
+  for (const sel of ['#recipeRows', '#priceRows', '#poolRows', '#promptRows', '#theftLineRows', '#professionRows']) {
     const el = byId.get(sel);
     console.log(sel, 'direct children:', el ? el.children.length : 'MISSING');
   }
   const fail = (msg) => { console.log('FAIL:', msg); process.exit(1); };
   if ((st && st.textContent || '').includes('连接失败')) fail('loadState reported 连接失败, toast=' + (tst && tst.textContent));
-  const expect = { '#recipeRows': 700, '#priceRows': 50, '#poolRows': 16, '#promptRows': 11 };
+  const expect = { '#recipeRows': 700, '#priceRows': 50, '#poolRows': 16, '#promptRows': 11, '#theftLineRows': 5, '#professionRows': 15 };
   for (const [sel, min] of Object.entries(expect)) {
     const el = byId.get(sel);
     if (!el) fail(sel + ' never rendered');

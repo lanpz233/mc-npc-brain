@@ -165,6 +165,7 @@
       <h2>偷窃台词（村民抓小偷时说什么）</h2>
       <p class="note">上面两组是<b>被抓现行时骂人的话</b>，按初犯/惯犯分开；下面三组是他<b>察觉丢了东西、但没看清是谁</b>时的嘟囔，按当时是白天、夜里、下雨自动选组。一行一句、随机抽一句。可以用占位符 <strong>{物品}</strong>（被偷的东西）和 <strong>{玩家}</strong>。骂人的句子没写 {物品} 时，插件会自动在末尾补一句"（指你刚摸的X）"。某一组清空 = 用插件内置默认。另外：设置页里开了"被抓台词由模型现编"时，骂人优先让模型按性格现场说，模型忙或没开才用这两组词库。</p>
       <div class="toolbar"><span class="spacer"></span><button data-export-data="theft-lines.json">⬇ 导出</button><button data-import-data="theft-lines.json">⬆ 导入</button><button class="primary" data-save-data="theft-lines.json">保存偷窃台词</button></div>
+      <label style="display:block;margin:10px 0;font-weight:600"><input type="checkbox" id="theftModelToggle"> 模型台词：被抓时让村民按自己的性格现场骂（模型忙/没开时自动用下面的词库）</label>
       <div id="theftLineRows"></div>
     </div>
   </section>
@@ -884,6 +885,21 @@ const THEFT_LINE_GROUPS = [
   ["confused_rain", "🌧 察觉丢东西 · 下雨嘟囔"]
 ];
 function renderTheftLines() {
+  const toggle = $("#theftModelToggle");
+  if (toggle) {
+    toggle.checked = !!(state.values && state.values["theft.scold-by-model"]);
+    if (!toggle.dataset.bound) {
+      toggle.dataset.bound = "1";
+      toggle.addEventListener("change", async () => {
+        try {
+          const resp = await api("/api/config", { method: "POST",
+            body: JSON.stringify({ values: { "theft.scold-by-model": toggle.checked } }) });
+          if (state.values) state.values["theft.scold-by-model"] = toggle.checked;
+          toast(resp.message || "模型台词开关已保存");
+        } catch (e) { toast(e.message, true); toggle.checked = !toggle.checked; }
+      });
+    }
+  }
   const doc = docs["theft-lines.json"] || {};
   const wrap = $("#theftLineRows");
   wrap.innerHTML = "";
@@ -1114,6 +1130,7 @@ async function loadState(announce) {
   renderPools();
   renderPrompts();
   renderProfessions();
+  renderTheftLines();
   renderRawSelect();
   setStatus("已连接 · 没有未保存的修改", false);
   if (announce) toast("已连上插件，设置和数据都加载好了");
@@ -1123,8 +1140,9 @@ $$("#tabs button").forEach(btn => {
   btn.addEventListener("click", () => {
     $$("#tabs button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    for (const name of ["settings", "recipes", "tags", "names", "prompts", "prices", "pools", "raw", "backups"]) {
-      $("#tab-" + name).hidden = name !== btn.dataset.tab;
+    for (const b2 of $$("#tabs button")) {
+      const sec = $("#tab-" + b2.dataset.tab);
+      if (sec) sec.hidden = b2.dataset.tab !== btn.dataset.tab;
     }
     if (btn.dataset.tab === "backups") renderBackups();
   });

@@ -18,14 +18,18 @@ public final class BarterBrief {
     private BarterBrief() {
     }
 
-    /** 价值对比档位（offerValue / hisValue）→ 人话 */
+    /**
+     * 价值对比档位（offerValue / hisValue）→ 人话。
+     * 视角铁律：简报是说给村民本人听的，一律第二人称"你"——v0.4.2 实测出过事：
+     * 这里写"他吃亏"、正文里"他"又指玩家，模型把谁坑谁说反了（"俺不能坑你"）。
+     */
     public static String ratioTier(double offerValue, double hisValue) {
-        if (hisValue <= 0) return "他那件东西在价目表上几乎不值钱";
+        if (hisValue <= 0) return "你这件东西在价目表上几乎不值钱";
         double r = offerValue / hisValue;
-        if (r >= 1.25) return "光按价钱算，他占了便宜";
+        if (r >= 1.25) return "光按价钱算，你占了便宜";
         if (r >= 0.85) return "价钱上基本公道，两边差不多";
-        if (r >= 0.55) return "价钱上他有点吃亏";
-        return "价钱上他吃大亏";
+        if (r >= 0.55) return "价钱上你有点吃亏";
+        return "价钱上你吃大亏";
     }
 
     /**
@@ -34,10 +38,10 @@ public final class BarterBrief {
      */
     public static String usefulness(VillagerProfession prof, Material offerMat, boolean hungryUrgent) {
         if (offerMat == Material.EMERALD) return "绿宝石是硬通货，谁都喜欢";
-        if (ProfessionPools.canBuy(prof, offerMat)) return "这正是他收购的东西，对他很用得上";
-        if (hungryUrgent && isFood(offerMat)) return "他正饿着，这口吃的来得正是时候";
-        if (ProfessionPools.canSell(prof, offerMat)) return "这东西他自己店里就卖，他不缺";
-        return "这东西跟他的营生不搭边，他多半用不上";
+        if (ProfessionPools.canBuy(prof, offerMat)) return "这正是你收购的东西，对你很用得上";
+        if (hungryUrgent && isFood(offerMat)) return "你正饿着，这口吃的来得正是时候";
+        if (ProfessionPools.canSell(prof, offerMat)) return "这东西你自己店里就卖，你不缺";
+        return "这东西跟你的营生不搭边，你多半用不上";
     }
 
     /**
@@ -71,6 +75,8 @@ public final class BarterBrief {
                 + "他出的「" + offerZh + "」×" + offerCount + " 约值 " + fmt(offerValue) + " 块绿宝石——"
                 + ratioTier(offerValue, hisValue) + "。\n"
                 + "对你来说：" + usefulness(prof, offerMat, hungryUrgent) + "。\n"
+                + "记住：是他拿东西换你的东西——他给的比你的便宜，就是你吃亏、他想占你便宜，"
+                + "说话时别把谁坑谁说反了。\n"
                 + "换不换由你按自己的性格和跟他的交情定：愿意换，就调用 accept_barter，"
                 + "并在 message 里说一句中文台词，系统会当场把两边的东西换过来；"
                 + "不愿意，就直接用一句台词拒绝，不要调用工具，也不要口头答应。）";
