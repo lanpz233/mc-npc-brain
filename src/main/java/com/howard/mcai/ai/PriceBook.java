@@ -334,6 +334,23 @@ public final class PriceBook {
     }
 
     /**
+     * 价格 → 绿宝石原料各格数量（纯计算，TradeRegistry.setEmeraldPrice 用它拼原料表）。
+     * 规则：价格夹在 [1,128]；无第二原料时 &gt;64 拆 [64, 余数] 两格；
+     * 有第二原料时它已占 1 格，价格封顶 64 只占一格。
+     * 不变量：返回格数 + (hasSecondIngredient ? 1 : 0) ≤ 2 —— 2026-10-21 插件加载
+     * 崩溃事故就是这条被打破（占位绿宝石残留 + 拆格 = 3 格，
+     * "MerchantRecipe can only have maximum 2 ingredients"）。
+     * 放在 PriceBook 而非 TradeRegistry：本类初始化只算数字、不构造 ItemStack，
+     * 单测能真正跑到（TradeRegistry 的静态初始化会造配方，离线环境跑不了）。
+     */
+    public static java.util.List<Integer> emeraldStacks(int price, boolean hasSecondIngredient) {
+        int p = Math.max(1, Math.min(price, 128));
+        if (hasSecondIngredient) p = Math.min(p, 64);
+        if (p > 64) return java.util.List.of(64, p - 64);
+        return java.util.List.of(p);
+    }
+
+    /**
      * 商店收购价（一堆 count 个）：公道价 × 0.8 向下取整，至少 1，
      * 且永不高于同堆卖价（防套利）。
      */
