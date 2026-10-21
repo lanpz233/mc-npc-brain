@@ -101,7 +101,20 @@ public record PluginConfig(
         boolean webPanelEnabled,
 
         /** 配置面板的本机端口（只绑 127.0.0.1，改后需重启） */
-        int webPanelPort
+        int webPanelPort,
+
+        // 事实与翻译（v0.3.0：事实直答 + 天气账本 + 主动提醒）
+        /** 天气账本保留的游戏日数（更早的场次压缩成汇总一句话） */
+        int factsLedgerRetentionDays,
+
+        /** 事实直答后偶尔缀一句活人追问的概率（百分比 0-100） */
+        int factsFollowupChancePct,
+
+        /** 约数报时的取整粒度（分钟）：10 = 报到十分位（八点四十左右/快九点了） */
+        int factsApproxStepMinutes,
+
+        /** 主动提醒（黄昏将至/雷暴来临）开关 */
+        boolean factsRemindersEnabled
 ) {
 
     /**
@@ -159,7 +172,12 @@ public record PluginConfig(
                 blankToNull(cfg.getString("shop.resource-pack-host", "")),
                 // Web panel（第一期）
                 cfg.getBoolean("web-panel.enabled", true),
-                cfg.getInt("web-panel.port", 8767)
+                cfg.getInt("web-panel.port", 8767),
+                // 事实与翻译（v0.3.0）
+                Math.max(1, Math.min(30, cfg.getInt("facts.ledger-retention-days", 7))),
+                Math.max(0, Math.min(100, cfg.getInt("facts.followup-chance-pct", 33))),
+                Math.max(1, Math.min(30, cfg.getInt("facts.approx-step-minutes", 10))),
+                cfg.getBoolean("facts.reminders-enabled", true)
         );
     }
 

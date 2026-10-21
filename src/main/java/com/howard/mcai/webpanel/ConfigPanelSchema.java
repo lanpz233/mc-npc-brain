@@ -83,7 +83,12 @@ public final class ConfigPanelSchema {
             f("shop.resource-pack-host", "商店与资源包", "资源包主机名覆盖", "留空 = 按玩家连入地址自动推导；穿透/代理时才填", Type.STRING, null, null, "", true),
             // ===== 网页配置面板 =====
             f("web-panel.enabled", "网页配置面板", "启用配置面板", "关掉后插件不再生成面板、也不再开本机管理服务", Type.BOOL, null, null, true, false),
-            f("web-panel.port", "网页配置面板", "配置面板端口", "只绑本机 127.0.0.1，不要在路由器上放行它", Type.INT, 1.0, 65535.0, 8767, false)
+            f("web-panel.port", "网页配置面板", "配置面板端口", "只绑本机 127.0.0.1，不要在路由器上放行它", Type.INT, 1.0, 65535.0, 8767, false),
+            // ===== 事实与翻译（v0.3.0）=====
+            f("facts.ledger-retention-days", "事实与翻译", "天气账本保留（游戏日）", "村民记得几天内的下雨打雷；更早的压成一句话", Type.INT, 1.0, 30.0, 7, true),
+            f("facts.followup-chance-pct", "事实与翻译", "直答后追问概率（%）", "报完时间/天气后，偶尔缀一句“怎么了，有什么打算吗”", Type.INT, 0.0, 100.0, 33, true),
+            f("facts.approx-step-minutes", "事实与翻译", "报时取整粒度（分钟）", "越大越像随口估时（15 = 只报到一刻钟），越小越精确", Type.INT, 1.0, 30.0, 10, true),
+            f("facts.reminders-enabled", "事实与翻译", "主动提醒", "黄昏将至或雷暴来临时，附近村民主动提醒玩家", Type.BOOL, null, null, true, true)
     );
 
     public static final Map<String, Field> BY_PATH = new LinkedHashMap<>();

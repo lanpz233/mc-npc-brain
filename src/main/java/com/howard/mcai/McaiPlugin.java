@@ -88,6 +88,24 @@ public final class McaiPlugin extends JavaPlugin {
 
     /** 气泡管理器（TextDisplay riding villager） */
     private BubbleManager bubbleManager;
+
+    // ===== 事实与翻译（v0.3.0）静态镜像 + 账本/提醒状态 =====
+    private static volatile int factFollowupChancePct = 33;
+    private static volatile int factApproxStepMinutes = 10;
+
+    public static int factFollowupChancePct() { return factFollowupChancePct; }
+    public static int factApproxStepMinutes() { return factApproxStepMinutes; }
+
+    private static void syncFactStatics(PluginConfig c) {
+        factFollowupChancePct = c.factsFollowupChancePct();
+        factApproxStepMinutes = c.factsApproxStepMinutes();
+    }
+
+    /** 天气账本采样/提醒任务 */
+    private org.bukkit.scheduler.BukkitTask factTask;
+    /** 主动提醒冷却：村民 → 上次黄昏提醒的游戏日 / 上次天气提醒的世界刻度 */
+    private final Map<UUID, Long> lastDuskRemindDay = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastStormRemindAt = new ConcurrentHashMap<>();
     private com.howard.mcai.resourcepack.PackServer packServer;
     /** 网页配置面板（第一期）的本机管理服务 */
     private com.howard.mcai.webpanel.ConfigPanelServer configPanelServer;
@@ -191,6 +209,7 @@ public final class McaiPlugin extends JavaPlugin {
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
         // 职业徽章开关走同样的静态镜像（CentralPlanner 的静态提示方法无 plugin 引用）
         com.howard.mcai.ai.ProfessionBadge.setEnabled(config.shopSkinEnabled());
+        syncFactStatics(config);
 
         // 1.5 加载配方表（拼进 system prompt，让村民对话有真实参考）
         recipeLookup = new RecipeLookup();
@@ -301,6 +320,10 @@ public final class McaiPlugin extends JavaPlugin {
 
         // 7. 启动中央计划器心跳（每 20 tick = 1 秒），时间分发给各 TickLayer（表现层 3s / 社交层 60s）
         plannerTask = planner.runTaskTimer(this, TickLayer.HEARTBEAT_TICKS, TickLayer.HEARTBEAT_TICKS);
+
+        // 7.2 天气账本 + 主动提醒（v0.3.0）：读回账本，每 30 秒采样一次各世界天气
+        loadWeatherLedgers();
+        factTask = Bukkit.getScheduler().runTaskTimer(this, this::factTick, 600L, 600L);
 
         // 7.5 对话注视任务 —— 每 2 tick 让所有"正在对话"的村民持续面向玩家
         planner.startFaceTask();
@@ -417,6 +440,12 @@ public final class McaiPlugin extends JavaPlugin {
             plannerTask.cancel();
             plannerTask = null;
         }
+        // 1.4 天气账本落盘 + 停采样任务（v0.3.0）
+        if (factTask != null) {
+            factTask.cancel();
+            factTask = null;
+        }
+        saveWeatherLedgers();
         // 1.5 停掉对话注视任务
         if (planner != null) {
             planner.stopFaceTask();
@@ -1130,6 +1159,124 @@ public final class McaiPlugin extends JavaPlugin {
         sender.sendMessage("§a" + applyConfigReload());
     }
 
+    // ===== 天气账本与主动提醒（v0.3.0）=====
+
+    private java.io.File weatherLedgerFile() {
+        return new java.io.File(getDataFolder(), "weather-ledgers.json");
+    }
+
+    private void loadWeatherLedgers() {
+        try {
+            java.io.File f = weatherLedgerFile();
+            if (f.exists()) {
+                var root = com.google.gson.JsonParser.parseString(
+                        java.nio.file.Files.readString(f.toPath())).getAsJsonObject();
+                for (var entry : root.entrySet()) {
+                    com.howard.mcai.ai.WeatherLedgers.replace(entry.getKey(),
+                            com.howard.mcai.ai.WeatherLedger.fromJson(entry.getValue().getAsJsonObject()));
+                }
+                getLogger().info("天气账本已读回：" + root.size() + " 个世界");
+            }
+        } catch (Exception e) {
+            getLogger().warning("天气账本读取失败（从空白账本开始）: " + e.getMessage());
+        }
+    }
+
+    private void saveWeatherLedgers() {
+        try {
+            var root = new com.google.gson.JsonObject();
+            com.howard.mcai.ai.WeatherLedgers.all().forEach((name, ledger) -> root.add(name, ledger.toJson()));
+            java.nio.file.Files.writeString(weatherLedgerFile().toPath(), root.toString());
+        } catch (Exception e) {
+            getLogger().warning("天气账本保存失败: " + e.getMessage());
+        }
+    }
+
+    /** 每 30 秒：采样各世界天气入账、按保留期压缩；顺带触发主动提醒；最后落盘 */
+    private void factTick() {
+        for (org.bukkit.World w : Bukkit.getWorlds()) {
+            var ledger = com.howard.mcai.ai.WeatherLedgers.getOrCreate(w.getName());
+            boolean hadOpen = ledger.hasOpenSpan();
+            ledger.record(w.getFullTime(), w.hasStorm(), w.isThundering());
+            ledger.prune(w.getFullTime(), config.factsLedgerRetentionDays());
+            if (!hadOpen && ledger.hasOpenSpan()) {
+                onStormStarted(w);
+            }
+        }
+        maybeDuskReminders();
+        saveWeatherLedgers();
+    }
+
+    /** 雷暴/降雨刚开始：附近村民提醒玩家（干旱群系的村民不提，他那儿没下） */
+    private void onStormStarted(org.bukkit.World w) {
+        if (!config.factsRemindersEnabled()) return;
+        for (VillagerState vs : villagers.values()) {
+            org.bukkit.entity.Villager e = vs.entity();
+            if (e == null || !e.isValid() || e.getWorld() != w) continue;
+            Long last = lastStormRemindAt.get(vs.getUniqueId());
+            if (last != null && w.getFullTime() - last < 12000) continue;
+            Player near = nearestPlayer(e.getLocation(), 12);
+            if (near == null) continue;
+            String biome = w.getBiome(e.getLocation()).name();
+            if (com.howard.mcai.ai.LocalWeather.isDryBiome(biome)) continue;
+            String line;
+            if (w.isThundering()) {
+                line = "打雷了！赶紧回屋，别在空旷地方待着。";
+            } else if (com.howard.mcai.ai.LocalWeather.isSnowyBiome(biome)) {
+                line = "下雪了，天更冷了，早点回吧。";
+            } else {
+                line = "下雨了，找个地方避避雨吧。";
+            }
+            lastStormRemindAt.put(vs.getUniqueId(), w.getFullTime());
+            speakReminder(vs, near, line);
+        }
+    }
+
+    /** 黄昏窗口（约 16:40–17:55）：附近村民提醒天快黑了，每人每天至多一次 */
+    private void maybeDuskReminders() {
+        if (!config.factsRemindersEnabled()) return;
+        String[] lines = {"天快黑了，早点回屋吧。", "太阳要落山了，夜里外头不安全。", "趁还没黑透，赶紧回家。"};
+        for (org.bukkit.World w : Bukkit.getWorlds()) {
+            long tod = ((w.getFullTime() % 24000) + 24000) % 24000;
+            if (tod < 10000 || tod > 11500) continue;
+            long day = w.getFullTime() / 24000;
+            for (VillagerState vs : villagers.values()) {
+                org.bukkit.entity.Villager e = vs.entity();
+                if (e == null || !e.isValid() || e.getWorld() != w) continue;
+                if (day == lastDuskRemindDay.getOrDefault(vs.getUniqueId(), -1L)) continue;
+                Player near = nearestPlayer(e.getLocation(), 12);
+                if (near == null) continue;
+                lastDuskRemindDay.put(vs.getUniqueId(), day);
+                speakReminder(vs, near,
+                        lines[Math.floorMod(vs.getUniqueId().hashCode() + (int) day, lines.length)]);
+            }
+        }
+    }
+
+    private Player nearestPlayer(org.bukkit.Location loc, double radius) {
+        Player best = null;
+        double bestSq = radius * radius;
+        for (Player p : loc.getWorld().getPlayers()) {
+            double d = p.getLocation().distanceSquared(loc);
+            if (d < bestSq) {
+                bestSq = d;
+                best = p;
+            }
+        }
+        return best;
+    }
+
+    /** 主动提醒的出口：气泡 + 给被提醒的玩家发一条同格式聊天行（不进对话历史） */
+    private void speakReminder(VillagerState vs, Player player, String line) {
+        org.bukkit.entity.Villager e = vs.entity();
+        if (e == null || !e.isValid()) return;
+        String name = com.howard.mcai.ai.Smalltalk.nameOf(vs);
+        bubbleManager.showDialog(e, name, player.getName(), line);
+        var base = net.kyori.adventure.text.Component.text(
+                "§6[" + name + ">" + player.getName() + "] §f" + line);
+        player.sendMessage(com.howard.mcai.ai.ProfessionBadge.prependBadge(base, vs.profession()));
+    }
+
     /** 配置 + 数据重载的实际动作（/ai reload 与网页配置面板共用），返回一行人话摘要 */
     public String applyConfigReload() {
         reloadConfig();
@@ -1139,6 +1286,7 @@ public final class McaiPlugin extends JavaPlugin {
         VillagerState.setMaxChatHistoryTokens(config.maxChatHistoryTokens());
         // 职业徽章开关同理（商店皮肤在面板里开关时要跟着变）
         com.howard.mcai.ai.ProfessionBadge.setEnabled(config.shopSkinEnabled());
+        syncFactStatics(config);
         // 资源包发包服务按新开关/新端口对齐（面板里改了商店皮肤或发包端口也能即时生效）
         syncPackServer();
         // 顺带 reload 配方表 + 人格标签库（用户可能编辑了）

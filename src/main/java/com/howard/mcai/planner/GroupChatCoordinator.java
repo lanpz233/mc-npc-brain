@@ -126,6 +126,11 @@ public final class GroupChatCoordinator {
                     userContent += "\n刚又听到 " + Smalltalk.nameOf(primary) + " 说: " + primaryLine;
                 }
                 userContent += "\n你离得最近，随口接一句中文（≤8字，自然口语，别用括号动作、别复述原话、别反问）。";
+                // 事实守卫（v0.3.0）：他问的是几点/天气这类事实时，自会有人准确回答；
+                // 旁听者再抢答只会报个错数（实测 16:36 插嘴“快四点了”）—— 只接话、不报事实
+                if (!com.howard.mcai.ai.FactAnswers.detect(message).isEmpty()) {
+                    userContent += "\n（注意：他问的是时间/天气这类事实，会有别人准确回答；你别报时间、别报天气，只随口接个话。）";
+                }
                 List<Map<String, String>> messages = List.of(
                         Map.of("role", "system", "content",
                                 "你是" + npcName + "，" + vs.profession().zhName
