@@ -103,6 +103,9 @@ public final class CentralPlanner extends BukkitRunnable {
         return mobs;
     }
 
+    /** 对话有效距离（格）：玩家离对话中的村民超过这个数，对话自动结束（Fong 2026-10-21 定：5 格） */
+    private static final double CONVERSATION_MAX_DISTANCE = 5.0;
+
     // ===== 对话注视（直视玩家） =====
 
     /**
@@ -129,6 +132,17 @@ public final class CentralPlanner extends BukkitRunnable {
                     if (!v.isValid()) continue;
                     Player p = plugin.getServer().getPlayer(pid);
                     if (p == null || !p.isOnline() || p.isDead()) continue;
+                    // 走远自动结束（Fong 2026-10-21 要求）：离对话中的村民超过 5 格（或跨世界）
+                    // 就收尾，不然人走远了村民还冻在原地"等聊"、动作栏提示也不灭。
+                    // 收尾与右键结束保持一致：记结束时间、标脏落盘、清提示，并知会玩家一声。
+                    if (p.getWorld() != v.getWorld()
+                            || p.getLocation().distance(v.getLocation()) > CONVERSATION_MAX_DISTANCE) {
+                        vs.endConversation();
+                        plugin.getMemoryStore().markDirty(vs.getUniqueId());
+                        clearConversationHint(p);
+                        p.sendMessage("§7[MC-AI] 你走远了，结束交谈");
+                        continue;
+                    }
                     faceTowards(v, p.getLocation());
                     if (refreshHint) showConversationHint(p, vs);
                 }
