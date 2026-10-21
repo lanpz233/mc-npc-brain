@@ -94,12 +94,26 @@ public final class MemoryStore {
                         + " (" + state.profession().zhName + ")");
             }
             // 迁移守卫：老村民没有启动钱 → 补发一次（收购从他兜里真出钱，没钱买卖转不起来）
+            boolean seededNow = false;
             if (!state.isWalletSeeded()) {
                 state.seedWallet();
                 state.setWalletSeeded(true);
+                seededNow = true;
                 markDirty(state.getUniqueId());
                 plugin.getLogger().info("§b[MC-AI] 老村民补发启动钱: " + state.getUniqueId()
                         + " (" + state.profession().zhName + ")");
+            }
+            // v0.1.3 钱包扩容：旧村民按新标准（原来的 3 倍）补足一次。
+            // 刚刚才补发启动钱的村民拿到的已经是新标准，不再重复补。
+            if (seededNow) {
+                state.setWalletV013Boosted(true);
+            } else if (!state.isWalletV013Boosted()) {
+                int added = state.topUpWalletForV013();
+                state.setWalletV013Boosted(true);
+                markDirty(state.getUniqueId());
+                plugin.getLogger().info("§b[MC-AI] v0.1.3 村民收购钱包已扩容: " + state.getUniqueId()
+                        + " (" + state.profession().zhName + ") 补入 " + added + " 块绿宝石，现有 "
+                        + state.stockOf(org.bukkit.Material.EMERALD) + " 块");
             }
         } catch (Exception e) {
             plugin.getLogger().warning("记忆文件损坏，忽略: " + file + " — " + e.getMessage());
@@ -224,6 +238,8 @@ public final class MemoryStore {
         state.setInventorySeeded(data.has("inventorySeeded") && data.get("inventorySeeded").getAsBoolean());
         // 启动钱是否已发 —— 同上，旧档无该字段 → false，loadVillager 补发一次
         state.setWalletSeeded(data.has("walletSeeded") && data.get("walletSeeded").getAsBoolean());
+        // v0.1.3 钱包扩容是否已执行 —— 旧档无该字段 → false，loadVillager 补足一次
+        state.setWalletV013Boosted(data.has("walletBoostV013") && data.get("walletBoostV013").getAsBoolean());
         // 遇见过哪些玩家（首次见面判定，UUID→名字）—— 旧档无 → 空表，首次互动时补记
         if (data.has("metPlayers") && data.get("metPlayers").isJsonObject()) {
             Map<String, String> met = new HashMap<>();
@@ -339,6 +355,7 @@ public final class MemoryStore {
         root.addProperty("rank", state.rank().name());
         root.addProperty("inventorySeeded", state.isInventorySeeded());
         root.addProperty("walletSeeded", state.isWalletSeeded());
+        root.addProperty("walletBoostV013", state.isWalletV013Boosted());
         JsonObject inv = new JsonObject();
         state.inventorySnapshot().forEach(inv::addProperty);
         root.add("inventory", inv);
