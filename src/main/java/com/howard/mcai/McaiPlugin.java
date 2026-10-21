@@ -194,6 +194,7 @@ public final class McaiPlugin extends JavaPlugin {
 
         // 1.5 加载配方表（拼进 system prompt，让村民对话有真实参考）
         recipeLookup = new RecipeLookup();
+        com.howard.mcai.ai.RecipeLookup.logSink = msg -> getLogger().info(msg);
         recipeLookup.load(getDataFolder().toPath());
         // 定价表与职业货池（外置数据文件，面板可改）：加载失败回退代码内置默认，不拦启动
         int promptSections = com.howard.mcai.ai.PromptTemplates.load(getDataFolder().toPath());

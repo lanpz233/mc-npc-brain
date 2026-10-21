@@ -438,6 +438,39 @@ async function saveConfig() {
   }
 }
 
+// ================= 表单小部件 =================
+/** 可折叠行（标题 + 展开内容），各结构化编辑器共用 */
+function detailsRow(title) {
+  const d = document.createElement("details");
+  const sum = document.createElement("summary");
+  sum.textContent = title;
+  d.appendChild(sum);
+  return d;
+}
+/** 带小标题的输入区：上面一行小字说明，下面是控件本身 */
+function labeledInput(label, el) {
+  const wrap = document.createElement("div");
+  wrap.style.margin = "8px 0";
+  const cap = document.createElement("div");
+  cap.className = "hint";
+  cap.style.marginBottom = "4px";
+  cap.textContent = label;
+  if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) {
+    el.style.width = "100%";
+    el.style.boxSizing = "border-box";
+  }
+  wrap.append(cap, el);
+  return wrap;
+}
+/** 普通文本输入框 */
+function textInput(value) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value == null ? "" : value;
+  input.style.cssText = "width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box;";
+  return input;
+}
+
 // ================= 物品选物器（中文搜索 + 图标下拉） =================
 let itemCatalog = null;
 const allPickers = [];

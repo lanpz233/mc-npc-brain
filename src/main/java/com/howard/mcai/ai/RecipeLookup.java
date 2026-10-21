@@ -113,6 +113,10 @@ public final class RecipeLookup {
         return id.replace("minecraft:", "").replace('_', ' ');
     }
 
+    /** 日志出口（McaiPlugin 注入插件 logger；默认丢弃，避免 System.out 被 Paper 唠叨） */
+    public static volatile java.util.function.Consumer<String> logSink = msg -> {
+    };
+
     /** 原始配方 JSON（整个文件） */
     private JsonObject root = new JsonObject();
 
@@ -151,7 +155,7 @@ public final class RecipeLookup {
                             Files.writeString(file, bundled.toString());
                             root = bundled;
                             recipes = bundledRecipes;
-                            System.out.println("[MC-AI] 配方表已从旧版小表升级为 1.21.1 全量表（"
+                            logSink.accept("配方表已从旧版小表升级为 1.21.1 全量表（"
                                     + recipes.size() + " 条），旧文件备份在 recipes.json.old.bak");
                         }
                     }

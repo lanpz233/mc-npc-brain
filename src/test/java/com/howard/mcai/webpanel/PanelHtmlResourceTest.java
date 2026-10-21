@@ -43,6 +43,11 @@ class PanelHtmlResourceTest {
         assertTrue(html.contains("data-tab=\"pools\""), "应有职业货池页签");
         assertTrue(html.contains("createItemPicker"), "应有中文选物器");
         assertTrue(html.contains("renderPrompts"), "应有提示词编辑器");
+        // 编辑器共用的三个辅助函数必须真的有定义（v0.1.5~v0.2.0 曾因只引用未定义，
+        // 真实数据下整页“连接失败”；另见 scripts/panel-dom-smoke.js 的真实数据冒烟）
+        assertTrue(html.contains("function detailsRow("), "detailsRow 必须有定义");
+        assertTrue(html.contains("function labeledInput("), "labeledInput 必须有定义");
+        assertTrue(html.contains("function textInput("), "textInput 必须有定义");
     }
 
     @Test
