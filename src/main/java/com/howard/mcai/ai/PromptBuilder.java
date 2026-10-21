@@ -860,12 +860,33 @@ public final class PromptBuilder {
                 base = mcIsDay(timeOfDay) ? "你在村里闲逛" : "夜里你在村里";
             }
         }
+        // 天气与精确时段（与 envBrief 同口径）：简版场景原先只字不提天气，
+        // 群聊里 NPC 只能瞎编（实测：外面下着雨，屋里的 NPC 张口说"雨刚停"，
+        // 还把错话写进自己的聊天历史，后面正式对话也跟着圆谎）。
+        // 群聊同样把真实天气钉死，源头上不给编造留空。
+        if (e != null && e.isValid()) {
+            org.bukkit.World w = e.getWorld();
+            base += "，现在是" + mcPeriodZh(w.getTime()) + "（" + mcClock(w.getTime()) + "），"
+                    + precipPhrase(w.hasStorm(), isColdBiome(w.getBiome(e.getLocation()).name()));
+        }
         // 需求提示（SPEC 2.14）：最迫切需求越过 60 就附一句，让闲聊也有"身体感"
         String urgent = vs.needs().dominantUrgent(60);
         if (urgent != null) {
             base += "，你" + com.howard.mcai.mob.NeedsState.zhName(urgent) + "得厉害";
         }
         return base;
+    }
+
+    /** 冷群系判定（降水渲染成雪）：雪原/冻原/冰原/雪林/针叶林 —— envBrief 与 compactScene 共用 */
+    static boolean isColdBiome(String biomeName) {
+        return biomeName.contains("SNOW") || biomeName.contains("FROZEN")
+                || biomeName.contains("ICE") || biomeName.contains("GROVE")
+                || biomeName.contains("TAIGA");
+    }
+
+    /** 降水一句话：冷群系说雪、暖群系说雨（与玩家眼睛看到的渲染一致） */
+    static String precipPhrase(boolean raining, boolean cold) {
+        return raining ? (cold ? "正在下雪" : "正在下雨") : (cold ? "没有下雪" : "没有下雨");
     }
 
     // ===== MC 官方时间规则（tick → 时钟 / 时段），场景 JSON 与中文速览共用一套口径 =====
@@ -949,7 +970,7 @@ public final class PromptBuilder {
         String biomeName = world.getBiome(e.getLocation()).name();
         boolean snowy = biomeName.contains("SNOW") || biomeName.contains("FROZEN")
                 || biomeName.contains("ICE") || biomeName.contains("GROVE");
-        boolean cold = snowy || biomeName.contains("TAIGA");
+        boolean cold = isColdBiome(biomeName);
 
         // 附近怪物（8 格内，与场景 JSON 口径一致）—— 决定"怕不怕"的锚点
         int zombies = 0, others = 0;
@@ -966,7 +987,7 @@ public final class PromptBuilder {
         sb.append("现在是").append(mcPeriodZh(timeOfDay)).append("（").append(mcClock(timeOfDay)).append("）")
                 .append(night ? "，天已经黑了" : "，天是亮的")
                 // 冷群系说"下雪/没下雪"，暖群系说"下雨/没下雨" —— 天气用词必须与群系一致
-                .append(raining ? (cold ? "，正在下雪" : "，正在下雨") : (cold ? "，没有下雪" : "，没有下雨"))
+                .append("，").append(precipPhrase(raining, cold))
                 .append(isUnderRoof(e) ? "，你在屋内" : "，你在露天");
         // 雪地群系：地面本身就有积雪（≠ 此刻正在下雪），补一句免得模型拿它当天气
         if (snowy) sb.append("，这里是雪地群系，地上到处都是积雪");
