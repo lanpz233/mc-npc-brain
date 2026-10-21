@@ -109,9 +109,9 @@ public final class WorldInteractionService {
 
         return switch (tool.name()) {
             // break_block / place_block 已迁入统一柜（NpcBreakBlockTool / NpcPlaceBlockTool，
-            // 经 breakBlockAt / placeBlockAt 执行），不再走本入口
-            case "teleport_to" -> teleportTo(vState, npcName, rank, tool, nearPlayer);
-            case "teleport" -> teleportSelf(vState, npcName, rank, tool);
+            // 经 breakBlockAt / placeBlockAt 执行）；teleport / teleport_to 也已迁入
+            // （NpcTeleportTool / NpcTeleportToTool，经 teleportSelfTo / teleportToTarget 执行），
+            // 均不再走本入口。本入口仅剩 equip，待其迁柜后整体退役。
             case "equip" -> equip(vState, npcName, rank, tool);
             default -> null;
         };
@@ -406,8 +406,15 @@ public final class WorldInteractionService {
 
     // ===== teleport_to：传送到目标 / 把目标拉到自己身边 =====
 
-    private String teleportTo(VillagerState vs, String npcName, NpcRank rank, ToolCall tool, Player nearPlayer) {
-        String targetId = safeStr(tool, "target_id");
+    /**
+     * 把目标拉到 NPC 身边（统一柜 NpcTeleportToTool 的执行体；规则与旧后门时期一致）。
+     * 传送玩家 = 神使专属且要等玩家聊天回「好」确认（pending 记在本服务，
+     * 由 {@link #consumeTeleportConfirm} 消费）；传其它生物 = 神使直接执行 + 审计。
+     *
+     * @return 给玩家看的反馈/提示行（null = 已直接完成，无需额外提示）
+     */
+    public String teleportToTarget(VillagerState vs, String targetId) {
+        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
         if (targetId == null || targetId.isBlank()) return "§e缺少传送目标";
         Entity target = resolveTarget(targetId);
         if (target == null) return "§e找不到传送目标 " + targetId;
@@ -449,10 +456,16 @@ public final class WorldInteractionService {
 
     // ===== teleport：传送自己到坐标（2.13 平民白名单"传送只传自己"） =====
 
-    private String teleportSelf(VillagerState vs, String npcName, NpcRank rank, ToolCall tool) {
-        double x = argNum(tool, "x", Double.NaN);
-        double y = argNum(tool, "y", Double.NaN);
-        double z = argNum(tool, "z", Double.NaN);
+    /**
+     * 把 NPC 自己传送到坐标（统一柜 NpcTeleportTool 的执行体；规则与旧后门时期一致：
+     * 32 格内 + 落点安全检查 + 神使审计）。
+     *
+     * @param playerUuid 当前互动玩家（定等级用）；无玩家上下文传 null
+     * @return 给玩家看的反馈行（null = 成功）
+     */
+    public String teleportSelfTo(VillagerState vs, java.util.UUID playerUuid, double x, double y, double z) {
+        String npcName = com.howard.mcai.ai.Smalltalk.nameOf(vs);
+        NpcRank rank = permissions.rankOf(vs, playerUuid);
         if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)) return "§e坐标无效";
         Location dest = new Location(vs.entity().getWorld(), x, y, z);
         if (!inRange(vs, dest)) return "§e太远了，传不过去（" + (int) ACTION_RANGE + " 格内才行）";
