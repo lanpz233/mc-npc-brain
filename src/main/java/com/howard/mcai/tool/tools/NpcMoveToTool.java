@@ -56,6 +56,12 @@ public final class NpcMoveToTool implements NpcTool {
     /** 无进展判卡死：离目标的最近距离在这么久内没有实质缩短（≥1 格），就算人还在动也判到不了 */
     private static final long NO_PROGRESS_WINDOW_MS = 9_000L;
     private static final double PROGRESS_MIN_GAIN = 1.0;
+    /** 到门算到：曾经到达过目标这个距离内，无进展窗口到期仍进不去时按基本到达完成（目标在屋里、门难进） */
+    private static final double DOORSTEP_DISTANCE = 3.0;
+    /** 绕行宽限：从"最近点"出发的净位移达到这个数，算真在绕路赶路（不是蹭墙），可刷新无进展窗口 */
+    private static final double DETOUR_MIN_NET = 4.0;
+    /** 绕行宽限最多次数（每次约多给一个窗口时长），防真走不通时无限拖延 */
+    private static final int MAX_DETOUR_EXTENDS = 3;
     /** 允许 NPC 在任务中偏离目标的额外距离（格）—— 被僵尸赶跑等外部因素，超过就放弃 */
     private static final double DRIFT_TOLERANCE = 8.0;
 
@@ -137,6 +143,9 @@ public final class NpcMoveToTool implements NpcTool {
         /** 无进展判定的工作值：本 tick 算出的"离目标最近距离/刷新时刻"，tick 末随 progressData 写回 */
         private double pendingBest = Double.MAX_VALUE;
         private long pendingBestSince;
+        private double pendingBestX;
+        private double pendingBestZ;
+        private int pendingDetourExtends;
 
         private MoveAction(McaiPlugin plugin) {
             this.plugin = plugin;
@@ -253,29 +262,69 @@ public final class NpcMoveToTool implements NpcTool {
 
             // 无进展判卡死（与下面的位移判定互补）：位移判定只看"人动没动"，贴墙来回蹭永远骗得过它
             //（实测剩余距离 12.87↔14.08 跳了 28 秒）。这里看"离目标的最近距离有没有在缩"：
-            // 9 秒内没能靠近至少 1 格 → 这条路走不通，提前收场并记账。
+            // 9 秒内没能靠近至少 1 格 → 原则上判走不通，但两个例外（2026-10-21 李强安实测日志）：
+            // ① 绕行宽限：目标在屋里时导航带他绕房子找门，绕行段离目标越来越远是正常的。
+            //    从"最近点"出发净位移 ≥4 格 = 真在赶路（蹭墙净位移≈0），刷新窗口，最多 3 次。
+            // ② 到门算到：宽限用尽仍进不去、但曾到过目标 3 格内（墙根/门口）→ 按基本到达完成。
+            //    李强安摸到 2.35 格又被导航带走、最后判失败，冤的就是这两条都没有。
             {
                 JsonObject prog = task.data();
                 double best = prog != null && prog.has("best_distance")
                         ? prog.get("best_distance").getAsDouble() : horizontal;
                 long bestSince = prog != null && prog.has("best_since_ms")
                         ? prog.get("best_since_ms").getAsLong() : nowMs;
+                double bestX = prog != null && prog.has("best_x")
+                        ? prog.get("best_x").getAsDouble() : current.getX();
+                double bestZ = prog != null && prog.has("best_z")
+                        ? prog.get("best_z").getAsDouble() : current.getZ();
+                int detourExtends = prog != null && prog.has("detour_extends")
+                        ? prog.get("detour_extends").getAsInt() : 0;
                 if (horizontal < best - PROGRESS_MIN_GAIN) {
                     best = horizontal;
                     bestSince = nowMs;
+                    bestX = current.getX();
+                    bestZ = current.getZ();
                 } else if (nowMs - bestSince >= NO_PROGRESS_WINDOW_MS) {
-                    stop(state);
-                    settleNeedFailure(state, target);
-                    task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
-                            "靠近不了目标：" + (NO_PROGRESS_WINDOW_MS / 1000) + " 秒内没能更接近，剩余 "
-                                    + round(horizontal) + " 格");
-                    plugin.getLogger().info("[task] npc.move_to 无进展, 提前失败: npc=" + task.npcId()
-                            + " 剩余 " + round(horizontal) + " 格");
-                    return;
+                    double netDx = current.getX() - bestX;
+                    double netDz = current.getZ() - bestZ;
+                    double netFromBest = Math.sqrt(netDx * netDx + netDz * netDz);
+                    if (detourExtends < MAX_DETOUR_EXTENDS && netFromBest >= DETOUR_MIN_NET) {
+                        // 真在绕路赶路：刷新窗口、锚点挪到当前位置，给他把圈绕完的机会
+                        bestSince = nowMs;
+                        bestX = current.getX();
+                        bestZ = current.getZ();
+                        detourExtends++;
+                        plugin.getLogger().info("[task] npc.move_to 绕行宽限(" + detourExtends
+                                + "/" + MAX_DETOUR_EXTENDS + ") npc=" + task.npcId()
+                                + " 最近 " + round(best) + " 格 当前剩余 " + round(horizontal) + " 格");
+                    } else if (best <= DOORSTEP_DISTANCE) {
+                        // 到过门口就是到了：按完成收尾，挂账照常结算，不记失败地点
+                        stop(state);
+                        settleNeedSuccess(state);
+                        JsonObject data = result(task, villager);
+                        data.addProperty("close_enough", true);
+                        data.addProperty("best_distance", round(best));
+                        task.complete(nowMs, data);
+                        plugin.getLogger().info("[task] npc.move_to 抵近完成: npc=" + task.npcId()
+                                + " 曾到达 " + round(best) + " 格，当前剩余 " + round(horizontal) + " 格");
+                        return;
+                    } else {
+                        stop(state);
+                        settleNeedFailure(state, target);
+                        task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                                "靠近不了目标：" + (NO_PROGRESS_WINDOW_MS / 1000) + " 秒内没能更接近，剩余 "
+                                        + round(horizontal) + " 格");
+                        plugin.getLogger().info("[task] npc.move_to 无进展, 提前失败: npc=" + task.npcId()
+                                + " 剩余 " + round(horizontal) + " 格");
+                        return;
+                    }
                 }
                 // 暂存，tick 末随 progressData 一起写回 task.data
                 pendingBest = best;
                 pendingBestSince = bestSince;
+                pendingBestX = bestX;
+                pendingBestZ = bestZ;
+                pendingDetourExtends = detourExtends;
             }
 
             // 偏离守卫：村民会被僵尸惊到逃跑（AI 开启后恐慌寻路优先级更高），
@@ -339,6 +388,9 @@ public final class NpcMoveToTool implements NpcTool {
             progressData.addProperty("last_progress_ms", lastProgressMs);
             progressData.addProperty("best_distance", pendingBest);
             progressData.addProperty("best_since_ms", pendingBestSince);
+            progressData.addProperty("best_x", pendingBestX);
+            progressData.addProperty("best_z", pendingBestZ);
+            progressData.addProperty("detour_extends", pendingDetourExtends);
             task.updateData(progressData);
             // 实际移动由原版导航（Pathfinder）驱动，这里只做重寻路/进度/到达/卡住判定
         }
