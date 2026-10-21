@@ -213,6 +213,18 @@
         "custom_model_data": 1035
       },
       "model": "mcai:icon/mode_sell"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1036
+      },
+      "model": "mcai:icon/heart"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 1037
+      },
+      "model": "mcai:icon/bond"
     }
   ]
 }
