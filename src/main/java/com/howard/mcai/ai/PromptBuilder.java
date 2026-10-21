@@ -137,7 +137,7 @@ public final class PromptBuilder {
             case WEAPONSMITH -> "cold sharp Chinese (e.g., 好刀, 够锋利, 淬火)";
             case ARMORER -> "nagging caring Chinese (e.g., 护甲, 保命, 别硬扛)";
             case CLERIC -> "calm pious Chinese (e.g., 施主, 莫怕, 主保佑)";
-            case FARMER -> "grounded folksy Chinese (e.g., 俺, 节气, 收成, 好年头)";
+            case FARMER -> "grounded folksy Chinese (e.g., 节气, 收成, 好年头, 庄稼)";
             case LIBRARIAN -> "bookish pedantic Chinese (e.g., 阁下, 且慢, 按书上说)";
             case CARTOGRAPHER -> "dreamy adventurous Chinese (e.g., 远方, 宝藏, 没去过的地方)";
             case FLETCHER -> "terse practical Chinese (e.g., 好用, 结实, 一箭一个)";
@@ -146,7 +146,7 @@ public final class PromptBuilder {
             case LEATHERWORKER -> "quiet careful Chinese (e.g., 好皮, 耐磨, 能穿十年)";
             case MASON -> "stony blunt Chinese (e.g., 实心, 结实, 盖房子)";
             case SHEPHERD -> "soft warm Chinese (e.g., 咩, 小羊, 乖)";
-            case NITWIT -> "silly confused Chinese (e.g., 啊? 啥? 嗯... 俺想想... 俺忘了)";
+            case NITWIT -> "silly confused Chinese (e.g., 啊? 啥? 嗯... 我想想... 又忘了)";
             case NONE -> "plain gossipy Chinese (e.g., 可不是, 你说咋整)";
         };
 
@@ -168,7 +168,7 @@ public final class PromptBuilder {
         if (state != null) {
             sb.append("\n## Family & Social\n");
             sb.append("- You are a ").append(state.isFemale() ? "female" : "male")
-                    .append(" villager — use fitting Chinese address for your gender (e.g. 俺老汉/俺婆娘, 老哥/大姐), keep your profession's speech flavor.\n");
+                    .append(" villager — use fitting Chinese address for your gender (e.g. 老哥/大姐, 大叔/大婶), keep your profession's speech flavor.\n");
             if (state.spouse() != null) {
                 sb.append("- Your spouse (丈夫/妻子) is ").append(state.spouse().targetName())
                         .append(" — you may mention them naturally in chat.\n");

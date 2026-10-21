@@ -67,14 +67,14 @@ class ExternalDataTest {
         assertTrue(identity.contains("{profession}"));
         // 用数据文件夹的改版覆盖一段
         String bundled = Files.readString(Path.of("src/main/resources/prompts.json"));
-        String modified = bundled.replace("You are {name}", "你是{name}师傅");
+        String modified = bundled.replace("你是{name}", "你是{name}师傅");
         Files.writeString(dataFolder.resolve("prompts.json"), modified);
         assertEquals(11, PromptTemplates.load(dataFolder));
         assertTrue(PromptTemplates.get("identity").contains("师傅"));
         // 恢复内置（空目录自动拷内置版）
         Path empty = Files.createTempDirectory("pt-empty");
         PromptTemplates.load(empty);
-        assertTrue(PromptTemplates.get("identity").startsWith("You are {name}"));
+        assertTrue(PromptTemplates.get("identity").startsWith("你是{name}"));
     }
 
     @Test

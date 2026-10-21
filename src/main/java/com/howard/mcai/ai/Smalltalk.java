@@ -26,34 +26,34 @@ public final class Smalltalk {
         String m = message;
         // 群体招呼 → 凑过来听
         if (m.contains("大家") || m.contains("你们") || m.contains("各位")) {
-            return pick("（凑过来听）", "（探头）说啥呢？", "（插一嘴）俺也听着呢", "（放下手里的活）啥事？");
+            return pick("（凑过来听）", "（探头）说啥呢？", "（插一嘴）我也听着呢", "（放下手里的活）啥事？");
         }
         // 先提取话题片段 —— 任何消息都优先"贴话题"附和。
         // 之前关键词分支在前，"你不是在睡觉吗"会永远走问句模板（俺也想知道/咋回事），
         // 既不着边又全员重复。片段引用优先解决这两个问题。
         String snippet = extractSnippet(m);
         if (snippet != null) {
-            return pick("（听到说" + snippet + "，凑过来）", "（" + snippet + "？俺寻思着也是）",
-                    "（插一嘴）说到" + snippet + "俺可来劲", "（若有所思）" + snippet + "……",
-                    "（抬眼）" + snippet + "？", "（接话）" + snippet + "的事俺知道点");
+            return pick("（听到说" + snippet + "，凑过来）", "（" + snippet + "？我估摸着也是）",
+                    "（插一嘴）说到" + snippet + "我可来劲", "（若有所思）" + snippet + "……",
+                    "（抬眼）" + snippet + "？", "（接话）" + snippet + "的事我还真知道点");
         }
         // 片段提取失败 → 按主题词兜底（此时消息基本只剩语气词，如"吃了吗？""在吗？"）
         if (m.contains("吃") || m.contains("肉") || m.contains("面包") || m.contains("饭") || m.contains("喝")) {
-            return pick("（咽口水）说到吃俺就来劲", "（摸摸肚子）好馋啊", "（乐）今儿个吃了没？",
-                    "（咂嘴）给俺也留一口", "（凑近）啥好吃的？");
+            return pick("（咽口水）说到吃我就来劲", "（摸摸肚子）好馋啊", "（乐）今儿个吃了没？",
+                    "（咂嘴）给我也留一口", "（凑近）啥好吃的？");
         }
         if (m.contains("卖") || m.contains("买") || m.contains("价") || m.contains("绿宝") || m.contains("便宜")) {
             return pick("（盘算）多少绿宝？", "（凑近看货）这价公道", "（嘀咕）买卖的事可得算仔细",
-                    "（搓手）要不俺也掺一脚？");
+                    "（搓手）要不我也掺一脚？");
         }
         if (m.contains("睡") || m.contains("困")) {
-            return pick("（揉眼睛）俺也困得慌", "（哈欠）夜里的觉最香", "（点头）可不，站着都能睡着");
+            return pick("（揉眼睛）我也困得慌", "（哈欠）夜里的觉最香", "（点头）可不，站着都能睡着");
         }
         if (m.contains("你好") || m.contains("嗨") || m.contains("hello") || m.contains("早")) {
             return pick("（挥手）来了啊", "（笑）好哇", "（点头）今儿个真热闹", "（乐）正念叨你呢");
         }
         if (m.contains("？") || m.contains("?") || m.contains("吗") || m.contains("么")) {
-            return pick("（歪头想了想）", "（好奇）咋回事？", "（点头）俺也想知道", "（挠头）这俺可说不好");
+            return pick("（歪头想了想）", "（好奇）咋回事？", "（点头）我也想知道", "（挠头）这我可说不好");
         }
         return pick("（点点头）", "（哦？）", "（听了一耳朵）", "（嘀咕）有道理", "（眯眼琢磨）");
     }
