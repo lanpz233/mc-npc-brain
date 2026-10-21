@@ -565,7 +565,9 @@ public final class CentralPlanner extends BukkitRunnable {
      */
     private static final Pattern GIVE_CONSENT_PATTERN = Pattern.compile(
             "(?<!说)(?<!告诉)(?<!讲)(?<!教)给你(?:吧|了|一个|个|这|那|点|些)?"
-                    + "|拿去吧|拿去|送你了|送给你|送你(?:俩|两个|一个|点|些)|拿着吧|拿着|收下吧|收下|归你了");
+                    + "|拿去吧|拿去|送你了|送给你|送你(?:俩|两个|一个|点|些)|拿着吧|拿着|收下吧|收下|归你了"
+                    // "拿一个面包凑合吃吧"式：拿+数量也是明确的递东西说法（实测漏判 → 嘴上给、手里没动）
+                    + "|拿(?:一个|两个|仨|些|点|块|片|根|瓶)");
 
     /** 婉拒/否定说法 —— 命中就不算同意，避免"不给你"被当成"给你" */
     private static final Pattern GIVE_REFUSAL_PATTERN = Pattern.compile(
@@ -1381,7 +1383,7 @@ public final class CentralPlanner extends BukkitRunnable {
      * @return 剥掉空头承诺后的台词（可能为空串）
      */
     private String stripUnbackedPromises(VillagerState vState, String dialogue, ToolCall toolCall,
-                                         boolean reallyGave, boolean reallyLearned) {
+                                         boolean reallyGave, boolean reallyLearned, boolean begPending) {
         if (dialogue == null || dialogue.isBlank()) return dialogue;
         String tool = toolCall == null ? null : toolCall.name();
         // 关键：reallyGave/reallyLearned 一律由调用方按**真实执行结果**传入 ——
@@ -1398,23 +1400,32 @@ public final class CentralPlanner extends BukkitRunnable {
         while (m.find()) {
             String sentence = dialogue.substring(cursor, m.end());
             cursor = m.end();
-            if (isUnbackedPromise(sentence, reallyGave, reallyMoved, reallyLearned)) continue;
+            if (isUnbackedPromise(sentence, reallyGave, reallyMoved, reallyLearned, begPending)) continue;
             kept.append(sentence);
         }
         // 最后一段可能没有句末标点（模型常以"…"或直接收尾），单独判定，不能漏掉
         if (cursor < dialogue.length()) {
             String tail = dialogue.substring(cursor);
-            if (!isUnbackedPromise(tail, reallyGave, reallyMoved, reallyLearned)) kept.append(tail);
+            if (!isUnbackedPromise(tail, reallyGave, reallyMoved, reallyLearned, begPending)) kept.append(tail);
         }
         return kept.toString().trim();
     }
 
     /** 单句判定：命中"未兑现的承诺"返回 true */
     private static boolean isUnbackedPromise(String sentence, boolean reallyGave,
-                                             boolean reallyMoved, boolean reallyLearned) {
-        if (!reallyGave && !PRICE_TALK.matcher(sentence).find()
-                && PROMISE_GIVE.matcher(sentence).find()) {
-            return true;
+                                             boolean reallyMoved, boolean reallyLearned, boolean begPending) {
+        if (!reallyGave && !PRICE_TALK.matcher(sentence).find()) {
+            // 婉拒句不是承诺："俺不能给你"这类话是老实拒绝，删掉反而只剩莫名其妙的沉默
+            boolean refused = GIVE_REFUSAL_PATTERN.matcher(sentence).find();
+            if (!refused && PROMISE_GIVE.matcher(sentence).find()) {
+                return true;
+            }
+            // 索要轮次加严：玩家刚讨过东西时，台词里任何"同意给"的说法（与交付触发共用
+            // 同一张同意表）若没真交付就是空头支票 —— 实测漏网句"拿着，赶紧吃吧"
+            // 与系统的拒绝提示同屏出现，自相矛盾。脱离索要语境时不用这条，免得误伤描写句。
+            if (begPending && looksLikeGivingConsent(sentence)) {
+                return true;
+            }
         }
         if (!reallyMoved && PROMISE_MOVE.matcher(sentence).find()) {
             return true;
@@ -1469,6 +1480,10 @@ public final class CentralPlanner extends BukkitRunnable {
         // 若先按"模型调过工具"就放行台词，就会出现"嘴上说'给，这是俺存的最后一个好苹果，你拿着'，
         // 玩家背包里却啥也没有"。提前执行 → 拿到真实结果 → 承诺守卫按结果剥离空头支票 → 最后才开口。
         String gatedReject = null;      // 非 null = 该动作被门槛拒了，值是给玩家看的原因
+        // 本轮玩家是否刚讨过东西（工具执行前先记下，执行中请求会被消费）：承诺守卫对这种轮次
+        // 要用更严的口径判空头支票（见 isUnbackedPromise 的索要轮次加严）
+        boolean begPending = nearPlayer != null
+                && vState.peekItemRequest(nearPlayer.getUniqueId()) != null;
         boolean reallyGave = false;     // give_item 是否真的把东西交出去了
         boolean reallyLearned = false;  // learn 是否真的写进了永久记忆
         ToolResult preUnifiedResult = null;  // give_item 在第二步半经统一分发的结果（第三步复用，禁止重复执行）
@@ -1560,7 +1575,7 @@ public final class CentralPlanner extends BukkitRunnable {
         // 台词里的"我这就过去""给你""我记住了"若没有本轮**真实做成**的动作兑现，就是空头支票。
         // 只删那一句，不做任何替换（硬约束：禁止兜底台词）—— 全被删空时下面透传为 "..."。
         String beforePromise = dialogue;
-        dialogue = stripUnbackedPromises(vState, dialogue, toolCall, reallyGave, reallyLearned);
+        dialogue = stripUnbackedPromises(vState, dialogue, toolCall, reallyGave, reallyLearned, begPending);
         if (dialogue == null || dialogue.isBlank()) {
             // 整条回复都被承诺守卫删空。若只是"这就过去/马上过来"这类**移动措辞**误判，
             // 不能给玩家回 "..."（实测玩家收到空回复的直接原因）—— 退回原台词并留日志；
@@ -1568,7 +1583,8 @@ public final class CentralPlanner extends BukkitRunnable {
             // 仍按硬约束剥空，绝不展示空头支票。
             boolean realGiveOrRememberPromise = beforePromise != null
                     && (PROMISE_GIVE.matcher(beforePromise).find()
-                        || PROMISE_REMEMBER.matcher(beforePromise).find());
+                        || PROMISE_REMEMBER.matcher(beforePromise).find()
+                        || (begPending && looksLikeGivingConsent(beforePromise)));
             if (beforePromise != null && !beforePromise.isBlank() && !realGiveOrRememberPromise) {
                 plugin.getLogger().info("[MC-AI] 承诺守卫把整条台词删空，已退回原台词（疑似移动措辞误判）["
                         + vState.profession().zhName + "]: [" + beforePromise + "]");
