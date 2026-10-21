@@ -62,6 +62,8 @@ public final class ShopSettlement {
 
         afterTrade(plugin, player, state);
         player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_TRADE, 1f, 1f);
+        // 成交轻叮（素材阶段 2）：在村民交易声之外补一声收钱的清脆感
+        player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.3f);
         plugin.getAuditLog().log(npcName(state), state.getUniqueId(), "shop_buy",
                 offer.id() + " x" + offer.result().getAmount(), price + " emeralds");
         String line = "好嘞，成交！" + TradeRegistry.materialToZh(offer.result().getType())
@@ -115,6 +117,8 @@ public final class ShopSettlement {
 
         afterTrade(plugin, player, state);
         player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_TRADE, 1f, 1f);
+        // 成交轻叮（素材阶段 2）：同买方向，卖成也要有收钱感
+        player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.3f);
         plugin.getAuditLog().log(npcName(state), state.getUniqueId(), "shop_buyback",
                 offer.id(), reward + " emeralds");
         String line = "这货我收了！" + reward + " 块绿宝石拿好。";
