@@ -71,6 +71,15 @@ public final class LLMClient {
     private static volatile Pattern BRACKET_ACTION = Pattern.compile(
             "\\[动作[:：]\\s*(" + toolNameAlternation() + ")\\b([^\\]]*)\\]");
 
+    /**
+     * 无前缀方括号调用 {@code [accept_barter=message="…"]} —— 模型把函数调用写成
+     * 方括号记法（既不是 [动作:…]、也不是 name(...) 函数式）。v0.4.3 实测事故：
+     * 村民口头答应换物、把 accept_barter 写成这种文本行混在台词里，没人认它，
+     * 最后还被残余代码守卫连台词一起整段丢弃 —— 嘴上说换、实际没换成。
+     */
+    private static volatile Pattern BRACKET_ACTION_BARE = Pattern.compile(
+            "\\[\\s*(" + toolNameAlternation() + ")\\b([^\\]]*)\\]");
+
     /** {@code [动作:…]} 里的 {@code key=value}（值可带引号）；抽走后原位置替换成空格 */
     private static final Pattern ACTION_KV = Pattern.compile(
             "\\b([A-Za-z_]+)\\s*=\\s*\"?([^\\s,\\]\"']*)\"?");
@@ -159,6 +168,7 @@ public final class LLMClient {
         PY_FUNC_CALL = Pattern.compile("\\.?\\b(" + alt + ")\\s*\\(");
         TOOL_NAME_IN_JSON = Pattern.compile("\"name\"\\s*:\\s*\"?(" + alt + ")\"?");
         BRACKET_ACTION = Pattern.compile("\\[动作[:：]\\s*(" + alt + ")\\b([^\\]]*)\\]");
+        BRACKET_ACTION_BARE = Pattern.compile("\\[\\s*(" + alt + ")\\b([^\\]]*)\\]");
     }
 
     /**
@@ -680,17 +690,26 @@ public final class LLMClient {
                 }
             }
 
-            // === tool_call fallback：标准 tool_calls 数组为空时，从 content 里捞调用 ===
-            // qwen 系列格式不稳定，支持三种：
+            // === tool_call fallback：从 content 里捞文本形态的调用 ===
+            // qwen 系列格式不稳定，支持：
             //  - XML：content 里包 <tool_call>...</tool_call>
             //  - 裸 JSON：content 里直接有 {"name": "say", "arguments": {...}}
             //  - Python 风格：move_to(x=-10, y=8, z=-5) / .say(message="你好")
             //  - 内联标记：[动作:offer_trade 熟牛排, price=1]（模型抄我们写进历史的动作摘要格式）
-            // 必须**先解析再剥**：搞反顺序会把调用文本删掉导致解析不到
-            if (toolCalls.isEmpty() && content != null) {
+            //  - 无前缀方括号：[accept_barter=message="…"]（v0.4.4 新增，见 BRACKET_ACTION_BARE）
+            // 必须**先解析再剥**：搞反顺序会把调用文本删掉导致解析不到。
+            // 触发条件（v0.4.4 放宽）：不只"原生调用为空"——原生只回了 say（纯台词
+            // 登记）时也要捞。实测某模型把 accept_barter 写进正文、原生只给一个空 say，
+            // 旧条件直接跳过捞取，调用文本又被残余守卫连台词整段丢弃：嘴上答应、实际没办。
+            ToolCall promoted = null;
+            boolean speechOnly = toolCalls.stream().allMatch(tc -> isSpeechToolName(tc.name()));
+            if ((toolCalls.isEmpty() || speechOnly) && content != null && !content.isBlank()) {
                 List<ToolCall> parsed = parseHermesToolCalls(content);
                 if (parsed.isEmpty()) parsed = parseBracketActions(content);
-                toolCalls.addAll(parsed);
+                MergedCalls merged = mergeTextCalls(toolCalls, parsed, content);
+                toolCalls = merged.calls();
+                content = merged.content();
+                promoted = merged.promoted();
             }
 
             // === 解析失败显式打标（绝不静默）===
@@ -715,12 +734,77 @@ public final class LLMClient {
                 content = stripToolCalls(content);
             }
 
+            // 被提升的文本调用若自带 message、而剥完的正文里已有完整台词 → 以正文为准：
+            // 删掉调用的 message，免得执行端优先取参数、用一句"好吧"顶掉整段台词；
+            // 正文为空时保留 message —— 那是模型留下的唯一一句话。
+            if (promoted != null && content != null && !content.isBlank()
+                    && promoted.arguments() != null) {
+                promoted.arguments().remove("message");
+            }
+
             return new LLMResponse(content, toolCalls);
         } catch (Exception e) {
             // 解析失败不静默吞掉：包装成 RuntimeException 抛出（不是"返回空兜底"），
             // 由调用方 chat().exceptionally 分支统一兜底（fallback idle / 释放 LLM 锁）
             throw new RuntimeException("Failed to parse LLM response: " + e.getMessage() + "\nBody: " + body, e);
         }
+    }
+
+    /** 是不是纯台词登记类工具（say/speak 及其统一柜 wire 名）——这类调用不改变世界状态 */
+    static boolean isSpeechToolName(String name) {
+        return "say".equals(name) || "speak".equals(name) || "npc_say".equals(name);
+    }
+
+    /** 取工具调用的 message 参数（没有/不是字符串时返回 null） */
+    private static String messageArg(ToolCall tc) {
+        try {
+            if (tc != null && tc.arguments() != null && tc.arguments().has("message")
+                    && tc.arguments().get("message").isJsonPrimitive()) {
+                return tc.arguments().get("message").getAsString();
+            }
+        } catch (Exception ignored) {
+            // 参数形状异常不该影响主流程
+        }
+        return null;
+    }
+
+    /** 文本调用与原生调用的合并结果：最终调用列表、正文（可能并入了 say 的台词）、被提升的动作调用 */
+    record MergedCalls(List<ToolCall> calls, String content, ToolCall promoted) {
+    }
+
+    /**
+     * 把正文里捞到的文本调用与原生 tool_calls 合并。
+     * <p>
+     * 规则：文本里有真动作（非 say）时，它才是本轮的决策 —— 排到最前成为
+     * firstToolCall（执行端只认第一个）；原生/文本 say 自带的台词先并进正文，
+     * 免得提升后那句话丢失（正文随后会统一剥掉调用文本、只剩台词）。
+     * 文本里没有真动作时保持原样：原生为空才把文本解析结果（含 say）整体收下，
+     * 原生已有 say 时不重复收。
+     */
+    static MergedCalls mergeTextCalls(List<ToolCall> natives, List<ToolCall> parsed, String content) {
+        List<ToolCall> actions = parsed.stream()
+                .filter(tc -> !isSpeechToolName(tc.name()))
+                .toList();
+        if (actions.isEmpty()) {
+            if (natives.isEmpty()) {
+                return new MergedCalls(new ArrayList<>(parsed), content, null);
+            }
+            return new MergedCalls(natives, content, null);
+        }
+        String mergedContent = content;
+        List<ToolCall> speechSources = new ArrayList<>(natives);
+        speechSources.addAll(parsed);
+        for (ToolCall tc : speechSources) {
+            if (!isSpeechToolName(tc.name())) continue;
+            String m = messageArg(tc);
+            if (m != null && !m.isBlank() && (mergedContent == null || !mergedContent.contains(m))) {
+                mergedContent = (mergedContent == null || mergedContent.isBlank())
+                        ? m : m + "\n" + mergedContent;
+            }
+        }
+        List<ToolCall> calls = new ArrayList<>(actions);
+        calls.addAll(natives);
+        return new MergedCalls(calls, mergedContent, actions.get(0));
     }
 
     /**
@@ -934,6 +1018,11 @@ public final class LLMClient {
         // 0.2 剥掉内联 [动作:…] 标记 —— 这是我们自己写进对话历史的动作摘要格式，
         //    模型学会了照抄进正文。解析成功的话动作已执行，这里必须剥掉防它漏进气泡/聊天框。
         cleaned = cleaned.replaceAll("\\[动作[:：][^\\]]*\\]", "").trim();
+
+        // 0.25 剥掉无前缀方括号调用 [accept_barter=…] —— 与解析共用同一 Pattern：
+        //     先解析、再剥（顺序反了调用就捞不回来）；只删这一段，同一段里的正常
+        //     台词不受连累 —— 旧行为是靠残余守卫整段丢弃，台词陪着一起死（v0.4.3 实测）。
+        cleaned = cleaned.replaceAll(BRACKET_ACTION_BARE.pattern(), "").trim();
 
         // 1. 剥掉 <tool_call>...</tool_call> 及其内容
         cleaned = cleaned.replaceAll("<tool_call>.*?</tool_call>", "").trim();
@@ -1226,7 +1315,7 @@ public final class LLMClient {
      * 解析 Python 风格 key="value", key2=number 参数串。
      * 示例：message="你好", item="铁剑", price=3 → {message:"你好", item:"铁剑", price:3}
      */
-    private JsonObject parsePythonArgs(String argsStr) {
+    static JsonObject parsePythonArgs(String argsStr) {
         JsonObject args = new JsonObject();
         if (argsStr.isBlank()) return args;
 
@@ -1305,18 +1394,40 @@ public final class LLMClient {
      * 但那只是文本，不解析成 ToolCall 就永远不会执行，于是"NPC 满口答应改价/给东西，实际什么都没发生"。
      * 参数两种写法都认：{@code key=value}（可带引号）与裸值（第一个裸值按工具语义归位）。
      */
-    private List<ToolCall> parseBracketActions(String content) {
+    static List<ToolCall> parseBracketActions(String content) {
         List<ToolCall> calls = new ArrayList<>();
         if (content == null) return calls;
         Matcher m = BRACKET_ACTION.matcher(content);
         while (m.find()) {
             calls.add(new ToolCall(m.group(1), parseActionArgs(m.group(1), m.group(2))));
         }
+        // 无前缀变体 [accept_barter=message="…"]：模型把调用写成方括号记法时也认
+        Matcher bare = BRACKET_ACTION_BARE.matcher(content);
+        while (bare.find()) {
+            calls.add(new ToolCall(bare.group(1), parseBareBracketArgs(bare.group(1), bare.group(2))));
+        }
         return calls;
     }
 
+    /**
+     * 无前缀方括号调用的参数串 → JsonObject。
+     * 实测形态是 {@code =message="好吧，这就换了！"}（工具名后先跟一个 = 再跟 kwargs），
+     * 先剥掉开头的分隔符；kwargs 走 Python 参数解析（引号内的逗号/感叹号不会切断值）；
+     * 一对键值都解析不出时退回 [动作:…] 的裸值归位，兼容 {@code [give_item 面包]}。
+     */
+    static JsonObject parseBareBracketArgs(String toolName, String rest) {
+        if (rest == null) return new JsonObject();
+        String r = rest.trim();
+        while (r.startsWith("=") || r.startsWith(":") || r.startsWith("：")) {
+            r = r.substring(1).trim();
+        }
+        if (r.isEmpty()) return new JsonObject();
+        JsonObject args = parsePythonArgs(r);
+        return args.size() > 0 ? args : parseActionArgs(toolName, r);
+    }
+
     /** {@code [动作:…]} 的参数串 → JsonObject：先抽 key=value，剩下的裸值按工具语义归位 */
-    private JsonObject parseActionArgs(String toolName, String rest) {
+    static JsonObject parseActionArgs(String toolName, String rest) {
         JsonObject args = new JsonObject();
         if (rest == null || rest.isBlank()) return args;
 

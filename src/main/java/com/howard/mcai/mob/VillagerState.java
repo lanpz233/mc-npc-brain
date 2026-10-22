@@ -1074,6 +1074,11 @@ public final class VillagerState {
         // 开场说明靠它区分“刚聊完又回来”与“好久没见”，见 ai/ConversationOpening。
         if (this.interactingPlayer != null) {
             recordConversationEnd(this.interactingPlayer);
+            // 没谈完的换物提议随对话一起作废（v0.4.4）：提议只活在一场对话里
+            // （另有 3 分钟窗口兜底），防聊完走人后被陈年提议误成交。
+            synchronized (this) {
+                pendingBarters.remove(this.interactingPlayer);
+            }
         }
         this.interactingPlayer = null;
         // 恢复原版 AI，让村民重新正常生活（闲逛/回家/作息）

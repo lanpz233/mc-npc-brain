@@ -1749,9 +1749,15 @@ public final class CentralPlanner extends BukkitRunnable {
             speak(vState, nearPlayer, dialogue);
         }
 
-        // 换物提议一轮定生死：本轮没调 accept_barter = 没谈成，登记作废
-        // （防陈年提议被日后某次调用误成交；新提议会重新登记）
-        if (nearPlayer != null) vState.clearPendingBarter(nearPlayer.getUniqueId());
+        // 换物提议的生死（v0.4.4 改）：不再"一轮没谈成即作废"——实测模型常在
+        // 简报轮只口头答应、下一轮才真正调 accept_barter，一轮作废会把这种正常
+        // 谈判掐死（v0.4.3 实测：村民连说两次"行，换"，东西却没换成）。
+        // 提议改为活到：成交（执行体 consume）、对话结束（endConversation 清理）、
+        // 或登记满 3 分钟（peekPendingBarter 的窗口）为止。本轮若调了 accept_barter，
+        // 无论成败都算谈完了，顺手清掉防残留。
+        if (nearPlayer != null && toolCall != null && "accept_barter".equals(toolCall.name())) {
+            vState.clearPendingBarter(nearPlayer.getUniqueId());
+        }
 
         // === 第四步：无论如何追加 assistant（Jinja 交替硬约束） ===
         // 历史行附带 [动作:摘要] —— 旧版只存台词，模型回读时"不知道自己上一步做了什么"，
