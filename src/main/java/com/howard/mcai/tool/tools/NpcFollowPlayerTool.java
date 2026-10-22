@@ -159,8 +159,10 @@ public final class NpcFollowPlayerTool implements NpcTool {
             targetUuid = target.getUniqueId();
             state.setFollowingPlayer(targetUuid);
             Villager villager = state.entity();
-            // 全自研驾驶（v0.5.1）：AI 先关掉，身体随后归 NavDriver 开，防原版大脑抢方向抽风
-            villager.setAI(false);
+            // 狗式驾驶（v0.5.2）：AI 保持开着——原版导航的腿要用它（关了 AI，横向速度会被
+            // 原版移动结算吃掉，人根本走不动，v0.5.1 实测教训）；防大脑抢方向靠两手：
+            // NavDriver 每步强势下令 + 本任务 tick 把大脑的 POI 记忆钉在他脚下
+            villager.setAI(true);
             villager.setTarget(null);
             villager.setVelocity(new Vector(0, villager.getVelocity().getY(), 0));
             driver = null;
@@ -204,6 +206,10 @@ public final class NpcFollowPlayerTool implements NpcTool {
             }
             double dist = horizontal(mine, theirs);
             long now = System.currentTimeMillis();
+
+            // 把大脑“想去的地方”钉在他脚下：老家/岗位/集合点都指当前位置，
+            // 它就没有要抢着去的目的地了（跟随结束不再钉，他在附近会自己重新认领）
+            pinBrainHome(villager);
 
             JsonObject data = new JsonObject();
             data.addProperty("following", target.getName());
@@ -266,6 +272,19 @@ public final class NpcFollowPlayerTool implements NpcTool {
                 driver = null;
             }
             planGoal = null;
+        }
+
+        /** 把大脑的 POI 记忆钉在当前位置（跟随期间每 tick 刷新），防它惦记岗位/床位抢方向 */
+        private void pinBrainHome(Villager villager) {
+            try {
+                Location here = villager.getLocation();
+                villager.setMemory(org.bukkit.entity.memory.MemoryKey.HOME, here);
+                villager.setMemory(org.bukkit.entity.memory.MemoryKey.JOB_SITE, here);
+                villager.setMemory(org.bukkit.entity.memory.MemoryKey.MEETING_POINT, here);
+                villager.setMemory(org.bukkit.entity.memory.MemoryKey.POTENTIAL_JOB_SITE, here);
+            } catch (Throwable ignored) {
+                // 个别实体不支持记忆写入也不影响跟随主流程（强势下令还在兜底）
+            }
         }
 
         /** 他是不是没人盯着：被跟的玩家视线之外（或远到看不清），且 14 格内没有别的玩家在场 */
