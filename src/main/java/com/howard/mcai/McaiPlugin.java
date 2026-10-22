@@ -92,6 +92,8 @@ public final class McaiPlugin extends JavaPlugin {
     private com.howard.mcai.ai.VillageTrust villageTrust = new com.howard.mcai.ai.VillageTrust();
     /** 偷窃服务（v0.4.0）：背包拿取的唯一出货口，2 秒托管结算 */
     private com.howard.mcai.security.TheftService theftService;
+    private com.howard.mcai.nav.NavService navService;
+    private com.howard.mcai.follow.FollowService followService;
 
     // ===== 事实与翻译（v0.3.0）静态镜像 + 账本/提醒状态 =====
     private static volatile int factFollowupChancePct = 33;
@@ -340,6 +342,9 @@ public final class McaiPlugin extends JavaPlugin {
         // 7.3 村庄信任账 + 偷窃服务（v0.4.0）
         loadVillageTrust();
         theftService = new com.howard.mcai.security.TheftService(this);
+        // 7.4 自研寻路 + 跟随服务（v0.5.0）：寻路引擎无状态（带快照缓存），跟随服务管裁定与触发
+        navService = new com.howard.mcai.nav.NavService();
+        followService = new com.howard.mcai.follow.FollowService(this);
         factTask = Bukkit.getScheduler().runTaskTimer(this, this::factTick, 600L, 600L);
 
         // 7.5 对话注视任务 —— 每 2 tick 让所有"正在对话"的村民持续面向玩家
@@ -1236,6 +1241,14 @@ public final class McaiPlugin extends JavaPlugin {
 
     public com.howard.mcai.security.TheftService getTheftService() {
         return theftService;
+    }
+
+    public com.howard.mcai.nav.NavService getNavService() {
+        return navService;
+    }
+
+    public com.howard.mcai.follow.FollowService getFollowService() {
+        return followService;
     }
 
     private void saveWeatherLedgers() {

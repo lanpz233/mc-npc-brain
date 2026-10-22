@@ -257,6 +257,11 @@ public final class VillagerInventoryGui implements InventoryHolder {
             memLore.add("§7—— 记忆摘要 ——");
             memLore.add("§8" + clip(summary, 180));
         }
+        String recentSay = state.recentSocialContext();
+        if (recentSay != null && !recentSay.isBlank()) {
+            memLore.add("§7—— 最近在群里说过 ——");
+            memLore.add("§f" + clip(recentSay, 160));
+        }
         putStatus(51, Material.WRITTEN_BOOK, "§6§l记忆概况", memLore);
 
         // 52 背包与交易
@@ -280,16 +285,62 @@ public final class VillagerInventoryGui implements InventoryHolder {
                 : "§8（选他的货 + 点你的货 = 谈换物；蹲下按 F 进偷窃界面）");
         putStatus(52, Material.CHEST, "§6§l背包与交易", invLore);
 
-        // 53 最近言行
-        List<String> sayLore = new ArrayList<>();
-        String recent = state.recentSocialContext();
-        if (recent == null || recent.isBlank()) {
-            sayLore.add("§8（最近没有群聊/闲聊发言）");
+        // 53 跟随开关（v0.5.0，原“最近言行”卡已并入 51 记忆概况）
+        buildFollowCard();
+    }
+
+    /**
+     * 跟随开关卡（53 格）：查看模式可点 —— 这是插件里少数“能点的状态卡”，
+     * 点击走 {@link #handleFollowClick}（不在 slotMap 里，单独分流）。
+     * 文案按他此刻的跟随状态变：跟着你=取消键、正跟别人=灰、正忙等=把“磨他”的玩法写明。
+     */
+    private void buildFollowCard() {
+        var follow = plugin.getFollowService();
+        List<String> lore = new ArrayList<>();
+        String title;
+        if (stealMode) {
+            title = "§8§l跟随";
+            lore.add("§7偷窃界面里不谈这个。");
+            lore.add("§8（站直了再开背包，这里才是查看界面）");
+        } else if (follow != null && follow.isFollowing(state, viewerUuid)) {
+            title = "§c§l别跟了（点击取消跟随）";
+            lore.add("§7他正在跟着你。");
+            lore.add("§e点击 → 他停下，不再跟着你。");
+        } else if (state.followingPlayer() != null && follow != null
+                && follow.isFollowing(state, state.followingPlayer())) {
+            title = "§8§l他正跟着别人";
+            Player p = Bukkit.getPlayer(state.followingPlayer());
+            lore.add("§7他正跟着 " + (p != null ? p.getName() : "另一位玩家") + "，叫不走。");
         } else {
-            sayLore.add("§7最近在群里说过:");
-            sayLore.add("§f" + clip(recent, 160));
+            title = "§a§l让他跟着你（点击）";
+            lore.add("§7他没什么事的话，一般都会答应。");
+            lore.add("§7他不肯？多点几次——把他磨烦了，没准就跟你走了。");
         }
-        putStatus(53, Material.CLOCK, "§6§l最近言行", sayLore);
+        putStatus(53, Material.LEAD, title, lore);
+    }
+
+    /** 跟随开关点击：跟着我=取消；没跟=请求（裁定与台词归 FollowService，这里只给玩家系统提示） */
+    private void handleFollowClick(Player player) {
+        var follow = plugin.getFollowService();
+        if (follow == null) return;
+        if (follow.isFollowing(state, viewerUuid)) {
+            follow.stopFollow(state, player);
+            player.sendMessage("§7[MC-AI] 他停下来了，不再跟着你。");
+            rebuild();
+            return;
+        }
+        var d = follow.requestFollow(state, player);
+        if (d == null) return;
+        switch (d) {
+            case AGREE -> player.sendMessage("§a[MC-AI] 他答应了，开始跟着你走。");
+            case AGREE_GRUDGING -> player.sendMessage("§e[MC-AI] 他被你磨得不耐烦，还是一脸不情愿地跟上了。");
+            case REFUSE_BUSY -> player.sendMessage("§e[MC-AI] 他手头正忙，走不开。（不死心就多点几次）");
+            case REFUSE_SLEEPING -> player.sendMessage("§e[MC-AI] 他正睡着呢。（多点几次能把他磨醒跟你走）");
+            case REFUSE_SCARED -> player.sendMessage("§e[MC-AI] 他吓坏了，不敢乱走。（多点几次试试）");
+            case REFUSE_NEED -> player.sendMessage("§e[MC-AI] 他有迫切的事没解决，走不开。（多点几次试试）");
+            case REFUSE_FOLLOWING_OTHER -> player.sendMessage("§e[MC-AI] 他正跟着别人呢，叫不走。");
+        }
+        rebuild();
     }
 
     /** 环境与位置卡片（实体坐标/群系/时间/天气/生命/冻结状态） */
@@ -493,6 +544,11 @@ public final class VillagerInventoryGui implements InventoryHolder {
      */
     public void handleClick(Player player, int slot, boolean rightClick) {
         if (player == null || !player.getUniqueId().equals(viewerUuid)) return;
+        // 跟随开关（53 格，查看模式专属）：不在 slotMap 里，先于真货格分流
+        if (slot == 53 && !stealMode) {
+            handleFollowClick(player);
+            return;
+        }
         Material mat = slotMap.get(slot);
         if (mat == null) return;
         if (stealMode) {

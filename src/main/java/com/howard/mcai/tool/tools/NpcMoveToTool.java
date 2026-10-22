@@ -4,6 +4,8 @@ import com.google.gson.JsonObject;
 import com.howard.mcai.McaiPlugin;
 import com.howard.mcai.mob.NeedsState;
 import com.howard.mcai.mob.VillagerState;
+import com.howard.mcai.nav.NavDriver;
+import com.howard.mcai.nav.NavService;
 import com.howard.mcai.tool.NpcTask;
 import com.howard.mcai.tool.NpcTaskAction;
 import com.howard.mcai.tool.NpcTool;
@@ -25,12 +27,12 @@ import org.bukkit.util.Vector;
  */
 public final class NpcMoveToTool implements NpcTool {
 
-    /** 单次移动任务允许的最大水平距离，避免模型把 NPC 派到世界另一头。 */
-    private static final double MAX_DISTANCE = 32.0;
+    /** 单次移动任务允许的最大水平距离，避免模型把 NPC 派到世界另一头（自研寻路后放宽）。 */
+    private static final double MAX_DISTANCE = 48.0;
     /** 到达判定半径。 */
     private static final double ARRIVE_DISTANCE = 1.5;
-    /** 允许的目标高度差；超过这个高度差，原版寻路也基本走不过去。 */
-    private static final double MAX_VERTICAL_DIFF = 3.0;
+    /** 允许的目标高度差；自研寻路认台阶/楼梯/梯子，不再是原版的 3 格。 */
+    private static final double MAX_VERTICAL_DIFF = 8.0;
     /**
      * 卡住判定：连续这么久没有实际位移就判失败。
      * <p>
@@ -140,6 +142,13 @@ public final class NpcMoveToTool implements NpcTool {
         private long lastRepathMs;
         /** 已重下寻路指令的次数 */
         private int repathCount;
+        /** 自研寻路执行器（v0.5.0）：非 null 且 engineMode 时走它；规划不出路时退回原版直达 */
+        private NavDriver driver;
+        private boolean engineMode;
+        /** 自研寻路已重规划次数（卡住/半路路径走完时重算） */
+        private int replanCount;
+        /** 单个任务最多重规划次数，用尽判走不通 */
+        private static final int MAX_REPLANS = 4;
         /** 无进展判定的工作值：本 tick 算出的"离目标最近距离/刷新时刻"，tick 末随 progressData 写回 */
         private double pendingBest = Double.MAX_VALUE;
         private long pendingBestSince;
@@ -192,8 +201,24 @@ public final class NpcMoveToTool implements NpcTool {
             villager.setTarget(null);
             villager.setVelocity(new Vector(0, villager.getVelocity().getY(), 0));
             repathCount = 0;
+            replanCount = 0;
             double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
-            startPathing(villager, target, speed);
+            // 自研寻路优先（v0.5.0）：全局路线由插件 A* 定死（认门/梯子/水、会绕整栋房子），
+            // 每段短路仍交原版导航的腿走。规划不出（目标被彻底封死等）才退回原版直达，保底不比旧版差。
+            NavService.Plan plan = plugin.getNavService() != null
+                    ? plugin.getNavService().plan(state.getUniqueId(), villager.getLocation(), target)
+                    : null;
+            if (plan != null) {
+                engineMode = true;
+                driver = new NavDriver(plan);
+                plugin.getLogger().info("[task] npc.move_to 自研寻路: 目标 ("
+                        + round(target.getX()) + ", " + round(target.getY()) + ", " + round(target.getZ())
+                        + ") 路点 " + plan.waypoints().size() + " 个"
+                        + (plan.reached() ? "" : "（部分路径，走完重规划）"));
+            } else {
+                engineMode = false;
+                startPathing(villager, target, speed);
+            }
         }
 
         /**
@@ -243,6 +268,12 @@ public final class NpcMoveToTool implements NpcTool {
                 stop(state);
                 settleNeedSuccess(state);
                 task.complete(nowMs, result(task, villager));
+                return;
+            }
+
+            // 自研寻路模式（v0.5.0）：路线与卡住判定都归 NavDriver，这里只管重规划与收尾
+            if (engineMode) {
+                tickEngine(task, state, villager, target, arguments, nowMs, horizontal);
                 return;
             }
 
@@ -393,6 +424,79 @@ public final class NpcMoveToTool implements NpcTool {
             progressData.addProperty("detour_extends", pendingDetourExtends);
             task.updateData(progressData);
             // 实际移动由原版导航（Pathfinder）驱动，这里只做重寻路/进度/到达/卡住判定
+        }
+
+        /**
+         * 自研寻路模式的 tick：喂路点走；卡住或半路路径走完 → 重规划；
+         * 真到达/抵近门口 → 按完成收尾。挂账结算口径与原版直达模式一致。
+         */
+        private void tickEngine(NpcTask task, VillagerState state, Villager villager, Location target,
+                                JsonObject arguments, long nowMs, double horizontal) {
+            // 偏离守卫（与直达模式同口径）：被僵尸赶得比允许范围还远就放弃
+            if (horizontal > MAX_DISTANCE + DRIFT_TOLERANCE) {
+                stop(state);
+                settleNeedFailure(state, target);
+                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                        "NPC 偏离目标：剩余 " + round(horizontal) + " 格，超出允许范围");
+                return;
+            }
+            double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
+            NavDriver.Status status = driver.tick(villager, speed);
+            if (status == NavDriver.Status.ARRIVED) {
+                if (driver.reachedGoal() || horizontal <= DOORSTEP_DISTANCE) {
+                    stop(state);
+                    settleNeedSuccess(state);
+                    JsonObject data = result(task, villager);
+                    if (!driver.reachedGoal()) {
+                        data.addProperty("close_enough", true);
+                        plugin.getLogger().info("[task] npc.move_to 自研寻路抵近完成: npc=" + task.npcId()
+                                + " 剩余 " + round(horizontal) + " 格");
+                    }
+                    task.complete(nowMs, data);
+                } else {
+                    // 半路路径走完了还没到：从当前位置重新规划，继续往目标去
+                    replan(task, state, villager, target, nowMs, horizontal);
+                }
+                return;
+            }
+            if (status == NavDriver.Status.STUCK) {
+                plugin.getLogger().info("[task] npc.move_to 自研寻路卡住, 准备重规划("
+                        + (replanCount + 1) + "/" + MAX_REPLANS + ") npc=" + task.npcId()
+                        + " 剩余 " + round(horizontal) + " 格");
+                if (!replan(task, state, villager, target, nowMs, horizontal)) return;
+            }
+            JsonObject progressData = new JsonObject();
+            progressData.addProperty("target_x", target.getX());
+            progressData.addProperty("target_y", target.getY());
+            progressData.addProperty("target_z", target.getZ());
+            progressData.addProperty("remaining_distance", round(horizontal));
+            progressData.addProperty("engine", "custom");
+            progressData.addProperty("replans", replanCount);
+            task.updateData(progressData);
+        }
+
+        /** 从当前位置重新规划一次；次数用尽或规划不出 → 判失败收尾并返回 false */
+        private boolean replan(NpcTask task, VillagerState state, Villager villager,
+                               Location target, long nowMs, double horizontal) {
+            if (replanCount >= MAX_REPLANS || plugin.getNavService() == null) {
+                stop(state);
+                settleNeedFailure(state, target);
+                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                        "自研寻路走不通：重规划 " + replanCount + " 次后仍到不了，剩余 "
+                                + round(horizontal) + " 格");
+                return false;
+            }
+            replanCount++;
+            NavService.Plan plan = plugin.getNavService().plan(state.getUniqueId(), villager.getLocation(), target);
+            if (plan == null) {
+                stop(state);
+                settleNeedFailure(state, target);
+                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                        "自研寻路规划不出路线，剩余 " + round(horizontal) + " 格");
+                return false;
+            }
+            driver = new NavDriver(plan);
+            return true;
         }
 
         @Override
