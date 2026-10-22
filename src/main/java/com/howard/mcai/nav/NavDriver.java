@@ -11,25 +11,27 @@ import org.bukkit.util.Vector;
 import java.util.List;
 
 /**
- * 寻路执行器（v0.5.1 全自研驾驶）：拿着 {@link NavService.Plan} 的路点，自己开身体走。
+ * 寻路执行器（v0.5.2 狗式驾驶）：路线归插件 A* 定，腿用原版导航，命令强势下达。
  * <p>
- * 为什么不用原版导航的腿（v0.5.0 的教训）：村民的原版大脑一直在跑自己的日程
- * （上班去工作站、傍晚去床/钟、见怪慌跑），它和插件共用同一套寻路——插件塞一条
- * “去玩家那”，大脑回塞一条“回岗位”，两条指令抢一个身体，跟随走到一半就开始
- * 两步这边、两步那边地抽风。解法是驾驶期间把 AI 关掉（setAI(false) 只停大脑
- * 与原版寻路，物理/碰撞/受伤照常），由本类每 2 tick 直接给速度：朝向、步速、
- * 抵近减速、跳台阶、涉水、爬梯子全自己管，大脑插不进手。
- * <p>
- * 驾驶期间若外部代码把 AI 打开（对话结束会 setAI(true)），循环里发现就压回去。
- * 任务层（1 秒一跳）只读 {@link #status()} 决定完成/重规划/判失败，不参与驾驶。
+ * 两版教训钉死在这里：
+ * <ul>
+ *   <li>v0.5.0（AI 开 + 客气下令）：原版大脑的日程（上班/回家/慌跑）与插件共用
+ *       同一套寻路，谁的指令在跑就听谁的——驾驶员只在“没现成路线”时才下令，
+ *       大半时间在执行大脑的路线，跟随走一半就抽风。</li>
+ *   <li>v0.5.1（AI 关 + 速度直驱）：关了大脑的村民，横向速度每帧会被原版移动
+ *       结算吃掉（竖直速度能生效，所以跳跃手势正常）——根本走不动，只剩瞬移。</li>
+ * </ul>
+ * 驯服的狗为什么不打架：它的跟随是目标系统里的高优先指令，一直在下达。
+ * 村民没有目标系统，就学个形似：驾驶期间每 2 tick 把当前路点**重新下达**
+ * 给原版导航（谁最后下令听谁的，那就每次都我们最后下），大脑的指令抢不到空档；
+ * 跟随任务还会把大脑的“老家/岗位/集合点”记忆临时钉在他脚下（见跟随工具），
+ * 让它连想去的地方都没有。梯子原版导航爬不了，人在梯子上时竖直速度托一把。
  */
 public final class NavDriver {
 
     public enum Status { RUNNING, ARRIVED, STUCK }
 
-    /** 步速基准：倍率 1.0 ≈ 原版正常步行（约 4.4 格/秒） */
-    private static final double BASE_SPEED_PER_TICK = 0.22;
-    private static final double WAYPOINT_CAPTURE = 0.75;
+    private static final double WAYPOINT_CAPTURE = 0.9;
     private static final long STUCK_MS = 2_500L;
     private static final double PROGRESS_MIN_MOVE = 0.25;
 
@@ -47,8 +49,6 @@ public final class NavDriver {
     private long lastProgressMs = System.currentTimeMillis();
     private double sampleX, sampleZ;
     private boolean sampleInit = false;
-    private double prevX, prevZ;
-    private int blockedRuns = 0;
     private long lastDoorTryMs = 0L;
 
     public NavDriver(McaiPlugin plugin, NavService.Plan plan) {
@@ -79,27 +79,26 @@ public final class NavDriver {
         this.speedMultiplier = multiplier;
     }
 
-    /** 开始/恢复驾驶（幂等）：挂上 2 tick 一跳的转向循环 */
+    /** 开始/恢复驾驶（幂等）：挂上 2 tick 一跳的下令循环 */
     public void start(Villager villager, double speedMultiplier) {
         this.villager = villager;
         this.speedMultiplier = speedMultiplier;
         if (loop != null || status != Status.RUNNING) return;
         sampleInit = false;
-        blockedRuns = 0;
         lastProgressMs = System.currentTimeMillis();
         loop = plugin.getServer().getScheduler().runTaskTimer(plugin, this::stepGuarded, 1L, 2L);
     }
 
-    /** 暂停驾驶（对话中/已到位等待）：停循环并刹住水平速度，状态保持 RUNNING 可恢复 */
+    /** 暂停驾驶（对话中/已到位等待）：停循环并清原版路径，人留在原地，状态可恢复 */
     public void pause() {
         stopLoop();
-        zeroHorizontal();
+        haltPath();
     }
 
-    /** 彻底停驶（任务收尾/换计划）：停循环并刹住，之后应丢弃本驾驶员 */
+    /** 彻底停驶（任务收尾/换计划）：停循环清路径，之后应丢弃本驾驶员 */
     public void stop() {
         stopLoop();
-        zeroHorizontal();
+        haltPath();
     }
 
     private void stopLoop() {
@@ -109,13 +108,11 @@ public final class NavDriver {
         }
     }
 
-    private void zeroHorizontal() {
+    private void haltPath() {
         Villager v = villager;
-        if (v == null || !v.isValid()) return;
-        Vector vel = v.getVelocity();
-        vel.setX(0);
-        vel.setZ(0);
-        v.setVelocity(vel);
+        if (v != null && v.isValid()) {
+            v.getPathfinder().stopPathfinding();
+        }
     }
 
     private void stepGuarded() {
@@ -126,7 +123,7 @@ public final class NavDriver {
             plugin.getLogger().warning("[寻路] 驾驶循环异常，转卡住处理: " + t);
             status = Status.STUCK;
             stopLoop();
-            zeroHorizontal();
+            haltPath();
         }
     }
 
@@ -137,9 +134,6 @@ public final class NavDriver {
             stopLoop();
             return;
         }
-        // 驾驶期间身体归插件：外部代码（对话结束等）打开 AI 就压回去，防原版大脑抢方向
-        if (v.hasAI()) v.setAI(false);
-
         Location me = v.getLocation();
         long now = System.currentTimeMillis();
 
@@ -160,7 +154,7 @@ public final class NavDriver {
         if (finished()) {
             status = Status.ARRIVED;
             stopLoop();
-            zeroHorizontal();
+            haltPath();
             return;
         }
 
@@ -179,7 +173,7 @@ public final class NavDriver {
             } else if (now - lastProgressMs >= STUCK_MS) {
                 status = Status.STUCK;
                 stopLoop();
-                zeroHorizontal();
+                haltPath();
                 return;
             }
         }
@@ -199,71 +193,20 @@ public final class NavDriver {
         }
 
         Location wp = waypoints.get(index);
-        double dx = wp.getX() - me.getX();
-        double dz = wp.getZ() - me.getZ();
-        double dy = wp.getY() - me.getY();
-        double hd = Math.sqrt(dx * dx + dz * dz);
 
-        double target = BASE_SPEED_PER_TICK * speedMultiplier;
-        if (hd < 1.2) target *= Math.max(0.35, hd / 1.2);   // 抵近减速，防冲过头来回摆
-        double vx = 0, vz = 0;
-        if (hd > 0.05) {
-            vx = dx / hd * target;
-            vz = dz / hd * target;
-        }
-
-        Vector vel = v.getVelocity();
-        double vy = vel.getY();
+        // 梯子段：原版导航不会爬梯子——人在梯子/藤蔓上且路点在上方/下方时，
+        // 竖直速度托一把（竖直速度在原版移动结算里能生效，跳跃手势就是这么动的）
         Block feet = me.getBlock();
         if (NavService.isClimb(feet.getType())) {
-            // 梯子/藤蔓上：速度托着爬/滑/蹭出梯口
-            vy = dy > 0.6 ? 0.38 : (dy < -0.6 ? -0.30 : 0.12);
-        } else if (feet.getType() == org.bukkit.Material.WATER
-                || me.clone().add(0, 0.4, 0).getBlock().getType() == org.bukkit.Material.WATER) {
-            // 水里：朝路点高度游，水平打折
-            vy = dy > 0.4 ? 0.16 : (dy < -0.4 ? -0.08 : vel.getY() * 0.6);
-            vx *= 0.65;
-            vz *= 0.65;
-        } else if (v.isOnGround() && needsJump(me, wp, hd, target)) {
-            vy = 0.42;   // 原版跳跃高度（约 1.25 格）
-        }
-        v.setVelocity(new Vector(vx, vy, vz));
-
-        // 朝行进方向转身（平滑限速，别像指南针乱甩）
-        if (hd > 0.3) {
-            float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-            float cur = me.getYaw();
-            float diff = ((targetYaw - cur + 540f) % 360f) - 180f;
-            float turn = Math.max(-30f, Math.min(30f, diff));
-            v.setRotation(cur + turn, 0f);
+            double dy = wp.getY() - me.getY();
+            if (dy > 0.6 || dy < -0.6) {
+                Vector vel = v.getVelocity();
+                v.setVelocity(new Vector(vel.getX(), dy > 0 ? 0.38 : -0.30, vel.getZ()));
+            }
         }
 
-        prevX = me.getX();
-        prevZ = me.getZ();
-    }
-
-    /**
-     * 要不要跳：路点在高处且已贴近（台阶）→ 跳；或者明明在使劲走却几乎没动
-     * （被一格沿挡住、自动登阶 0.6 不够）连续两次 → 跳。
-     */
-    private boolean needsJump(Location me, Location wp, double hd, double targetSpeed) {
-        double dy = wp.getY() - me.getY();
-        if (dy >= 0.75 && hd <= 1.15) {
-            blockedRuns = 0;
-            return true;
-        }
-        if (targetSpeed < 0.05) return false;
-        double moved = Math.hypot(me.getX() - prevX, me.getZ() - prevZ);
-        if (moved < 0.03) {
-            blockedRuns++;
-        } else {
-            blockedRuns = 0;
-        }
-        if (blockedRuns >= 2 && dy >= -0.5) {
-            blockedRuns = 0;
-            return true;
-        }
-        return false;
+        // 强势下令：每一步都把当前路点重新下达给原版导航——不给大脑的指令留空档
+        v.getPathfinder().moveTo(wp, speedMultiplier);
     }
 
     /** 兼容旧调用：粗暴停车（清原版路径） */
