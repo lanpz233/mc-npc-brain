@@ -37,8 +37,6 @@ public final class NpcFollowPlayerTool implements NpcTool {
 
     /** 保持的跟随距离：比这个远就走过去，比这个近就停下等 */
     private static final double FOLLOW_DISTANCE = 3.0;
-    /** 重下寻路指令的间隔（自研规划失败退回原版直达时用） */
-    private static final long REPATH_INTERVAL_MS = 2_000L;
     /** 跟随速度倍率（略慢于玩家步行，避免贴脸） */
     private static final double FOLLOW_SPEED = 0.9;
     /** 追赶速度：离玩家远了小跑追 */
@@ -133,7 +131,6 @@ public final class NpcFollowPlayerTool implements NpcTool {
     private static final class FollowAction implements NpcTaskAction {
 
         private final McaiPlugin plugin;
-        private long lastRepathMs;
         private UUID targetUuid;
         /** 自研寻路执行器与当前计划目标（玩家挪远了就重规划） */
         private NavDriver driver;
@@ -162,11 +159,10 @@ public final class NpcFollowPlayerTool implements NpcTool {
             targetUuid = target.getUniqueId();
             state.setFollowingPlayer(targetUuid);
             Villager villager = state.entity();
-            // 与 move_to 同口径：寻路必须由原版 AI 驱动，先恢复 AI 并清掉残余动量
-            villager.setAI(true);
+            // 全自研驾驶（v0.5.1）：AI 先关掉，身体随后归 NavDriver 开，防原版大脑抢方向抽风
+            villager.setAI(false);
             villager.setTarget(null);
             villager.setVelocity(new Vector(0, villager.getVelocity().getY(), 0));
-            lastRepathMs = 0L;
             driver = null;
             planGoal = null;
             JsonObject data = new JsonObject();
@@ -188,9 +184,7 @@ public final class NpcFollowPlayerTool implements NpcTool {
             // 对话中：站着聊，跟随暂停但不散伙（v0.5.0 服主定：取消跟随在 F 界面/聊天喊停，
             // 不再像旧版一进对话就把跟随掐了）；聊完自动接着跟
             if (state.interactingPlayer() != null) {
-                if (villager.getPathfinder().hasPath()) {
-                    villager.getPathfinder().stopPathfinding();
-                }
+                pauseDriver();
                 return;
             }
             Player target = targetUuid != null ? Bukkit.getPlayer(targetUuid) : null;
@@ -218,9 +212,7 @@ public final class NpcFollowPlayerTool implements NpcTool {
 
             if (dist <= FOLLOW_DISTANCE) {
                 // 到位就停下等，不贴脸；玩家再走远 tick 会重新起步
-                if (villager.getPathfinder().hasPath()) {
-                    villager.getPathfinder().stopPathfinding();
-                }
+                pauseDriver();
                 return;
             }
 
@@ -229,43 +221,51 @@ public final class NpcFollowPlayerTool implements NpcTool {
                     && unseen(villager, target)) {
                 if (teleportBehind(villager, target)) {
                     lastTeleportMs = now;
-                    driver = null;
-                    planGoal = null;
+                    dropDriver();
                     plugin.getLogger().info("[task] npc.follow_player 瞬移追赶: npc=" + task.npcId()
                             + " 原距离 " + (int) dist + " 格");
                     return;
                 }
             }
 
-            // 需要（重）规划：没计划 / 计划走完或卡住 / 玩家挪出计划目标太远 / 计划太旧
+            // 需要（重）规划：没计划 / 玩家挪出计划目标太远 / 计划太旧
             boolean needPlan = driver == null || planGoal == null
                     || horizontal(planGoal, theirs) >= REPLAN_GOAL_DRIFT
                     || now - lastPlanMs >= REPLAN_MAX_AGE_MS;
-            if (needPlan && plugin.getNavService() != null) {
-                NavService.Plan plan = plugin.getNavService().plan(task.npcId(), mine, theirs);
-                if (plan != null) {
-                    driver = new NavDriver(plan);
-                    planGoal = theirs.clone();
-                    lastPlanMs = now;
-                } else {
-                    driver = null;   // 规划不出 → 退回原版直达兜底
-                }
+            if (needPlan) {
+                NavService.Plan plan = plugin.getNavService() != null
+                        ? plugin.getNavService().plan(task.npcId(), mine, theirs) : null;
+                if (plan == null) plan = NavService.direct(theirs);   // 规划不出先直着追，走一段再重算
+                dropDriver();
+                driver = new NavDriver(plugin, plan);
+                driver.start(villager, FOLLOW_SPEED);
+                planGoal = theirs.clone();
+                lastPlanMs = now;
             }
             if (driver != null) {
-                double speed = dist > 10 ? CATCHUP_SPEED : FOLLOW_SPEED;
-                NavDriver.Status st = driver.tick(villager, speed);
-                if (st != NavDriver.Status.RUNNING) {
+                driver.setSpeed(dist > 10 ? CATCHUP_SPEED : FOLLOW_SPEED);
+                // 暂停过（对话中/到位等待）就恢复驾驶；start 幂等，驾驶中调用无副作用
+                if (driver.status() == NavDriver.Status.RUNNING) {
+                    driver.start(villager, FOLLOW_SPEED);
+                } else {
                     // 走完（多半是半路路径）或卡住：丢掉计划，下个 tick 重新规划
-                    driver = null;
-                    planGoal = null;
+                    dropDriver();
                 }
-                return;
             }
-            // 兜底：原版直达（自研规划不出时不比旧版差）
-            if (!villager.getPathfinder().hasPath() || now - lastRepathMs >= REPATH_INTERVAL_MS) {
-                villager.getPathfinder().moveTo(theirs, FOLLOW_SPEED);
-                lastRepathMs = now;
+        }
+
+        /** 暂停当前驾驶员（对话中/到位等待）：停循环刹车，人留在原地 */
+        private void pauseDriver() {
+            if (driver != null) driver.pause();
+        }
+
+        /** 丢掉当前驾驶员（换计划/瞬移/收尾）：停循环刹车并清计划目标 */
+        private void dropDriver() {
+            if (driver != null) {
+                driver.stop();
+                driver = null;
             }
+            planGoal = null;
         }
 
         /** 他是不是没人盯着：被跟的玩家视线之外（或远到看不清），且 14 格内没有别的玩家在场 */
@@ -355,6 +355,7 @@ public final class NpcFollowPlayerTool implements NpcTool {
 
         private void stop(VillagerState state) {
             if (state == null) return;
+            dropDriver();
             // 跟随标记与任务同生共死：任何收尾路径（失败/取消/超时）都经这里清掉
             if (targetUuid != null && targetUuid.equals(state.followingPlayer())) {
                 state.setFollowingPlayer(null);

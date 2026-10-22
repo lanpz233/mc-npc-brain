@@ -210,7 +210,9 @@ public final class NpcMoveToTool implements NpcTool {
                     : null;
             if (plan != null) {
                 engineMode = true;
-                driver = new NavDriver(plan);
+                driver = new NavDriver(plugin, plan);
+                // 全自研驾驶（v0.5.1）：循环会把 AI 压关，身体归插件开，防原版大脑抢方向
+                driver.start(villager, speed);
                 plugin.getLogger().info("[task] npc.move_to 自研寻路: 目标 ("
                         + round(target.getX()) + ", " + round(target.getY()) + ", " + round(target.getZ())
                         + ") 路点 " + plan.waypoints().size() + " 个"
@@ -441,7 +443,8 @@ public final class NpcMoveToTool implements NpcTool {
                 return;
             }
             double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
-            NavDriver.Status status = driver.tick(villager, speed);
+            // 驾驶在 NavDriver 的快速循环里进行（v0.5.1），任务 tick 只读状态做决策
+            NavDriver.Status status = driver.status();
             if (status == NavDriver.Status.ARRIVED) {
                 if (driver.reachedGoal() || horizontal <= DOORSTEP_DISTANCE) {
                     stop(state);
@@ -455,7 +458,7 @@ public final class NpcMoveToTool implements NpcTool {
                     task.complete(nowMs, data);
                 } else {
                     // 半路路径走完了还没到：从当前位置重新规划，继续往目标去
-                    replan(task, state, villager, target, nowMs, horizontal);
+                    replan(task, state, villager, target, speed, nowMs, horizontal);
                 }
                 return;
             }
@@ -463,7 +466,7 @@ public final class NpcMoveToTool implements NpcTool {
                 plugin.getLogger().info("[task] npc.move_to 自研寻路卡住, 准备重规划("
                         + (replanCount + 1) + "/" + MAX_REPLANS + ") npc=" + task.npcId()
                         + " 剩余 " + round(horizontal) + " 格");
-                if (!replan(task, state, villager, target, nowMs, horizontal)) return;
+                if (!replan(task, state, villager, target, speed, nowMs, horizontal)) return;
             }
             JsonObject progressData = new JsonObject();
             progressData.addProperty("target_x", target.getX());
@@ -477,7 +480,7 @@ public final class NpcMoveToTool implements NpcTool {
 
         /** 从当前位置重新规划一次；次数用尽或规划不出 → 判失败收尾并返回 false */
         private boolean replan(NpcTask task, VillagerState state, Villager villager,
-                               Location target, long nowMs, double horizontal) {
+                               Location target, double speed, long nowMs, double horizontal) {
             if (replanCount >= MAX_REPLANS || plugin.getNavService() == null) {
                 stop(state);
                 settleNeedFailure(state, target);
@@ -495,7 +498,9 @@ public final class NpcMoveToTool implements NpcTool {
                         "自研寻路规划不出路线，剩余 " + round(horizontal) + " 格");
                 return false;
             }
-            driver = new NavDriver(plan);
+            if (driver != null) driver.stop();
+            driver = new NavDriver(plugin, plan);
+            driver.start(villager, speed);
             return true;
         }
 
@@ -561,6 +566,11 @@ public final class NpcMoveToTool implements NpcTool {
 
         private void stop(VillagerState state) {
             if (state == null) return;
+            // 自研驾驶先停（v0.5.1）：不停的话循环还会继续给速度，任务完了人还在走
+            if (driver != null) {
+                driver.stop();
+                driver = null;
+            }
             Villager villager = state.entity();
             if (villager == null || !villager.isValid()) return;
 

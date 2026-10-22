@@ -28,6 +28,11 @@ public final class NavService {
     /** 寻路结果：路点（世界坐标，脚位）+ 沿途要开的门格 + 是否真到了终点 */
     public record Plan(List<Location> waypoints, List<int[]> doorCells, boolean reached) {}
 
+    /** 兜底计划：A* 规划不出时直指目标点（reached=false，走一段再重规划——跟随跑偏时用） */
+    public static Plan direct(Location to) {
+        return new Plan(List.of(to.clone()), List.of(), false);
+    }
+
     private record CachedGrid(NavGrid grid, long atMs, String worldName) {}
 
     private final Map<UUID, CachedGrid> cache = new ConcurrentHashMap<>();
