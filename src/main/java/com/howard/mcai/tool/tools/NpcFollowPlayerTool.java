@@ -3,6 +3,8 @@ package com.howard.mcai.tool.tools;
 import com.google.gson.JsonObject;
 import com.howard.mcai.McaiPlugin;
 import com.howard.mcai.mob.VillagerState;
+import com.howard.mcai.nav.NavDriver;
+import com.howard.mcai.nav.NavService;
 import com.howard.mcai.tool.NpcTask;
 import com.howard.mcai.tool.NpcTaskAction;
 import com.howard.mcai.tool.NpcTool;
@@ -12,6 +14,7 @@ import com.howard.mcai.tool.ToolResult;
 import com.howard.mcai.tool.ToolSchema;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
 import org.bukkit.util.Vector;
@@ -22,24 +25,31 @@ import java.util.UUID;
 /**
  * npc.follow_player —— 持续跟随一名玩家（统一柜版，任务制）。
  * <p>
- * 替代老后门的「朝玩家推两步就完事」：老实现只给一脚速度 + 1 秒后再推一步，
- * 根本跟不住人。现在是正经的持续任务：原版寻路跟着走、保持约 3 格距离、
- * 玩家走远自动追、进对话自动停、跟丢（&gt;64 格）/玩家离线/跨世界自动结束，
- * 进度可经 npc.task.get 查询、可取消。默认 5 分钟超时收尾，不会无限跟下去。
+ * v0.5.0 起走自研寻路（NavDriver 分段领路、会开门/绕整栋房子），保持约 3 格距离；
+ * 玩家跑太远且没人看着他时，允许“抄近道”瞬移追上（服主拍板）；对话期间暂停
+ * （站着聊天，聊完接着跟，不再一进对话就散伙——取消跟随在 F 界面/聊天喊停）；
+ * 玩家离线/跨世界自动结束。超时放宽到 3 小时，跟随主要靠玩家主动取消。
  * <p>
- * 别名 {@code follow_player} 桥接老工具名。与 move_to 一致：对话期间禁止启动
- * （站立不动约束），任务运行中 NPC 进入对话也会被 tick 取消。
+ * 别名 {@code follow_player} 桥接老工具名。对话期间禁止启动（站立不动约束）；
+ * 插件跟随服务（聊天认话/F 界面按钮）会先结束对话再启动本任务。
  */
 public final class NpcFollowPlayerTool implements NpcTool {
 
     /** 保持的跟随距离：比这个远就走过去，比这个近就停下等 */
     private static final double FOLLOW_DISTANCE = 3.0;
-    /** 超过这个距离判跟丢（玩家跑太快/传送走了） */
-    private static final double LOST_DISTANCE = 64.0;
-    /** 重下寻路指令的间隔（玩家一直在动，目标点要不断刷新） */
+    /** 重下寻路指令的间隔（自研规划失败退回原版直达时用） */
     private static final long REPATH_INTERVAL_MS = 2_000L;
     /** 跟随速度倍率（略慢于玩家步行，避免贴脸） */
     private static final double FOLLOW_SPEED = 0.9;
+    /** 追赶速度：离玩家远了小跑追 */
+    private static final double CATCHUP_SPEED = 1.15;
+    /** 瞬移追赶的触发距离：离这么远、且没人看着他，才许抄近道 */
+    private static final double TELEPORT_DISTANCE = 24.0;
+    /** 瞬移追赶冷却，防止连环瞬移 */
+    private static final long TELEPORT_COOLDOWN_MS = 5_000L;
+    /** 重新规划的节流：玩家挪出计划目标这么远、或计划过期，就重算路线 */
+    private static final double REPLAN_GOAL_DRIFT = 5.0;
+    private static final long REPLAN_MAX_AGE_MS = 6_000L;
 
     private final McaiPlugin plugin;
 
@@ -59,8 +69,8 @@ public final class NpcFollowPlayerTool implements NpcTool {
 
     @Override
     public String description() {
-        return "让 NPC 持续跟随一名玩家（保持约 3 格距离）。返回任务 ID，跟随会一直持续到"
-                + "玩家离线、距离过远、进入对话或任务超时（5 分钟）。";
+        return "让 NPC 持续跟随一名玩家（保持约 3 格距离，走自研寻路）。返回任务 ID，跟随会一直"
+                + "持续到玩家离线、跨世界、在 F 界面取消或任务超时（3 小时）。";
     }
 
     @Override
@@ -80,7 +90,8 @@ public final class NpcFollowPlayerTool implements NpcTool {
 
     @Override
     public long defaultTimeoutMs() {
-        return 300_000L;
+        // 跟随是玩家主动开关的长期状态（取消在 F 界面/聊天喊停），超时只作兜底
+        return 3 * 60 * 60 * 1000L;
     }
 
     @Override
@@ -124,6 +135,11 @@ public final class NpcFollowPlayerTool implements NpcTool {
         private final McaiPlugin plugin;
         private long lastRepathMs;
         private UUID targetUuid;
+        /** 自研寻路执行器与当前计划目标（玩家挪远了就重规划） */
+        private NavDriver driver;
+        private Location planGoal;
+        private long lastPlanMs;
+        private long lastTeleportMs;
 
         private FollowAction(McaiPlugin plugin) {
             this.plugin = plugin;
@@ -144,12 +160,18 @@ public final class NpcFollowPlayerTool implements NpcTool {
                 return;
             }
             targetUuid = target.getUniqueId();
+            state.setFollowingPlayer(targetUuid);
             Villager villager = state.entity();
             // 与 move_to 同口径：寻路必须由原版 AI 驱动，先恢复 AI 并清掉残余动量
             villager.setAI(true);
             villager.setTarget(null);
             villager.setVelocity(new Vector(0, villager.getVelocity().getY(), 0));
             lastRepathMs = 0L;
+            driver = null;
+            planGoal = null;
+            JsonObject data = new JsonObject();
+            data.addProperty("following", target.getName());
+            task.updateData(data);
             plugin.getLogger().info("[task] npc.follow_player 开始跟随: npc=" + task.npcId()
                     + " → " + target.getName());
         }
@@ -162,10 +184,13 @@ public final class NpcFollowPlayerTool implements NpcTool {
                         "NPC 不存在或实体已失效");
                 return;
             }
-            // 对话状态必须站立不动：进入对话立即让路（与 move_to 一致）
+            Villager villager = state.entity();
+            // 对话中：站着聊，跟随暂停但不散伙（v0.5.0 服主定：取消跟随在 F 界面/聊天喊停，
+            // 不再像旧版一进对话就把跟随掐了）；聊完自动接着跟
             if (state.interactingPlayer() != null) {
-                stop(state);
-                task.cancel(System.currentTimeMillis(), "NPC 进入对话，跟随已停止");
+                if (villager.getPathfinder().hasPath()) {
+                    villager.getPathfinder().stopPathfinding();
+                }
                 return;
             }
             Player target = targetUuid != null ? Bukkit.getPlayer(targetUuid) : null;
@@ -175,7 +200,6 @@ public final class NpcFollowPlayerTool implements NpcTool {
                         "跟随的玩家已离线");
                 return;
             }
-            Villager villager = state.entity();
             Location mine = villager.getLocation();
             Location theirs = target.getLocation();
             if (mine.getWorld() == null || !mine.getWorld().equals(theirs.getWorld())) {
@@ -184,9 +208,7 @@ public final class NpcFollowPlayerTool implements NpcTool {
                         "跟随的玩家已不在同一世界");
                 return;
             }
-            double dx = theirs.getX() - mine.getX();
-            double dz = theirs.getZ() - mine.getZ();
-            double dist = Math.sqrt(dx * dx + dz * dz);
+            double dist = horizontal(mine, theirs);
             long now = System.currentTimeMillis();
 
             JsonObject data = new JsonObject();
@@ -194,12 +216,6 @@ public final class NpcFollowPlayerTool implements NpcTool {
             data.addProperty("distance", Math.round(dist * 10.0) / 10.0);
             task.updateData(data);
 
-            if (dist > LOST_DISTANCE) {
-                stop(state);
-                task.fail(now, ToolResult.ErrorCode.MOVE_STUCK,
-                        "跟丢了：玩家已跑到 " + (int) dist + " 格外");
-                return;
-            }
             if (dist <= FOLLOW_DISTANCE) {
                 // 到位就停下等，不贴脸；玩家再走远 tick 会重新起步
                 if (villager.getPathfinder().hasPath()) {
@@ -207,10 +223,121 @@ public final class NpcFollowPlayerTool implements NpcTool {
                 }
                 return;
             }
+
+            // 抄近道（服主拍板）：离得太远、且没人看着他时，瞬移到玩家附近再接着跟
+            if (dist >= TELEPORT_DISTANCE && now - lastTeleportMs >= TELEPORT_COOLDOWN_MS
+                    && unseen(villager, target)) {
+                if (teleportBehind(villager, target)) {
+                    lastTeleportMs = now;
+                    driver = null;
+                    planGoal = null;
+                    plugin.getLogger().info("[task] npc.follow_player 瞬移追赶: npc=" + task.npcId()
+                            + " 原距离 " + (int) dist + " 格");
+                    return;
+                }
+            }
+
+            // 需要（重）规划：没计划 / 计划走完或卡住 / 玩家挪出计划目标太远 / 计划太旧
+            boolean needPlan = driver == null || planGoal == null
+                    || horizontal(planGoal, theirs) >= REPLAN_GOAL_DRIFT
+                    || now - lastPlanMs >= REPLAN_MAX_AGE_MS;
+            if (needPlan && plugin.getNavService() != null) {
+                NavService.Plan plan = plugin.getNavService().plan(task.npcId(), mine, theirs);
+                if (plan != null) {
+                    driver = new NavDriver(plan);
+                    planGoal = theirs.clone();
+                    lastPlanMs = now;
+                } else {
+                    driver = null;   // 规划不出 → 退回原版直达兜底
+                }
+            }
+            if (driver != null) {
+                double speed = dist > 10 ? CATCHUP_SPEED : FOLLOW_SPEED;
+                NavDriver.Status st = driver.tick(villager, speed);
+                if (st != NavDriver.Status.RUNNING) {
+                    // 走完（多半是半路路径）或卡住：丢掉计划，下个 tick 重新规划
+                    driver = null;
+                    planGoal = null;
+                }
+                return;
+            }
+            // 兜底：原版直达（自研规划不出时不比旧版差）
             if (!villager.getPathfinder().hasPath() || now - lastRepathMs >= REPATH_INTERVAL_MS) {
                 villager.getPathfinder().moveTo(theirs, FOLLOW_SPEED);
                 lastRepathMs = now;
             }
+        }
+
+        /** 他是不是没人盯着：被跟的玩家视线之外（或远到看不清），且 14 格内没有别的玩家在场 */
+        private boolean unseen(Villager villager, Player target) {
+            Location vl = villager.getLocation();
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p.equals(target) || !p.getWorld().equals(vl.getWorld())) continue;
+                if (p.getLocation().distanceSquared(vl) <= 14 * 14) return false;
+            }
+            Location pl = target.getLocation();
+            double dx = vl.getX() - pl.getX();
+            double dz = vl.getZ() - pl.getZ();
+            double dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist >= 48) return true;
+            Vector look = pl.getDirection();
+            double lx = look.getX(), lz = look.getZ();
+            double ll = Math.sqrt(lx * lx + lz * lz);
+            if (ll < 0.001 || dist < 0.001) return true;
+            double dot = (dx * lx + dz * lz) / (dist * ll);
+            return dot < 0.42;   // 约 65° 视锥之外 = 他看不见
+        }
+
+        /** 瞬移到玩家身后/身侧的安全地面；找不到安全落点就放弃（继续用跑的） */
+        private boolean teleportBehind(Villager villager, Player target) {
+            Location pl = target.getLocation();
+            Vector facing = pl.getDirection();
+            facing.setY(0);
+            if (facing.lengthSquared() < 0.001) facing = new Vector(0, 0, 1);
+            facing.normalize();
+            Vector side = new Vector(-facing.getZ(), 0, facing.getX());
+            Location[] candidates = {
+                    pl.clone().add(facing.clone().multiply(-2.5)),
+                    pl.clone().add(side.clone().multiply(2.5)),
+                    pl.clone().add(side.clone().multiply(-2.5)),
+                    pl.clone(),
+            };
+            for (Location c : candidates) {
+                Location ground = findGround(c);
+                if (ground != null) {
+                    villager.teleport(ground);
+                    villager.setVelocity(new Vector(0, 0, 0));
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** 在候选点附近上下找安全落点：实心地面（非岩浆类）+ 脚/头两格空 + 不落水 */
+        private Location findGround(Location around) {
+            org.bukkit.World w = around.getWorld();
+            if (w == null) return null;
+            int bx = around.getBlockX(), bz = around.getBlockZ();
+            int top = Math.min(w.getMaxHeight() - 2, around.getBlockY() + 3);
+            int bottom = Math.max(w.getMinHeight(), around.getBlockY() - 8);
+            for (int y = top; y >= bottom; y--) {
+                Material below = w.getBlockAt(bx, y - 1, bz).getType();
+                Material feet = w.getBlockAt(bx, y, bz).getType();
+                Material head = w.getBlockAt(bx, y + 1, bz).getType();
+                if (!below.isSolid()) continue;
+                if (below == Material.LAVA || below == Material.MAGMA_BLOCK
+                        || below == Material.CACTUS) continue;
+                if (feet == Material.LAVA || feet == Material.WATER || head == Material.LAVA) continue;
+                if (feet.isSolid() || head.isSolid()) continue;
+                return new Location(w, bx + 0.5, y, bz + 0.5);
+            }
+            return null;
+        }
+
+        private static double horizontal(Location a, Location b) {
+            double dx = b.getX() - a.getX();
+            double dz = b.getZ() - a.getZ();
+            return Math.sqrt(dx * dx + dz * dz);
         }
 
         @Override
@@ -228,6 +355,10 @@ public final class NpcFollowPlayerTool implements NpcTool {
 
         private void stop(VillagerState state) {
             if (state == null) return;
+            // 跟随标记与任务同生共死：任何收尾路径（失败/取消/超时）都经这里清掉
+            if (targetUuid != null && targetUuid.equals(state.followingPlayer())) {
+                state.setFollowingPlayer(null);
+            }
             Villager villager = state.entity();
             if (villager == null || !villager.isValid()) return;
             villager.getPathfinder().stopPathfinding();

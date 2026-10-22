@@ -286,6 +286,19 @@ public final class CentralPlanner extends BukkitRunnable {
             // 刚处理完一笔待确认送礼的那一句不再登记新的一笔（"拿去"是答应，不是新提议）
             if (!hadPendingGift) effectiveMessage = annotateGift(vState, player, message, effectiveMessage);
         }
+        // 跟随认话（v0.5.0）：玩家嘴上叫他跟/叫他停 —— 不是提问是指令，插件认话 + 裁定，
+        // 办不办当场定：答应/喊停由 FollowService 办掉并让他说一句话（HANDLED，本轮结束）；
+        // 拒绝把裁定理由注进这轮消息，让模型按人设婉拒（它嘴上答应也不算数，任务不会开）。
+        if (!systemNote && plugin.getFollowService() != null) {
+            var fr = plugin.getFollowService().handleChat(vState, player, message);
+            if (fr.outcome() == com.howard.mcai.follow.FollowService.ChatOutcome.HANDLED) {
+                return;
+            }
+            if (fr.outcome() == com.howard.mcai.follow.FollowService.ChatOutcome.REFUSED
+                    && fr.note() != null) {
+                effectiveMessage = effectiveMessage + "\n" + fr.note();
+            }
+        }
         // 事实直答（v0.3.0）：纯事实问题（几点/下没下雨/你饿不饿）由插件直接回答、不走模型。
         // 事实经模型复述必有概率翻面（15:55→“十四点五十五分”实测），且与模型听不听话
         // 强相关 —— 换任何模型都得稳，就不能让事实过模型的手。范围由 FactAnswers.detect

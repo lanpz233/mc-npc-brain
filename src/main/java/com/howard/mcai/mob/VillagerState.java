@@ -47,6 +47,8 @@ public final class VillagerState {
      * 主线程写（startConversation/endConversation）—— 不加 volatile 异步线程可能读到过期值。
      */
     private volatile UUID interactingPlayer;
+    /** 正在跟随的玩家（v0.5.0）：纯运行态、不落盘，重启即散；由跟随任务维护、跟随服务核验 */
+    private volatile UUID followingPlayer;
 
     /**
      * 三层记忆 —— recent 是核心，summary/facts 是辅助。
@@ -1051,6 +1053,15 @@ public final class VillagerState {
 
     public UUID interactingPlayer() {
         return interactingPlayer;
+    }
+
+    /** 正在跟随的玩家 UUID（null = 没在跟任何人）；只是意向标记，是否真在跟以任务为准 */
+    public UUID followingPlayer() {
+        return followingPlayer;
+    }
+
+    public void setFollowingPlayer(UUID playerUuid) {
+        this.followingPlayer = playerUuid;
     }
 
     public void startConversation(UUID playerUuid) {
