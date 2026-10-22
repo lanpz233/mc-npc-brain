@@ -596,8 +596,7 @@ public final class CentralPlanner extends BukkitRunnable {
                     + "|拿(?:一个|两个|仨|些|点|块|片|根|瓶)");
 
     /** 婉拒/否定说法 —— 命中就不算同意，避免"不给你"被当成"给你" */
-    private static final Pattern GIVE_REFUSAL_PATTERN = Pattern.compile(
-            "不给你|不给|没给你|没给|没拿|别想|想得美|下回|下次|不能给|不送|自己留着");
+    private static final Pattern GIVE_REFUSAL_PATTERN = PromiseGuard.GIVE_REFUSAL;
 
     private static boolean looksLikeGivingConsent(String text) {
         if (text == null || text.isBlank()) return false;
@@ -1345,30 +1344,10 @@ public final class CentralPlanner extends BukkitRunnable {
     /** 按句末标点切句（保留标点）—— 承诺守卫逐句判定，只删中招的那一句，不腰斩半句话 */
     private static final Pattern SENTENCE_SPLIT = Pattern.compile("[^。！？；…!?;]*[。！？；…!?;]");
 
-    /** 承诺交付物件："我这就给你X" / "你拿去" / "送你了" */
-    private static final Pattern PROMISE_GIVE = Pattern.compile(
-            // 跨度放宽到 14 字且允许中间一个逗号：实测台词"俺这儿有现成的面包，送你俩"
-            // 中间隔着 8 字 + 逗号，旧版 {0,8} 且禁逗号的窗口正好卡死 → 空头承诺漏过守卫
-            "(?:我|俺|咱)[^。！？；]{0,14}(?:给你|送你|拿给你|递给你)"
-                    + "|(?:你拿去|你拿着|拿去用|送你了|归你了)");
-
-    /**
-     * 承诺马上动身："我这就过去" / "我马上过来" / "我这就去找你"。
-     * <p>
-     * 尾部的动词必须真的是"朝玩家移动"——旧版把裸 "去/走" 也算承诺，导致
-     * "我这就去把炉子灭了""我马上走去拿料"这类**和玩家无关**的句子被整句删掉，
-     * 若整条回复只有这一句，就会静默变成 "..."（实测玩家收到空回复的根因）。
-     */
-    private static final Pattern PROMISE_MOVE = Pattern.compile(
-            "(?:我|俺|咱)[^，。！？；]{0,6}(?:这就|马上|立刻|待会儿|等下|回头|一会儿)"
-                    + "[^，。！？；]{0,6}(?:过去|过来|去找你|找你|陪你|跟着你|跟你走|去你那|到你那儿|到你那)");
-
-    /** 承诺记住："我记住了" / "我记下了" */
-    private static final Pattern PROMISE_REMEMBER = Pattern.compile(
-            "(?:我|俺|咱)[^，。！？；]{0,4}(?:记住|记住了|记下了|记着了|记牢了)");
-
-    /** 价格让步用语 —— "给你便宜点""给你打个折"谈的是价格不是交付实物，不归承诺守卫管 */
-    private static final Pattern PRICE_TALK = Pattern.compile("便宜|打折|优惠|少收|降价|算你");
+    // 承诺守卫的判定表与单句判定在 PromiseGuard（纯正则、离线可测）；
+    // CentralPlanner 静态初始化会碰 Paper 注册表，判定逻辑放这里测不了（老教训）。
+    private static final Pattern PROMISE_GIVE = PromiseGuard.PROMISE_GIVE;
+    private static final Pattern PROMISE_REMEMBER = PromiseGuard.PROMISE_REMEMBER;
 
     /**
      * 承诺-执行一致性守卫 —— 台词里的"第一人称承诺"必须由本轮真实 tool_call 兑现。
@@ -1419,23 +1398,10 @@ public final class CentralPlanner extends BukkitRunnable {
         return kept.toString().trim();
     }
 
-    /** 单句判定：命中"未兑现的承诺"返回 true */
-    private static boolean isUnbackedPromise(String sentence, boolean reallyGave,
-                                             boolean reallyMoved, boolean reallyLearned) {
-        if (!reallyGave && !PRICE_TALK.matcher(sentence).find()) {
-            // 婉拒句不是承诺："俺不能给你"这类话是老实拒绝，删掉反而只剩莫名其妙的沉默
-            boolean refused = GIVE_REFUSAL_PATTERN.matcher(sentence).find();
-            if (!refused && PROMISE_GIVE.matcher(sentence).find()) {
-                return true;
-            }
-        }
-        if (!reallyMoved && PROMISE_MOVE.matcher(sentence).find()) {
-            return true;
-        }
-        if (!reallyLearned && PROMISE_REMEMBER.matcher(sentence).find()) {
-            return true;
-        }
-        return false;
+    /** 单句判定：命中"未兑现的承诺"返回 true（判定本体在 PromiseGuard，离线可测） */
+    static boolean isUnbackedPromise(String sentence, boolean reallyGave,
+                                     boolean reallyMoved, boolean reallyLearned) {
+        return PromiseGuard.isUnbackedPromise(sentence, reallyGave, reallyMoved, reallyLearned);
     }
 
     /**
