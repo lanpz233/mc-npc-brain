@@ -226,6 +226,13 @@ public final class MemoryStore {
         if (data.has("rank")) {
             state.setRank(com.howard.mcai.security.NpcRank.fromString(data.get("rank").getAsString()));
         }
+        // 买卖等级持久化 —— 出生等级与累计成交笔数跨重启保留；老存档无字段 →
+        // 保留构造时抽的出生等级（等效于给老村民补抽一次出生等级）
+        if (data.has("tradeBornLevel") || data.has("tradeCount")) {
+            state.restoreTrade(
+                    data.has("tradeBornLevel") ? data.get("tradeBornLevel").getAsInt() : state.tradeBornLevel(),
+                    data.has("tradeCount") ? data.get("tradeCount").getAsInt() : state.tradeCount());
+        }
         // NPC 库存持久化 —— 送礼/放置/装备的账面物资跨重启保留
         if (data.has("inventory") && data.get("inventory").isJsonObject()) {
             Map<String, Integer> inv = new HashMap<>();
@@ -353,6 +360,8 @@ public final class MemoryStore {
 
         // 权限等级（神使授予持久化）+ NPC 库存（送礼/放置/装备的账面物资）+ 背包投放标记
         root.addProperty("rank", state.rank().name());
+        root.addProperty("tradeBornLevel", state.tradeBornLevel());
+        root.addProperty("tradeCount", state.tradeCount());
         root.addProperty("inventorySeeded", state.isInventorySeeded());
         root.addProperty("walletSeeded", state.isWalletSeeded());
         root.addProperty("walletBoostV013", state.isWalletV013Boosted());

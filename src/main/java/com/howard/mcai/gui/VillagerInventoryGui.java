@@ -269,6 +269,10 @@ public final class VillagerInventoryGui implements InventoryHolder {
         int totalItems = inv.values().stream().mapToInt(Integer::intValue).sum();
         List<String> invLore = new ArrayList<>();
         invLore.add("§7物品种类: §f" + inv.size() + " §7总件数: §f" + totalItems);
+        int tradeLvl = state.tradeLevel();
+        int toNext = com.howard.mcai.ai.TradeLevels.tradesToNextLevel(state.tradeCount(), tradeLvl);
+        invLore.add("§7买卖等级: §f" + tradeLvl + " §7级（共成交 " + state.tradeCount() + " 笔"
+                + (toNext < 0 ? "，已满级" : "，再 " + toNext + " 笔升级") + "）");
         invLore.add("§7动态改价商品: §f" + state.dynamicPrices().size() + " §7种");
         invLore.add("§7当前上架: §f" + state.offeredItems().size() + " §7种");
         var vLoc = state.entity() != null ? state.entity().getLocation() : null;
