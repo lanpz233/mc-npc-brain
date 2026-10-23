@@ -91,7 +91,8 @@ public final class VillagerAutoRegisterListener implements Listener {
         //    否则 Paper 实体数据里存着"§6牧师"，重启后永远顶着职业名
         String custom = villager.getCustomName() != null ? villager.getCustomName().replaceAll("§.", "") : null;
         String name = (custom == null || custom.equals(prof.zhName))
-                ? plugin.uniqueRandomName()
+                ? plugin.uniqueRandomName(com.howard.mcai.ai.NameLibrary.randomGender(),
+                        plugin.villageIdAt(villager.getLocation()))
                 : custom;
         // 全局唯一兜底：旧版持久化的自定义名也可能撞名（多个"农夫老李"），撞了就换随机名
         name = plugin.ensureUniqueName(name);

@@ -364,6 +364,74 @@ public final class VillagerState {
         return tradeLevel() > before;
     }
 
+    // ===== 胆量与打劫（Fong 2026-10-23 定稿） =====
+
+    /**
+     * 胆量（0~100）：构造时抽一次、终身不变，MemoryStore 持久化后以存档为准。
+     * 与恐惧一起决定被威胁时撑不撑得住，规则本体在 ai/RobberyWill（插件掷骰、模型只演）。
+     */
+    private int courage = com.howard.mcai.ai.RobberyWill.rollCourage(new java.util.Random());
+
+    /** 上次被抢成功的游戏日（世界 fullTime/24000）；-1 = 从没被抢过。同一个人同一天内榨不出第二回 */
+    private long lastRobbedDay = -1;
+
+    public int courage() {
+        return courage;
+    }
+
+    public long lastRobbedDay() {
+        return lastRobbedDay;
+    }
+
+    /** MemoryStore 从存档恢复胆量与被抢日（老存档无字段则保留构造时抽的胆量、视为没被抢过） */
+    public void restoreCourageAndRobbed(int courage, long lastRobbedDay) {
+        this.courage = Math.max(0, Math.min(100, courage));
+        this.lastRobbedDay = lastRobbedDay;
+    }
+
+    /** 记一次被抢成功（交出财物的工具真成交时调用） */
+    public void markRobbed(long gameDay) {
+        this.lastRobbedDay = gameDay;
+    }
+
+    // —— 打劫进行时（瞬时状态，不落盘） ——
+
+    /** 破防窗口：被吓破胆后开窗一段时间，窗口内“交出财物”工具才对这位玩家放行 */
+    private volatile long surrenderUntilMillis;
+    private volatile java.util.UUID surrenderPlayer;
+
+    /** 最近一次被威胁的时刻与对象（抢劫对话还没断的判定） */
+    private volatile long lastThreatAtMillis;
+    private volatile java.util.UUID lastThreatBy;
+
+    public void noteThreat(java.util.UUID playerUuid) {
+        this.lastThreatBy = playerUuid;
+        this.lastThreatAtMillis = System.currentTimeMillis();
+    }
+
+    /** withinMs 内刚被这位玩家威胁过（抢劫这场对话还接着） */
+    public boolean threatenedRecentlyBy(java.util.UUID playerUuid, long withinMs) {
+        return playerUuid != null && playerUuid.equals(lastThreatBy)
+                && System.currentTimeMillis() - lastThreatAtMillis <= withinMs;
+    }
+
+    /** 开/续破防窗口（窗口只认这位玩家来交割） */
+    public synchronized void openSurrenderWindow(java.util.UUID playerUuid, long durationMs) {
+        this.surrenderPlayer = playerUuid;
+        this.surrenderUntilMillis = System.currentTimeMillis() + durationMs;
+    }
+
+    /** 这位玩家的破防窗口还开着吗（交出财物工具的门） */
+    public boolean surrenderOpenFor(java.util.UUID playerUuid) {
+        return playerUuid != null && playerUuid.equals(surrenderPlayer)
+                && System.currentTimeMillis() <= surrenderUntilMillis;
+    }
+
+    public void closeSurrenderWindow() {
+        this.surrenderUntilMillis = 0;
+        this.surrenderPlayer = null;
+    }
+
     // ===== NPC 库存（世界交互 give/place/equip 的物资来源）=====
 
     /**
