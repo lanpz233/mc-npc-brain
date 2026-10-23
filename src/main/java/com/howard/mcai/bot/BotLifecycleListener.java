@@ -40,6 +40,7 @@ public final class BotLifecycleListener implements Listener {
         svc.plugin().getLogger().info("[MC-AI] 假人 " + a.state.chineseName + "（" + a.state.accountName
                 + "）死亡，累计 " + a.state.deaths + " 次");
         svc.storeDirty();
+        a.expectGone = true; // 已记死亡，扫描别重复记
         svc.onBotGone(p);
     }
 

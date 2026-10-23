@@ -63,6 +63,8 @@ public final class BotAgent {
     public boolean llmBusy;
     /** 上次记死亡的时间（PlayerDeath/EntityDeath 双通道去重）。 */
     public long deadRecordedAt;
+    /** 预期消失（插件遣散/已记死亡）：认领扫描的"消失按死亡记账"跳过他。 */
+    public boolean expectGone;
     /** 背包满已提醒过（回满再提醒）。 */
     public boolean fullWarned;
 
