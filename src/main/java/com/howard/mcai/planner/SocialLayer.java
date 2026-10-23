@@ -46,8 +46,8 @@ public final class SocialLayer extends TickLayer {
         this.bubbleManager = bubbleManager;
     }
 
-    /** 上次补货的"天数"（getFullTime()/24000），跨天触发一次 */
-    private long lastRestockDay = -1;
+    /** 上次刷新的"天数"（getFullTime()/24000），跨天触发一次 */
+    private long lastRefreshDay = -1;
 
     @Override
     protected void onTick(CentralPlanner planner) {
@@ -58,19 +58,18 @@ public final class SocialLayer extends TickLayer {
             maybeGossip(vState);
             decayFavor(vState);
         }
-        dailyRestock();
+        dailyRefresh();
     }
 
     /**
-     * 每日补货（SPEC 2.13"NPC 每天按职业补少量基础物资"）：
-     * 商店卖空不能永久空店。每天（游戏时间）一次：
-     * <ul>
-     *   <li>口粮保底：面包少于 4 → 补到 8（别让村民饿死）</li>
-     *   <li>职业招牌：seedProfessionPool 补 2-3 种职业物品（小量）</li>
-     *   <li>囤货超 96 件的不补（防背包无限膨胀）</li>
-     * </ul>
+     * 每日刷新背包（Fong 2026-10-23 定，取代旧「每日补货」）：旧版只往里塞、
+     * 从不往外拿，职业货堆过总量闸（96）后整次补货被跳过，连口粮都停补，
+     * 村民背包塞满杂物却没吃的、饿死街头。现在每天（游戏时间）跨天一次，
+     * 每个村民按 {@link com.howard.mcai.mob.DailyRefresh} 的规矩过一遍日子：
+     * 以昨天的家底为基底，职业货/杂物小幅流动并封顶、口粮保底钉死、
+     * 钱和私人物品不动。开服后第一轮也会刷一次（昨天的账在存档里，照刷不误）。
      */
-    private void dailyRestock() {
+    private void dailyRefresh() {
         long day = -1;
         for (VillagerState vs : villagers.values()) {
             if (vs.entity().isValid()) {
@@ -78,24 +77,17 @@ public final class SocialLayer extends TickLayer {
                 break;
             }
         }
-        if (day < 0 || day == lastRestockDay) return;
-        lastRestockDay = day;
+        if (day < 0 || day == lastRefreshDay) return;
+        lastRefreshDay = day;
         int n = 0;
         for (VillagerState vs : java.util.List.copyOf(villagers.values())) {
             if (!vs.entity().isValid() || vs.entity().isDead()) continue;
-            int total = vs.inventorySnapshot().values().stream()
-                    .mapToInt(i -> i == null ? 0 : i).sum();
-            if (total > 96) continue;
-            int bread = vs.stockOf(org.bukkit.Material.BREAD);
-            if (bread < 8) {
-                vs.addToInventory(org.bukkit.Material.BREAD, 8 - bread);
-            }
-            vs.seedProfessionPool();
+            vs.applyDailyRefresh(day);
             plugin.getMemoryStore().markDirty(vs.getUniqueId());
             n++;
         }
         if (n > 0) {
-            plugin.getLogger().info("§b[MC-AI] 每日补货: " + n + " 个村民（第 " + day + " 天）");
+            plugin.getLogger().info("§b[MC-AI] 每日刷新背包: " + n + " 个村民（第 " + day + " 天）");
         }
     }
 
