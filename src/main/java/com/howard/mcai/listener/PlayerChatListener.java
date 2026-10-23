@@ -77,6 +77,13 @@ public final class PlayerChatListener implements Listener {
                 return;
             }
 
+            // === 假人路由（v0.7.0）：喊名字/对话续接/凑近时先给假人；
+            // 正在跟村民对话且没点名假人时，BotChatService 自己会让路 ===
+            if (plugin.getBotService() != null
+                    && plugin.getBotService().chat().tryHandle(player, message, captured != null)) {
+                return;
+            }
+
             if (captured != null) {
                 // 控制台留档玩家→NPC 的半句：与 NPC 台词统一 [chat] 前缀，
                 // 格式 玩家名>村民名，保证"谁对谁说话"在控制台完整可追溯
