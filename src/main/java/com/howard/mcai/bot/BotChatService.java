@@ -27,6 +27,20 @@ public final class BotChatService {
      */
     public boolean tryHandle(Player speaker, String message, boolean inVillagerConversation) {
         BotAgent best = null;
+        // 0) 右键对话锁定中 —— 聊天直达，不用贴脸；走太远（>16 格）自动散
+        for (BotAgent a : svc.agents()) {
+            if (speaker.getUniqueId().equals(a.convPartner)) {
+                if (System.currentTimeMillis() > a.convUntil || !a.alive()) { a.convPartner = null; break; }
+                if (!a.player.getWorld().equals(speaker.getWorld())
+                        || a.player.getLocation().distanceSquared(speaker.getLocation()) > 16 * 16) {
+                    a.convPartner = null;
+                    speaker.sendMessage("§7[MC-AI] 你走远了，和 " + a.state.chineseName + " 的对话结束了。");
+                    break;
+                }
+                best = a;
+                break;
+            }
+        }
         // 1) 喊名字（中文名或账号名）—— 隔多远都接
         for (BotAgent a : svc.agents()) {
             if (!a.alive()) continue;
@@ -60,6 +74,8 @@ public final class BotChatService {
         BotAgent a = best;
         a.chatPartner = speaker.getUniqueId();
         a.lastChatAt = System.currentTimeMillis();
+        // 锁定中就续期（3 分钟没说话才散）
+        if (speaker.getUniqueId().equals(a.convPartner)) a.convUntil = a.lastChatAt + 180_000;
         a.state.pushChat(speaker.getName() + ": " + message);
         // 转头看说话的人（活人感）
         BotJobs.lookAt(svc, a, speaker.getEyeLocation());
@@ -70,6 +86,40 @@ public final class BotChatService {
         }
         chatWithModel(a, speaker, message);
         return true;
+    }
+
+    /**
+     * 右键假人 = 开始/结束对话（Fong 要求，跟村民一个待遇，不再靠"凑近说话"）。
+     * 开始：锁定对话（聊天直达、16 格内有效、3 分钟没说话自动散），他先停下手头的活，
+     * 转头看着你并开口打招呼；再右键一次 = 结束。聊完想让他接着干活，重新吩咐一句即可。
+     */
+    public void toggleConversation(Player player, BotAgent a) {
+        if (!a.alive()) return;
+        long now = System.currentTimeMillis();
+        if (player.getUniqueId().equals(a.convPartner) && now <= a.convUntil) {
+            a.convPartner = null;
+            svc.sayTo(a, player, "那我先忙去了，有事喊我。");
+            player.sendMessage("§7[MC-AI] 和 " + a.state.chineseName + " 的对话结束了。");
+            return;
+        }
+        // 别人正锁着他 → 先抢过来（同一时刻只跟一个人右键对话）
+        a.convPartner = player.getUniqueId();
+        a.convUntil = now + 180_000;
+        a.chatPartner = player.getUniqueId();
+        a.lastChatAt = now;
+        if (a.mode != BotAgent.Mode.IDLE) {
+            a.haltAll(svc);
+            player.sendMessage("§7[MC-AI] " + a.state.chineseName + " 先停下手里的事跟你聊（聊完要他接着干，重新吩咐一句）。");
+        } else {
+            player.sendMessage("§7[MC-AI] 你在和 " + a.state.chineseName + " 对话（打字就是跟他说；再右键他或走远就结束）。");
+        }
+        BotJobs.lookAt(svc, a, player.getEyeLocation());
+        greet(a, player);
+    }
+
+    /** 开始对话时的开场白：由模型以他的身份先开口（插件只给情境，话还是他自己说）。 */
+    private void greet(BotAgent a, Player speaker) {
+        chatWithModel(a, speaker, null);
     }
 
     private void chatWithModel(BotAgent a, Player speaker, String message) {
@@ -96,7 +146,14 @@ public final class BotChatService {
             int from = Math.max(0, s.recentChat.size() - 6);
             for (int i = from; i < s.recentChat.size(); i++) ctx.append(s.recentChat.get(i)).append("\n");
         }
-        ctx.append(speaker.getName()).append(" 对你说：").append(message);
+        if (message != null) {
+            ctx.append(speaker.getName()).append(" 对你说：").append(message);
+        } else {
+            // 开场白（右键开始对话时）：情境由插件给，话由他自己说
+            ctx.append("（").append(speaker.getName())
+               .append(" 走到你面前，主动想跟你聊聊。你先开口跟他打个招呼：")
+               .append("如果你们很熟、或者记得关于他的事，就像老朋友那样自然；不熟就简单自我介绍一句。）");
+        }
 
         List<Map<String, String>> messages = new ArrayList<>();
         Map<String, String> m1 = new HashMap<>(); m1.put("role", "system"); m1.put("content", sys.toString());

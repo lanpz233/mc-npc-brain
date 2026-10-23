@@ -59,6 +59,12 @@ public final class BotAgent {
     /** 正在对话的玩家 + 最近对话时间（聊天路由续接用）。 */
     public UUID chatPartner;
     public long lastChatAt;
+    /** 右键对话锁定：锁定对象 + 到期时间（毫秒）。锁定中聊天直达、不用贴脸。 */
+    public UUID convPartner;
+    public long convUntil;
+    /** 上次 look 目标与时间（lookAt 降频用：同目标短时间不重发，防控制台刷屏）。 */
+    public double lastLookX, lastLookY, lastLookZ;
+    public long lastLookAt;
     /** 模型请求在途标记（防并发刷屏）。 */
     public boolean llmBusy;
     /** 上次记死亡的时间（PlayerDeath/EntityDeath 双通道去重）。 */
@@ -85,5 +91,6 @@ public final class BotAgent {
         job = Job.NONE;
         handle = null;
         combatTarget = null;
+        followUuid = null;
     }
 }

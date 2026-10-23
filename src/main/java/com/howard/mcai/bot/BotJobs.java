@@ -39,6 +39,13 @@ public final class BotJobs {
     }
 
     static void lookAt(BotService svc, BotAgent a, Location t) {
+        // 降频：Leaves 每收到一条 action 命令就在控制台打一行日志，
+        // 干活/聊天时每秒重发同一个 look 会刷屏（Fong 实测上报）。
+        // 目标基本没动（<1.5 格）且刚发过（<3 秒）就不重发，朝向不会丢。
+        long now = System.currentTimeMillis();
+        double dx = t.getX() - a.lastLookX, dy = t.getY() - a.lastLookY, dz = t.getZ() - a.lastLookZ;
+        if (now - a.lastLookAt < 3_000 && dx * dx + dy * dy + dz * dz < 2.25) return;
+        a.lastLookX = t.getX(); a.lastLookY = t.getY(); a.lastLookZ = t.getZ(); a.lastLookAt = now;
         svc.dispatchAction(a.state.accountName,
                 "look " + t.getX() + " " + t.getY() + " " + t.getZ());
     }
