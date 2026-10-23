@@ -44,6 +44,10 @@ public final class BotDriver {
     private long lastProgressAt;
     private int nudges;
     private boolean jumpCooldown;
+    /** 卡住后是否已试过"换条路"（先换路、再补位，别一卡就瞬移）。 */
+    private boolean stallReplanned;
+    /** 自己开过、等着随手关上的门（key=坐标串）。 */
+    private final java.util.Map<String, org.bukkit.block.Block> openedDoors = new java.util.LinkedHashMap<>();
 
     public BotDriver(NavService nav) { this.nav = nav; }
 
@@ -59,6 +63,7 @@ public final class BotDriver {
         lastPos = bot.getLocation();
         lastProgressAt = startedAt;
         nudges = 0;
+        stallReplanned = false;
         return handle;
     }
 
@@ -106,6 +111,15 @@ public final class BotDriver {
             lastProgressAt = now;
         }
         long stalledMs = now - lastProgressAt;
+        if (stalledMs > 4_000 && !stallReplanned) {
+            // 先换条路再走走看（卡住不等于没路，可能只是这条路点别扭）
+            stallReplanned = true;
+            replan(bot, cur);
+            aim = waypoints.peek() == null ? target : waypoints.peek();
+            lastProgressAt = now;
+            lastPos = cur.clone();
+            stalledMs = 0;
+        }
         if (stalledMs > 4_000) {
             // 兜底补位：真玩家 24 格内没人看着才许
             if (!realPlayerNear(bot, 24)) {
@@ -122,6 +136,7 @@ public final class BotDriver {
         // 转向 + 给速度
         double dx = aim.getX() - cur.getX(), dz = aim.getZ() - cur.getZ();
         double len = Math.hypot(dx, dz);
+        tendDoors(bot, cur, dx, dz);
         if (len > 0.01) {
             float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
             bot.setRotation(yaw, bot.getLocation().getPitch());
@@ -161,6 +176,51 @@ public final class BotDriver {
         } else {
             waypoints.add(target.clone());
         }
+    }
+
+    /**
+     * 门窗礼仪（v0.8.0）：走向的那格是能开的木门/栅栏门就顺手开开，
+     * 走过去离远了（>2.2 格）再随手关上——以前他不会开门，撞门卡住只能瞬移补位，很出戏。
+     * 铁门红石才开得了，不碰（真人也开不了）。
+     */
+    private void tendDoors(Player bot, Location cur, double dx, double dz) {
+        double len = Math.hypot(dx, dz);
+        if (len > 0.01) {
+            int bx = (int) Math.floor(cur.getX() + dx / len * 0.9);
+            int bz = (int) Math.floor(cur.getZ() + dz / len * 0.9);
+            int by = (int) Math.floor(cur.getY());
+            for (int y = by; y <= by + 1; y++) {
+                org.bukkit.block.Block b = bot.getWorld().getBlockAt(bx, y, bz);
+                if (tryOpen(b)) break;
+            }
+        }
+        if (!openedDoors.isEmpty()) {
+            var it = openedDoors.entrySet().iterator();
+            while (it.hasNext()) {
+                var e = it.next();
+                org.bukkit.block.Block b = e.getValue();
+                if (b.getLocation().add(0.5, 0, 0.5).distanceSquared(cur) > 2.2 * 2.2) {
+                    if (b.getBlockData() instanceof org.bukkit.block.data.Openable o && o.isOpen()) {
+                        o.setOpen(false);
+                        b.setBlockData(o);
+                    }
+                    it.remove();
+                }
+            }
+        }
+    }
+
+    private boolean tryOpen(org.bukkit.block.Block b) {
+        String name = b.getType().name();
+        if (!name.endsWith("_DOOR") && !name.endsWith("_FENCE_GATE") && !name.endsWith("_TRAPDOOR")) return false;
+        if (name.startsWith("IRON_")) return false;
+        if (b.getBlockData() instanceof org.bukkit.block.data.Openable o && !o.isOpen()) {
+            o.setOpen(true);
+            b.setBlockData(o);
+            openedDoors.put(b.getWorld().getName() + ":" + b.getX() + "," + b.getY() + "," + b.getZ(), b);
+            return true;
+        }
+        return false;
     }
 
     private boolean blockedAhead(Player bot) {
