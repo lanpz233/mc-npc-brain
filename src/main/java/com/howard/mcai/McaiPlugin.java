@@ -563,6 +563,7 @@ public final class McaiPlugin extends JavaPlugin {
         // give_item 已从老后门迁入统一柜（NpcGiveItemTool 以别名桥接旧名，对话模型菜单不变）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcGiveItemTool(this));
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcAcceptBarterTool(this));
+        toolRegistry.register(new com.howard.mcai.tool.tools.NpcSurrenderTool(this));
         // break_block / place_block 迁入统一柜（权限把关仍在 WorldInteractionService）
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcBreakBlockTool(this));
         toolRegistry.register(new com.howard.mcai.tool.tools.NpcPlaceBlockTool(this));
@@ -642,6 +643,7 @@ public final class McaiPlugin extends JavaPlugin {
         // 解析参数：最后一个如果是职业名就用它，剩下的拼名字
         VillagerProfession prof = null;
         String name;
+        int spawnVillageId = villageIdAt(player.getLocation());
 
         if (args.length >= 2) {
             // 先看最后一个是不是职业
@@ -651,14 +653,14 @@ public final class McaiPlugin extends JavaPlugin {
                 // 最后一个是职业，前面的是名字
                 name = args.length >= 3
                         ? String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length - 1))
-                        : uniqueRandomName();
+                        : uniqueRandomName(NameLibrary.randomGender(), spawnVillageId);
                 prof = argProf;
             } else {
                 // 不是职业 → 全部是名字
                 name = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
             }
         } else {
-            name = uniqueRandomName();
+            name = uniqueRandomName(NameLibrary.randomGender(), spawnVillageId);
         }
 
         // 用户指定的名字也可能撞名 → 全局唯一兜底（换随机名）
@@ -730,12 +732,23 @@ public final class McaiPlugin extends JavaPlugin {
 
     /** 指定性别生成唯一名（如兄弟随姓改名时要保留原性别，不能随机翻转） */
     public String uniqueRandomName(String gender) {
+        return uniqueRandomName(gender, -1);
+    }
+
+    /** 指定性别 + 所在村生成唯一名：姓氏随本村主姓（每村一个主姓，v0.6.1） */
+    public String uniqueRandomName(String gender, int villageId) {
         java.util.Set<String> used = usedNames();
         for (int i = 0; i < 50; i++) {
-            String name = NameLibrary.fullName(gender);
+            String name = NameLibrary.fullName(gender, villageId);
             if (!used.contains(name)) return name;
         }
-        return NameLibrary.fullName(gender) + (int) (Math.random() * 100);  // 重抽池抽完兜底，防死循环
+        return NameLibrary.fullName(gender, villageId) + (int) (Math.random() * 100);  // 重抽池抽完兜底，防死循环
+    }
+
+    /** 某位置属于哪个村（与 VillageTrust 共用一套划分）：起名定主姓、信任记账都认这个号 */
+    public int villageIdAt(org.bukkit.Location loc) {
+        if (loc == null || loc.getWorld() == null || getVillageTrust() == null) return -1;
+        return getVillageTrust().villageIdFor(loc.getWorld().getName(), loc.getX(), loc.getY(), loc.getZ());
     }
 
     /**

@@ -285,6 +285,9 @@ public final class CentralPlanner extends BukkitRunnable {
             // 等玩家亲口确认了才收。旧版直接扣货会闯祸：换物提议被砍一半执行 = 单方面没收玩家装备。
             // 刚处理完一笔待确认送礼的那一句不再登记新的一笔（"拿去"是答应，不是新提议）
             if (!hadPendingGift) effectiveMessage = annotateGift(vState, player, message, effectiveMessage);
+            // 打劫局势（v0.6.1）：威胁语境下掷破防骰子，把"撑不撑得住 + 家底锚点"注进本轮消息，
+            // 模型按简报演认怂谈价或求饶死扛；交割走 surrender 工具，插件把关
+            effectiveMessage = annotateRobbery(vState, player, message, effectiveMessage);
         }
         // 跟随认话（v0.5.0）：玩家嘴上叫他跟/叫他停 —— 不是提问是指令，插件认话 + 裁定，
         // 办不办当场定：答应/喊停由 FollowService 办掉并让他说一句话（HANDLED，本轮结束）；
@@ -362,6 +365,7 @@ public final class CentralPlanner extends BukkitRunnable {
         }
         if (threatened) {
             vState.emotion().addFear(THREAT_FEAR_HIT);
+            vState.noteThreat(pid);
             // 挨威胁是不能忘的事 —— 记一条只对该玩家可见的事实（日后对峙/记恨的依据）
             vState.addFact("旅者 " + player.getName() + " 威胁过我", pid);
         }
@@ -369,6 +373,84 @@ public final class CentralPlanner extends BukkitRunnable {
         sendDebug(player, "§b[MC-AI] 言行情绪:"
                 + (offended ? " 冒犯 好感" + String.format("%.0f", OFFEND_FAVOR_HIT) : "")
                 + (threatened ? " 威胁 恐惧+" + THREAT_FEAR_HIT : ""));
+    }
+
+    // ===== 打劫（Fong 2026-10-23 定稿：插件掷骰定破防、模型讨价还价、surrender 交割） =====
+
+    /** 破防窗口时长：破防后这段时间里谈价与交割有效，拖过了他缓过劲来就不认了 */
+    private static final long SURRENDER_WINDOW_MS = 120_000;
+    /** 抢劫对话的上下文：最后一次威胁之后这段时间内，后续每句话都还算在抢劫局里 */
+    private static final long ROBBERY_CONTEXT_MS = 90_000;
+    /** 进入抢劫上下文所需的最低恐惧（没被真吓到时，普通对话不掷骰子、不注简报） */
+    private static final int ROBBERY_CONTEXT_FEAR = 35;
+    /** 手里拿着家伙放狠话，恐惧额外加码 —— 亮家伙比动嘴吓人 */
+    private static final int WEAPON_FEAR_BONUS = 10;
+
+    /** 这句话是不是在威胁他（与 applyVerbalTemper 同一张词表） */
+    private static boolean isThreat(String message) {
+        return message != null && THREAT_PATTERN.matcher(message).find();
+    }
+
+    /**
+     * 打劫局势注入。触发范围卡死在“抢劫语境”里：本句是威胁 / 破防窗口开着 /
+     * 刚被这人威胁过且恐惧还没消——普通聊天一句不注、骰子不掷。
+     * <p>
+     * 掷骰在插件（ai/RobberyWill：恐惧 vs 胆量），结果只有两种简报：
+     * 破防 → 开交割窗口 + 家底锚点（绿宝石/口粮是账目，给实数），让他先哭穷开低价、
+     * 被逼再松口，谈成调 surrender；没破防 → 只许求饶哭穷死扛，工具门不开。
+     * 今天已被抢过的直接走“榨干”简报，防连刷。
+     */
+    private String annotateRobbery(VillagerState vState, Player player, String message, String effectiveMessage) {
+        UUID pid = player.getUniqueId();
+        boolean threatNow = isThreat(message);
+        boolean windowOpen = vState.surrenderOpenFor(pid);
+        boolean inContext = windowOpen || threatNow
+                || (vState.threatenedRecentlyBy(pid, ROBBERY_CONTEXT_MS)
+                    && vState.emotion().fear() >= ROBBERY_CONTEXT_FEAR);
+        if (!inContext) return effectiveMessage;
+
+        long day = vState.entity().getWorld().getFullTime() / 24000L;
+        if (vState.lastRobbedDay() == day) {
+            return effectiveMessage + "\n【局势简报】对方又来威胁你，但你今天已经被抢过一次，"
+                    + "身上值钱的东西早被掏空了，真的什么都交不出来。你就哭穷、摊手给他看，"
+                    + "让他知道抢你也没用；绝不能答应交出任何东西（系统也交不出来）。";
+        }
+
+        if (threatNow && holdsWeapon(player)) {
+            vState.emotion().addFear(WEAPON_FEAR_BONUS);
+            plugin.getMemoryStore().markDirty(vState.getUniqueId());
+        }
+
+        int fear = vState.emotion().fear();
+        if (!windowOpen) {
+            if (!com.howard.mcai.ai.RobberyWill.breaks(fear, vState.courage(), new java.util.Random())) {
+                return effectiveMessage + "\n【局势简报】对方在威胁你，你现在"
+                        + com.howard.mcai.ai.RobberyWill.fearTierZh(fear)
+                        + "，但你还撑得住，绝不能真把东西交出去（交东西的工具会被系统拦下，嘴上说了也不算）。"
+                        + "你可以求饶、哭穷、拖时间、喊救命，或者硬扛着骂回去——按你的性格来。";
+            }
+            plugin.getLogger().info("§b[MC-AI] 打劫破防: " + com.howard.mcai.ai.Smalltalk.nameOf(vState)
+                    + " 恐惧=" + fear + " 胆量=" + vState.courage() + " ← " + player.getName());
+        }
+        // 破防（含窗口续期）：开窗并给出家底锚点，让他有本账可以护、可以谈
+        vState.openSurrenderWindow(pid, SURRENDER_WINDOW_MS);
+        int emeralds = vState.stockOf(org.bukkit.Material.EMERALD);
+        int food = vState.totalFoodStock();
+        return effectiveMessage + "\n【局势简报】你已经被吓破胆了（你现在"
+                + com.howard.mcai.ai.RobberyWill.fearTierZh(fear)
+                + "），只想破财消灾、保住性命。你的家底：绿宝石 " + emeralds + " 个、吃的 " + food + " 个，"
+                + "背包里的其他东西也都能拿出来谈。你还得靠这些东西过日子，所以先哭穷、只肯给一小部分，"
+                + "对方不依、继续吓你，你再一点一点往上加。谈成多少，就调用 surrender 工具，"
+                + "按谈好的物品和数量交出去（交绿宝石就把物品填“绿宝石”）；只能交你真有的东西，"
+                + "交完就不要再答应多给。";
+    }
+
+    /** 手里拿着家伙（剑/斧/三叉戟/重锤）—— 亮家伙放狠话比空口白话吓人 */
+    private static boolean holdsWeapon(Player player) {
+        var hand = player.getInventory().getItemInMainHand();
+        if (hand == null) return false;
+        String t = hand.getType().name();
+        return t.endsWith("_SWORD") || t.endsWith("_AXE") || t.equals("TRIDENT") || t.equals("MACE");
     }
 
     // ===== 教学/学习机制 =====
@@ -1507,6 +1589,22 @@ public final class CentralPlanner extends BukkitRunnable {
                                 : "§e" + playerFacingReason(preUnifiedResult, "这笔换物没能成交");
                     } else {
                         gatedReject = "§e系统繁忙，这笔换物没能成交";
+                    }
+                }
+                case "surrender" -> {
+                    // 打劫交割（v0.6.1）：与 give_item 同路提前执行——真交出去了，
+                    // 他嘴上的“给你、饶了我”才算数；被门拦下（没破防/今天已榨干）就剥掉空头承诺
+                    if (isUnifiedTool("surrender")) {
+                        preUnifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
+                        reallyGave = preUnifiedResult != null && preUnifiedResult.success()
+                                && preUnifiedResult.data() != null
+                                && preUnifiedResult.data().has("delivered")
+                                && preUnifiedResult.data().get("delivered").getAsInt() > 0;
+                        gatedReject = reallyGave ? null
+                                : "§e" + playerFacingReason(preUnifiedResult, "他没能把东西交出来");
+                    } else {
+                        gatedReject = "§e系统繁忙，他没能把东西交出来";
+                        reallyGave = false;
                     }
                 }
                 default -> { /* 其余工具没有"会被静默拒绝"的门槛，仍走第三步正常执行 */ }

@@ -47,6 +47,7 @@ public final class VillageTrust {
     private static final class Entry {
         int score = DEFAULT_SCORE;
         int caughtCount = 0;
+        int robbedCount = 0;
         long gainDay = Long.MIN_VALUE;
         int gainToday = 0;
     }
@@ -120,6 +121,26 @@ public final class VillageTrust {
         return e.score;
     }
 
+    /** 打劫得手一次的信任扣分 —— 比偷窃被抓更招恨：人家是明抢 */
+    public static final int ROBBED_PENALTY = 20;
+
+    public synchronized int robbedCount(UUID player, int villageId) {
+        Entry e = entries.get(key(player, villageId));
+        return e == null ? 0 : e.robbedCount;
+    }
+
+    /**
+     * 记一次“被抢成功”：信任大跌 + 累计被抢次数。
+     *
+     * @return 扣完之后的信任分
+     */
+    public synchronized int onRobbed(UUID player, int villageId) {
+        Entry e = entries.computeIfAbsent(key(player, villageId), k -> new Entry());
+        e.score = Math.max(0, e.score - ROBBED_PENALTY);
+        e.robbedCount++;
+        return e.score;
+    }
+
     /**
      * 记一次做成的买卖（赎回）：+1，每天最多 {@link #DAILY_TRADE_GAIN_CAP} 分。
      *
@@ -167,6 +188,7 @@ public final class VillageTrust {
             JsonObject o = new JsonObject();
             o.addProperty("score", en.getValue().score);
             o.addProperty("caught", en.getValue().caughtCount);
+            o.addProperty("robbed", en.getValue().robbedCount);
             o.addProperty("gainDay", en.getValue().gainDay);
             o.addProperty("gainToday", en.getValue().gainToday);
             es.add(en.getKey(), o);
@@ -196,6 +218,7 @@ public final class VillageTrust {
                     Entry e = new Entry();
                     e.score = o.get("score").getAsInt();
                     e.caughtCount = o.has("caught") ? o.get("caught").getAsInt() : 0;
+                    e.robbedCount = o.has("robbed") ? o.get("robbed").getAsInt() : 0;
                     e.gainDay = o.has("gainDay") ? o.get("gainDay").getAsLong() : Long.MIN_VALUE;
                     e.gainToday = o.has("gainToday") ? o.get("gainToday").getAsInt() : 0;
                     t.entries.put(k, e);

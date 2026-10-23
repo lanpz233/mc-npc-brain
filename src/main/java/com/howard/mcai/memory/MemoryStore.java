@@ -233,6 +233,13 @@ public final class MemoryStore {
                     data.has("tradeBornLevel") ? data.get("tradeBornLevel").getAsInt() : state.tradeBornLevel(),
                     data.has("tradeCount") ? data.get("tradeCount").getAsInt() : state.tradeCount());
         }
+        // 胆量与被抢日持久化 —— 胆量终身不变、被抢冷却跨重启保留；老存档无字段 →
+        // 保留构造时抽的胆量（等效补抽）、视为没被抢过
+        if (data.has("courage") || data.has("lastRobbedDay")) {
+            state.restoreCourageAndRobbed(
+                    data.has("courage") ? data.get("courage").getAsInt() : state.courage(),
+                    data.has("lastRobbedDay") ? data.get("lastRobbedDay").getAsLong() : state.lastRobbedDay());
+        }
         // NPC 库存持久化 —— 送礼/放置/装备的账面物资跨重启保留
         if (data.has("inventory") && data.get("inventory").isJsonObject()) {
             Map<String, Integer> inv = new HashMap<>();
@@ -362,6 +369,8 @@ public final class MemoryStore {
         root.addProperty("rank", state.rank().name());
         root.addProperty("tradeBornLevel", state.tradeBornLevel());
         root.addProperty("tradeCount", state.tradeCount());
+        root.addProperty("courage", state.courage());
+        root.addProperty("lastRobbedDay", state.lastRobbedDay());
         root.addProperty("inventorySeeded", state.isInventorySeeded());
         root.addProperty("walletSeeded", state.isWalletSeeded());
         root.addProperty("walletBoostV013", state.isWalletV013Boosted());

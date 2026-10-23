@@ -12,7 +12,9 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * NPC 名字库 —— 姓氏池（加权）+ 名字用字池（分男女），生成"姓 + 1~2 字"的中文名，
@@ -50,6 +52,18 @@ public final class NameLibrary {
 
     /** 本村主姓（village_names.json 持久化；加载失败时为 null，走加权随机） */
     private static String mainSurname = null;
+
+    /**
+     * 每村一个主姓（Fong 2026-10-23 定）：村庄 id（VillageTrust 的划分）→ 该村主姓。
+     * <p>
+     * 旧实现只有一份全服主姓，结果走到天涯海角都是同一个姓。改为按村落盘：
+     * 第一次给某个村的村民起名时抽定，之后该村新村民 80% 随本村主姓、20% 杂姓。
+     * 旧档迁移：第一个被问到的村子继承旧主姓（老服的主村就是它，“李村”不改口）。
+     */
+    private static final Map<Integer, String> VILLAGE_SURNAMES = new HashMap<>();
+
+    /** village_names.json 的落盘位置（load 时记下，新村子抽姓后回写用） */
+    private static Path villageProfileFile = null;
 
     private static boolean loaded = false;
 
@@ -91,6 +105,8 @@ public final class NameLibrary {
         SURNAME_WEIGHTS.clear();
         SURNAME_WEIGHT_TOTAL = 0;
         mainSurname = null;
+        VILLAGE_SURNAMES.clear();
+        villageProfileFile = null;
         loaded = false;
 
         boolean okGiven = loadJson(dataFolder, "given_names.json", NameLibrary::parseGiven);
@@ -150,34 +166,85 @@ public final class NameLibrary {
     }
 
     /**
-     * 读取/初始化本村主姓（village_names.json）。
-     * 已存在则复用（重启姓氏分布稳定）；不存在/损坏则按权重抽一个主姓并落盘。
+     * 读取/初始化各村主姓（village_names.json）。
+     * <p>
+     * 文件格式 v2：{@code {"mainSurname": "李", "villages": {"1": "李", "2": "王"}}}。
+     * 旧格式只有 mainSurname（全服主姓）也能读：它先留作全局回退，等第一个村子来问时
+     * 由 {@link #surnameForVillage(int)} 继承过去。文件不存在/损坏则抽一个全局回退主姓。
      */
     private static void loadVillageProfile(Path dataFolder) {
-        Path file = dataFolder.resolve("village_names.json");
+        villageProfileFile = dataFolder.resolve("village_names.json");
         try {
-            if (Files.exists(file)) {
-                try (Reader r = Files.newBufferedReader(file)) {
+            if (Files.exists(villageProfileFile)) {
+                try (Reader r = Files.newBufferedReader(villageProfileFile)) {
                     JsonObject o = JsonParser.parseReader(r).getAsJsonObject();
                     if (o.has("mainSurname")) {
                         String m = o.get("mainSurname").getAsString();
-                        if (SURNAMES.contains(m)) {
-                            mainSurname = m;
-                            return;
+                        if (SURNAMES.contains(m)) mainSurname = m;
+                    }
+                    if (o.has("villages") && o.get("villages").isJsonObject()) {
+                        for (var e : o.getAsJsonObject("villages").entrySet()) {
+                            String s = e.getValue().getAsString();
+                            if (SURNAMES.contains(s)) {
+                                VILLAGE_SURNAMES.put(Integer.parseInt(e.getKey()), s);
+                            }
                         }
                     }
                 }
             }
-            mainSurname = weightedSurname();
+        } catch (IOException | RuntimeException e) {
+            // 读坏了不阻断：下面统一兜底抽一个
+        }
+        if (mainSurname == null && !SURNAMES.isEmpty()) mainSurname = weightedSurname();
+        saveVillageProfile();
+    }
+
+    /** 把全局回退主姓 + 各村主姓写回 village_names.json（新村子抽姓后调用） */
+    private static void saveVillageProfile() {
+        if (villageProfileFile == null) return;
+        try {
             JsonObject o = new JsonObject();
-            o.addProperty("mainSurname", mainSurname);
-            Files.createDirectories(dataFolder);
-            try (Writer w = Files.newBufferedWriter(file)) {
+            if (mainSurname != null) o.addProperty("mainSurname", mainSurname);
+            JsonObject vs = new JsonObject();
+            for (var e : VILLAGE_SURNAMES.entrySet()) {
+                vs.addProperty(String.valueOf(e.getKey()), e.getValue());
+            }
+            o.add("villages", vs);
+            Files.createDirectories(villageProfileFile.getParent());
+            try (Writer w = Files.newBufferedWriter(villageProfileFile)) {
                 new GsonBuilder().setPrettyPrinting().create().toJson(o, w);
             }
         } catch (IOException | RuntimeException e) {
-            if (mainSurname == null && !SURNAMES.isEmpty()) mainSurname = SURNAMES.get(0);
+            // 落盘失败不阻断起名：各村主姓本次运行内仍有效，下次启动重新抽
         }
+    }
+
+    /**
+     * 某个村的主姓：已抽定则复用（重启稳定）；第一次问到这个村时抽定并落盘。
+     * villageId &lt; 0（不知道在哪个村）→ 全局回退主姓（旧口径）。
+     */
+    public static synchronized String surnameForVillage(int villageId) {
+        if (villageId < 0) return mainSurname;
+        String s = VILLAGE_SURNAMES.get(villageId);
+        if (s != null) return s;
+        if (VILLAGE_SURNAMES.isEmpty() && mainSurname != null) {
+            s = mainSurname;  // 第一个村子继承旧档主姓：老服的主村不改口
+        } else {
+            s = drawVillageSurname();
+        }
+        VILLAGE_SURNAMES.put(villageId, s);
+        saveVillageProfile();
+        return s;
+    }
+
+    /** 给新村子抽主姓：尽量不跟已有村子撞姓——各村一个姓才认得出谁是谁，抽 8 次还撞就认了 */
+    private static String drawVillageSurname() {
+        java.util.Set<String> used = new java.util.HashSet<>(VILLAGE_SURNAMES.values());
+        String s = weightedSurname();
+        for (int i = 0; i < 8 && used.contains(s); i++) {
+            s = weightedSurname();
+        }
+        return s;
     }
 
     // ===== 性别反推 =====
@@ -211,9 +278,18 @@ public final class NameLibrary {
         return Math.random() < 0.5 ? "F" : "M";
     }
 
-    /** 取本村姓氏：80% 用主姓，其余按权重抽杂姓（模拟真实村庄大姓/杂姓分布） */
+    /** 取姓氏（不知道在哪个村时）：80% 用全局回退主姓，其余按权重抽杂姓 */
     public static String randomSurname() {
-        if (mainSurname != null && Math.random() < MAIN_SURNAME_RATE) return mainSurname;
+        return randomSurname(-1);
+    }
+
+    /**
+     * 取某村的姓氏：80% 用本村主姓，其余按权重抽杂姓
+     * （模拟真实村庄：一个村一个大姓，再掺个别外来户）。
+     */
+    public static String randomSurname(int villageId) {
+        String main = villageId >= 0 ? surnameForVillage(villageId) : mainSurname;
+        if (main != null && Math.random() < MAIN_SURNAME_RATE) return main;
         return weightedSurname();
     }
 
@@ -238,9 +314,14 @@ public final class NameLibrary {
         return sb.toString();
     }
 
-    /** 生成完整名：本村姓氏 + 按性别的名字用字（性别天然跟着名字走） */
+    /** 生成完整名：姓氏 + 按性别的名字用字（性别天然跟着名字走） */
     public static String fullName(String gender) {
-        return randomSurname() + randomGivenName(gender);
+        return fullName(gender, -1);
+    }
+
+    /** 生成某村村民的完整名：80% 随本村主姓 */
+    public static String fullName(String gender, int villageId) {
+        return randomSurname(villageId) + randomGivenName(gender);
     }
 
     private static String randomOf(List<String> pool) {
