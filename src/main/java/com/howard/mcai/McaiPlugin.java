@@ -94,6 +94,7 @@ public final class McaiPlugin extends JavaPlugin {
     private com.howard.mcai.security.TheftService theftService;
     private com.howard.mcai.nav.NavService navService;
     private com.howard.mcai.follow.FollowService followService;
+    private com.howard.mcai.bot.BotService botService;
 
     // ===== 事实与翻译（v0.3.0）静态镜像 + 账本/提醒状态 =====
     private static volatile int factFollowupChancePct = 33;
@@ -345,6 +346,12 @@ public final class McaiPlugin extends JavaPlugin {
         // 7.4 自研寻路 + 跟随服务（v0.5.0）：寻路引擎无状态（带快照缓存），跟随服务管裁定与触发
         navService = new com.howard.mcai.nav.NavService();
         followService = new com.howard.mcai.follow.FollowService(this);
+        // 7.45 假人 AI（v0.7.0，Leaves /bot 接入）：档案载入 + 认领扫描 + 快慢两拍启动
+        botService = new com.howard.mcai.bot.BotService(this);
+        botService.load();
+        botService.start();
+        Bukkit.getPluginManager().registerEvents(
+                new com.howard.mcai.bot.BotLifecycleListener(botService), this);
         factTask = Bukkit.getScheduler().runTaskTimer(this, this::factTick, 600L, 600L);
 
         // 7.5 对话注视任务 —— 每 2 tick 让所有"正在对话"的村民持续面向玩家
@@ -446,6 +453,7 @@ public final class McaiPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (botService != null) botService.shutdown();
         getLogger().info("MC-AI shutting down...");
         if (packServer != null) {
             packServer.stop();
@@ -618,6 +626,7 @@ public final class McaiPlugin extends JavaPlugin {
             case "needs" -> handleNeeds(sender, args);
             case "envoy" -> handleEnvoy(sender, args);
             case "tool" -> handleTool(sender, args);
+            case "bot" -> { if (botService != null) botService.handleCommand(sender, args); }
             default -> sender.sendMessage("§c未知子命令: " + args[0]);
         }
         return true;
@@ -1262,6 +1271,10 @@ public final class McaiPlugin extends JavaPlugin {
 
     public com.howard.mcai.follow.FollowService getFollowService() {
         return followService;
+    }
+
+    public com.howard.mcai.bot.BotService getBotService() {
+        return botService;
     }
 
     private void saveWeatherLedgers() {
