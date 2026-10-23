@@ -196,25 +196,41 @@ public final class BotService {
         dispatchConsole("bot create " + account + " " + s.skinName + " "
                 + at.getX() + " " + at.getY() + " " + at.getZ());
         requester.sendMessage("§a[MC-AI] 正在招募 " + s.chineseName + "（" + account + "）……");
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            Player p = Bukkit.getPlayerExact(accountFinal);
-            if (p == null) {
-                plugin.getLogger().warning("[MC-AI] 招募失败：假人 " + accountFinal + " 没出现（Leaves 没开？）");
-                requester.sendMessage("§c[MC-AI] 招募失败，假人没来——服务器核心是 Leaves 吗？控制台看看有没有报错。");
-                return;
+        // Leaves 的 /bot create 是异步的：假人要走完登录流程才出现，实测能到 5 秒
+        // （v0.7.1 真服事故：原先只等 2 秒就报"招募失败"，人其实在后面到了）。
+        // 改为轮询等 15 秒，人一到就接上后续流程；认领扫描可能先 attach，这里兼容。
+        new org.bukkit.scheduler.BukkitRunnable() {
+            private int tries;
+            @Override public void run() {
+                Player p = a.player != null ? a.player : Bukkit.getPlayerExact(accountFinal);
+                if (p == null) {
+                    if (++tries >= 30) {
+                        cancel();
+                        plugin.getLogger().warning("[MC-AI] 招募失败：等了 15 秒假人 " + accountFinal + " 还没出现");
+                        if (requester.isOnline())
+                            requester.sendMessage("§c[MC-AI] 招募失败，等了 15 秒假人还没来——看下控制台 Leaves 有没有报错。");
+                    }
+                    return;
+                }
+                cancel();
+                if (a.player == null) attach(a, p);
+                // 创建坐标会被 Leaves 忽略（探针实测）→ 传送到请求者面前站好
+                Location front;
+                if (requester.isOnline()) {
+                    front = requester.getLocation().clone()
+                            .add(requester.getLocation().getDirection().setY(0).normalize().multiply(2.0));
+                    front.setY(requester.getWorld().getHighestBlockYAt(front) + 1);
+                    p.teleport(front);
+                } else {
+                    front = p.getLocation();
+                }
+                starterKit(p);
+                s.setBase(front.getWorld().getName(), front.getX(), front.getY(), front.getZ());
+                s.addFact("被 " + requester.getName() + " 招募来到这个世界");
+                storeDirty(); saveAll();
+                say(a, "大家好，我叫" + s.chineseName + "，刚来这儿，以后请多关照！");
             }
-            attach(a, p);
-            // 创建坐标会被 Leaves 忽略（探针实测）→ 传送到请求者面前站好
-            Location front = requester.getLocation().clone()
-                    .add(requester.getLocation().getDirection().setY(0).normalize().multiply(2.0));
-            front.setY(requester.getWorld().getHighestBlockYAt(front) + 1);
-            p.teleport(front);
-            starterKit(p);
-            s.setBase(front.getWorld().getName(), front.getX(), front.getY(), front.getZ());
-            s.addFact("被 " + requester.getName() + " 招募来到这个世界");
-            storeDirty(); saveAll();
-            say(a, "大家好，我叫" + s.chineseName + "，刚来这儿，以后请多关照！");
-        }, 40L);
+        }.runTaskTimer(plugin, 10L, 10L);
     }
 
     private void starterKit(Player p) {
