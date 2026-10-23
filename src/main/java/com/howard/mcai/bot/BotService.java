@@ -109,7 +109,19 @@ public final class BotService {
         for (BotAgent a : byAccount.values()) {
             if (a.player != null && (!a.player.isValid()
                     || Bukkit.getPlayerExact(a.state.accountName) == null)) {
-                onBotGone(a.player);
+                Player gone = a.player;
+                onBotGone(gone);
+                // 死亡事件对假人不触发（实测 PlayerDeath/EntityDeath 都不来）：
+                // 不是我们遣散的、却凭空消失 = 按死亡记账（/bot 手动删会误记，代价可接受）
+                if (!a.expectGone) {
+                    a.state.deaths++;
+                    a.state.addFact("死过一次");
+                    a.state.fear = Math.min(100, a.state.fear + 30);
+                    plugin.getLogger().info("[MC-AI] 假人 " + a.state.chineseName + "（" + a.state.accountName
+                            + "）消失，按死亡记账，累计 " + a.state.deaths + " 次");
+                    storeDirty();
+                }
+                a.expectGone = false;
             }
         }
         for (org.bukkit.World w : Bukkit.getWorlds()) {
@@ -209,6 +221,7 @@ public final class BotService {
     }
 
     public void dismiss(BotAgent a) {
+        a.expectGone = true; // 遣散不算死亡
         dispatchConsole("bot remove " + a.state.accountName);
         if (a.player != null) onBotGone(a.player);
         say(a, "那我先走了，保重！");
