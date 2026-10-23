@@ -367,6 +367,7 @@ public final class ShopGui implements InventoryHolder {
     private ItemStack npcCard() {
         List<String> lore = new ArrayList<>();
         lore.add("§7" + state.profession().zhName);
+        lore.add("§7买卖等级 " + state.tradeLevel() + " 级 §8（等级越高货越好，每天换新货）");
         String line = session.npcLine();
         if (line != null && !line.isBlank()) {
             for (String chunk : wrap(line, 22)) lore.add("§f" + chunk);

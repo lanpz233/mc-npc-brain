@@ -216,14 +216,22 @@ public final class VillagerState {
      */
     public java.util.List<org.bukkit.inventory.MerchantRecipe> buildCurrentRecipes() {
         java.util.List<org.bukkit.inventory.MerchantRecipe> recipes = new java.util.ArrayList<>();
-        // 基础摊位：按村民抽货（ShopStocking 用村民 UUID 做固定种子）——同职业每个村民
-        // 卖的东西、数量、价格都不同，不再千人一面；价格由 PriceBook 按合成表推导。
+        // 基础摊位：按村民抽货（ShopStocking：每天刷新、招牌货固定、档次受买卖等级限制）——
+        // 同职业每个村民卖的东西、数量、价格都不同；价格由 PriceBook 按合成表推导。
         java.util.Set<org.bukkit.Material> stockedSell = new java.util.HashSet<>();
+        long shopDay = 0L;
+        org.bukkit.entity.Villager shopEnt = entity();
+        if (shopEnt != null && shopEnt.getWorld() != null) {
+            shopDay = shopEnt.getWorld().getFullTime() / 24000L;
+        }
         for (com.howard.mcai.ai.ShopStocking.StockedItem s
-                : com.howard.mcai.ai.ShopStocking.stockFor(profession, getUniqueId())) {
+                : com.howard.mcai.ai.ShopStocking.stockFor(profession, getUniqueId(), tradeLevel(), shopDay)) {
             recipes.add(s.buyBack()
                     ? com.howard.mcai.ai.TradeRegistry.createBuy(s.item(), s.count(), s.priceEmeralds())
-                    : com.howard.mcai.ai.TradeRegistry.createOffer(s.item(), s.priceEmeralds(), s.count()));
+                    : s.enchantZh() != null
+                            ? com.howard.mcai.ai.TradeRegistry.createEnchantedOffer(
+                                    s.item(), s.priceEmeralds(), s.count(), s.enchantZh())
+                            : com.howard.mcai.ai.TradeRegistry.createOffer(s.item(), s.priceEmeralds(), s.count()));
             if (!s.buyBack()) stockedSell.add(s.item());
         }
         // 附加 LLM 上架的额外商品（基础清单里没有的）—— 附魔商品用 createEnchantedOffer 重造。
@@ -315,6 +323,46 @@ public final class VillagerState {
      * 玩家可用 /ai envoy grant/revoke 授予/撤销，撤销后回到派生判定（多数情况下=平民）。
      */
     private volatile String rank = NpcRank.CIVILIAN.name();
+
+    // ===== 买卖等级（Fong 2026-10-23，仿原版交易等级）=====
+
+    /**
+     * 出生买卖等级（0~3，4 级永不出生）：构造时抽一次，MemoryStore 持久化后
+     * 以存档为准。有效等级见 {@link #tradeLevel()}。
+     */
+    private int tradeBornLevel = com.howard.mcai.ai.TradeLevels.initialLevel(new java.util.Random());
+
+    /** 累计成交笔数（买卖都算）：攒够门槛推算等级往上升，见 TradeLevels */
+    private int tradeCount;
+
+    /** 有效买卖等级 = max(出生等级, 笔数推算等级)：只升不降 */
+    public int tradeLevel() {
+        return Math.max(tradeBornLevel,
+                com.howard.mcai.ai.TradeLevels.levelForTrades(tradeCount));
+    }
+
+    /** 出生买卖等级（MemoryStore 持久化用） */
+    public int tradeBornLevel() {
+        return tradeBornLevel;
+    }
+
+    /** 累计成交笔数（MemoryStore 持久化 / 状态卡展示用） */
+    public int tradeCount() {
+        return tradeCount;
+    }
+
+    /** MemoryStore 从存档恢复买卖等级（钳到合法范围；老存档无字段则保留构造时抽的） */
+    public void restoreTrade(int bornLevel, int count) {
+        this.tradeBornLevel = Math.max(0, Math.min(com.howard.mcai.ai.TradeLevels.MAX_LEVEL, bornLevel));
+        this.tradeCount = Math.max(0, count);
+    }
+
+    /** 记一笔成交；有效等级因此提升时返回 true（结算处据此当场报喜） */
+    public synchronized boolean recordTrade() {
+        int before = tradeLevel();
+        tradeCount++;
+        return tradeLevel() > before;
+    }
 
     // ===== NPC 库存（世界交互 give/place/equip 的物资来源）=====
 

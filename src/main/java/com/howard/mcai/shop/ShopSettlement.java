@@ -151,11 +151,19 @@ public final class ShopSettlement {
     }
 
     /** 成交善后：记见面 + 好感 +1 + 标脏落盘（与原版交易窗时代的 VillagerTradeListener 一致）；
-     * 另记村庄信任赎回（v0.4.0：在村里做买卖能慢慢把信任挣回来，每天有上限） */
+     * 另记村庄信任赎回（v0.4.0：在村里做买卖能慢慢把信任挣回来，每天有上限）；
+     * 记买卖等级熟练（Fong 2026-10-23，仿原版）：成交攒笔数，升级当场告诉玩家 */
     private static void afterTrade(McaiPlugin plugin, Player player, VillagerState state) {
         state.recordMeeting(player.getUniqueId(), player.getName());
         state.emotion().addFavor(player.getUniqueId(), 1.0);
+        boolean leveledUp = state.recordTrade();
         plugin.getMemoryStore().markDirty(state.getUniqueId());
+        if (leveledUp) {
+            player.sendMessage("§6[买卖] " + npcName(state) + " 跟你做买卖练出来了，买卖等级升到 "
+                    + state.tradeLevel() + " 级，摊上会出更好的货了。");
+            plugin.getLogger().info("§b[MC-AI] 买卖升级: " + npcName(state)
+                    + " → " + state.tradeLevel() + " 级（累计成交 " + state.tradeCount() + " 笔）");
+        }
         var v = state.entity();
         if (v != null && v.getWorld() != null) {
             var loc = v.getLocation();
