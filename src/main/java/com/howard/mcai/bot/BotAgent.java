@@ -73,6 +73,22 @@ public final class BotAgent {
     public boolean expectGone;
     /** 背包满已提醒过（回满再提醒）。 */
     public boolean fullWarned;
+    // ===== v0.8.0 活气/自主（不落盘） =====
+    /** 上次溜达/张望/伸懒腰/去捡东西的时间（节流）。 */
+    public long lastWanderAt, lastGlanceAt, lastStretchAt, lastPickupAt;
+    /** 下次可以自发找活干的时间（冷却）。 */
+    public long nextSelfWorkAt;
+    /** 正在自发干活（收尾不喊派活台词，干完尝试存箱子）。 */
+    public boolean selfWork;
+    /** 自发干活的截止时间（钓鱼的内部计时更长，用这个封顶）。 */
+    public long selfWorkUntil;
+    /** 刚干完的活一句话（给聊天简报用，如"刚砍了会儿树"）。 */
+    public String lastWorkReport = "";
+    public long lastWorkAt;
+    /** 上次打招呼用的词库下标（防连着说同一句）。 */
+    public int lastGreetIdx = -1;
+    /** 正在去捡掉落物（gather 流程借 handle 赶路中）。 */
+    public boolean pickupRun;
 
     public BotAgent(BotState state, BotDriver driver) {
         this.state = state;

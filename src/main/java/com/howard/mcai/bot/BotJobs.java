@@ -154,7 +154,12 @@ public final class BotJobs {
             return;
         }
         // phase 2：钓着呢 —— Leaves 的 fish 动作自带收竿循环；这里只看总时长与突发状况
-        if (System.currentTimeMillis() > a.phaseUntil) {
+        // 自发钓鱼用 selfWorkUntil 封顶（内部计时是派活版的 10 分钟，自发别钓那么久）
+        long endAt = a.selfWork ? Math.min(a.phaseUntil, a.selfWorkUntil) : a.phaseUntil;
+        if (System.currentTimeMillis() > endAt) {
+            if (a.selfWork) { BotBrain.finishSelfWork(svc, a, "钓了会儿鱼"); return; }
+            a.lastWorkReport = "钓了会儿鱼";
+            a.lastWorkAt = System.currentTimeMillis();
             svc.say(a, "钓得差不多了，我先收竿。");
             a.haltAll(svc);
         }
@@ -218,8 +223,27 @@ public final class BotJobs {
         long now = System.currentTimeMillis();
         if (a.phaseUntil == 0) a.phaseUntil = now + 5 * 60_000L;
         if (now > a.phaseUntil) {
+            if (a.selfWork) { BotBrain.finishSelfWork(svc, a, logs ? "砍了会儿树" : "敲了会儿石头"); return; }
+            a.lastWorkReport = logs ? "砍了会儿树" : "敲了会儿石头";
+            a.lastWorkAt = now;
             svc.say(a, logs ? "砍得差不多了，先歇歇。" : "敲得差不多了，先歇歇。");
             a.haltAll(svc); return;
+        }
+        // 先把脚边掉落物捡了（多半是自己刚敲下来的）——别砍完就走、东西扔一地
+        if (a.pickupRun) {
+            if (a.handle != null && !a.handle.done()) return;
+            if (a.handle != null && a.handle.failed()) a.lastPickupAt = now + 30_000; // 够不着的别反复试
+            a.pickupRun = false;
+            a.handle = null;
+        } else if (!a.driver.driving() && now - a.lastPickupAt > 3_000) {
+            for (Entity e : bot.getWorld().getNearbyEntities(bot.getLocation(), 5, 3, 5)) {
+                if (e instanceof org.bukkit.entity.Item) {
+                    a.lastPickupAt = now;
+                    a.pickupRun = true;
+                    a.handle = a.driver.goTo(bot, e.getLocation(), 0.7);
+                    return;
+                }
+            }
         }
         // 身边 4 格内有目标 → 对准开敲
         Block near = nearestMatching(bot.getLocation(), 4, logs);
@@ -234,6 +258,9 @@ public final class BotJobs {
         // 远一点找下一棵/下一块
         Block far = nearestMatching(bot.getLocation(), 18, logs);
         if (far == null) {
+            if (a.selfWork) { BotBrain.finishSelfWork(svc, a, logs ? "砍了会儿树" : "敲了会儿石头"); return; }
+            a.lastWorkReport = logs ? "砍了会儿树" : "敲了会儿石头";
+            a.lastWorkAt = now;
             svc.say(a, logs ? "附近的树砍完了。" : "附近没石头可敲了。");
             a.haltAll(svc); return;
         }
@@ -294,6 +321,8 @@ public final class BotJobs {
                     // 走不回来且四下无人看 → 直接送回入口（保命兜底，不装样子）
                     bot.teleport(a.mineEntry);
                 }
+                a.lastWorkReport = "挖了条矿道";
+                a.lastWorkAt = System.currentTimeMillis();
                 svc.say(a, "挖完了，回来了。");
                 a.haltAll(svc);
             }

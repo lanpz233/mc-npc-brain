@@ -192,6 +192,40 @@ public final class BotChatService {
             case FOLLOW -> "你正跟着人走";
             default -> "你正闲着";
         };
-        return "现在是" + period + "，" + hunger + "，" + health + "，" + doing + "。";
+        StringBuilder sb = new StringBuilder();
+        sb.append("现在是").append(period).append("，").append(hunger).append("，").append(health)
+          .append("，").append(doing).append("。");
+        // v0.8.0：让他"看清"周围再说话，不再两眼一抹黑瞎聊
+        if (!a.lastWorkReport.isEmpty()
+                && System.currentTimeMillis() - a.lastWorkAt < 30 * 60_000L)
+            sb.append("你刚才").append(a.lastWorkReport).append("。");
+        java.util.List<String> near = new java.util.ArrayList<>();
+        for (org.bukkit.entity.Entity e : bot.getWorld().getNearbyEntities(bot.getLocation(), 8, 4, 8)) {
+            if (e == bot) continue;
+            if (e instanceof Player p) {
+                BotAgent other = svc.agentByUuid(p.getUniqueId());
+                near.add(other != null ? other.state.chineseName : p.getName());
+            }
+        }
+        sb.append(near.isEmpty() ? "你身边没别人。" : "你身边有：" + String.join("、", near) + "。");
+        org.bukkit.inventory.ItemStack hand = bot.getInventory().getItemInMainHand();
+        sb.append(hand == null || hand.getType().isAir() ? "你手里空着。"
+                : "你手里拿着" + handName(hand.getType()) + "。");
+        sb.append(a.state.hasBase() ? "你有自己的家。" : "你还没安家。");
+        return sb.toString();
+    }
+
+    /** 手里家伙的人话名（简报用，粗粒度即可）。 */
+    private static String handName(org.bukkit.Material m) {
+        String n = m.name();
+        if (n.endsWith("_AXE") && !n.endsWith("_PICKAXE")) return "斧子";
+        if (n.endsWith("_PICKAXE")) return "镐子";
+        if (n.endsWith("_SWORD")) return "剑";
+        if (n.endsWith("_SHOVEL")) return "锹";
+        if (n.endsWith("_HOE")) return "锄头";
+        if (n.equals("FISHING_ROD")) return "鱼竿";
+        if (n.equals("BREAD")) return "面包";
+        if (n.equals("TORCH")) return "火把";
+        return "东西";
     }
 }

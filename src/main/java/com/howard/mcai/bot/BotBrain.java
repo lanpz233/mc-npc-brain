@@ -106,9 +106,18 @@ public final class BotBrain {
         switch (a.mode) {
             case IDLE -> {
                 // 身边有怪打过来就还手（站桩自卫）
-                if (threat != null && bot.getHealth() > 10)
+                if (threat != null && bot.getHealth() > 10) {
                     BotJobs.combatTick(svc, a, bot.getLocation(), 8);
-                else idleSocial(svc, a);
+                } else if (a.handle != null && !a.handle.done()) {
+                    // 溜达/捡东西赶路中，等他走完这一趟
+                } else {
+                    a.handle = null;
+                    if (!tryPickupNearby(svc, a) && !trySelfWork(svc, a)) {
+                        idleWander(svc, a);
+                        idleSocial(svc, a);
+                    }
+                }
+                idleGlance(svc, a);
             }
             case REST -> { /* 站着歇，偶尔看看四周 */
                 if (threat != null && bot.getHealth() > 10)
@@ -174,8 +183,12 @@ public final class BotBrain {
             bot.teleport(behind);
             return;
         }
-        if (d > 3.2 && !a.driver.driving())
-            a.handle = a.driver.goTo(bot, ll, 2.6);
+        // 迟滞跟随（v0.8.0）：离得远（>5 格）才追、追到 3.2 格就停，
+        // 不再寸步不离贴着人走——真人跟人走路会留点距离
+        if (d > 5.0 && !a.driver.driving())
+            a.handle = a.driver.goTo(bot, ll, 3.2);
+        else if (d <= 3.2 && a.driver.driving())
+            a.driver.stop(bot);
     }
 
     private static void finishBuild(BotService svc, BotAgent a) {
@@ -260,6 +273,130 @@ public final class BotBrain {
             "来啦？坐会儿不。", "你忙你的，我就在这儿。", "嗨，又见面了。"
     };
 
+    // ============ v0.8.0 活气与自主 ============
+
+    private static boolean inConversation(BotAgent a, long now) {
+        return a.convPartner != null && now <= a.convUntil;
+    }
+
+    /** 脚边（2.5 格）有掉落物就走过去踩上去捡（原版自动拾取）——像个会过日子的人。 */
+    private static boolean tryPickupNearby(BotService svc, BotAgent a) {
+        long now = System.currentTimeMillis();
+        if (now - a.lastPickupAt < 5_000) return false;
+        Player bot = a.player;
+        for (Entity e : bot.getWorld().getNearbyEntities(bot.getLocation(), 2.5, 2, 2.5)) {
+            if (e instanceof org.bukkit.entity.Item) {
+                a.lastPickupAt = now;
+                a.handle = a.driver.goTo(bot, e.getLocation(), 0.7);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 在家附近溜达一圈（据点为心，没家就以脚下为心），别老杵得像个雕像。 */
+    private static void idleWander(BotService svc, BotAgent a) {
+        long now = System.currentTimeMillis();
+        if (now - a.lastWanderAt < 60_000 || inConversation(a, now)) return;
+        var rnd = ThreadLocalRandom.current();
+        if (rnd.nextDouble() > 0.45) { a.lastWanderAt = now - 30_000; return; } // 半分钟后再掷一次
+        a.lastWanderAt = now;
+        Player bot = a.player;
+        BotState s = a.state;
+        Location center = (s.hasBase() && bot.getWorld().getName().equals(s.baseWorld))
+                ? baseLoc(svc, s) : bot.getLocation();
+        if (center == null) center = bot.getLocation();
+        for (int i = 0; i < 6; i++) {
+            double ang = rnd.nextDouble() * Math.PI * 2;
+            double r = 5 + rnd.nextDouble() * 8;
+            int x = (int) Math.floor(center.getX() + Math.cos(ang) * r);
+            int z = (int) Math.floor(center.getZ() + Math.sin(ang) * r);
+            int gy = bot.getWorld().getHighestBlockYAt(x, z);
+            if (Math.abs(gy + 1 - bot.getLocation().getY()) > 4) continue;
+            Material ground = bot.getWorld().getBlockAt(x, gy, z).getType();
+            if (ground == Material.WATER || ground == Material.LAVA) continue;
+            a.handle = a.driver.goTo(bot, new Location(bot.getWorld(), x + 0.5, gy + 1, z + 0.5), 1.2);
+            return;
+        }
+    }
+
+    /** 东张西望 + 偶尔蹦一下活动身体：站着也得像个活物。 */
+    private static void idleGlance(BotService svc, BotAgent a) {
+        long now = System.currentTimeMillis();
+        var rnd = ThreadLocalRandom.current();
+        if (now - a.lastStretchAt > 150_000 && rnd.nextDouble() < 0.25) {
+            a.lastStretchAt = now;
+            svc.dispatchAction(a.state.accountName, "jump");
+            return;
+        }
+        if (now - a.lastGlanceAt < 7_000) return;
+        a.lastGlanceAt = now;
+        if (rnd.nextDouble() > 0.55) return;
+        Player bot = a.player;
+        for (Entity e : bot.getWorld().getNearbyEntities(bot.getLocation(), 10, 4, 10)) {
+            if (e != bot && e instanceof org.bukkit.entity.LivingEntity) {
+                BotJobs.lookAt(svc, a, e.getLocation().add(0, 1.5, 0));
+                return;
+            }
+        }
+        double ang = rnd.nextDouble() * Math.PI * 2;
+        BotJobs.lookAt(svc, a, bot.getLocation().add(Math.cos(ang) * 6, 1.5, Math.sin(ang) * 6));
+    }
+
+    /**
+     * 自己找活干：闲得太久（没人理、没在聊）、身体没问题、白天，
+     * 就近挑一件：有树砍树、有水有竿钓鱼。干 2 分半，收尾存箱子（finishSelfWork）。
+     */
+    private static boolean trySelfWork(BotService svc, BotAgent a) {
+        long now = System.currentTimeMillis();
+        if (a.nextSelfWorkAt == 0) { a.nextSelfWorkAt = now + 120_000; return false; } // 刚来先歇两分钟
+        if (now < a.nextSelfWorkAt || inConversation(a, now)) return false;
+        if (now - a.lastChatAt < 90_000) return false;
+        Player bot = a.player;
+        if (bot.getFoodLevel() <= 10 || bot.getHealth() < 14) return false;
+        if (BotJobs.nearestMatching(bot.getLocation(), 24, true) != null) {
+            startSelfWork(a, BotAgent.Job.CHOP, now);
+            return true;
+        }
+        if (BotJobs.countItem(bot, Material.FISHING_ROD) > 0
+                && BotJobs.nearestBlock(bot.getLocation(), 12, Material.WATER) != null) {
+            startSelfWork(a, BotAgent.Job.FISH, now);
+            return true;
+        }
+        a.nextSelfWorkAt = now + 120_000;
+        return false;
+    }
+
+    private static void startSelfWork(BotAgent a, BotAgent.Job job, long now) {
+        a.mode = BotAgent.Mode.WORK;
+        a.job = job;
+        a.phase = 0;
+        a.selfWork = true;
+        a.selfWorkUntil = now + 150_000;
+        a.phaseUntil = job == BotAgent.Job.CHOP ? now + 150_000 : 0;
+    }
+
+    /** 自发干活收尾：记下干了啥（聊天简报用）、4~8 分钟内不再自发，有箱子先去存货。 */
+    static void finishSelfWork(BotService svc, BotAgent a, String report) {
+        long now = System.currentTimeMillis();
+        a.selfWork = false;
+        a.lastWorkReport = report;
+        a.lastWorkAt = now;
+        a.nextSelfWorkAt = now + 240_000 + ThreadLocalRandom.current().nextInt(240_000);
+        svc.dispatchAction(a.state.accountName, "stop");
+        a.driver.stop(a.player);
+        a.job = BotAgent.Job.NONE;
+        a.handle = null;
+        BotState s = a.state;
+        if (s.hasChest && a.player.getWorld().getName().equals(s.chestWorld)) {
+            a.mode = BotAgent.Mode.RETURN_BASE;
+            a.phase = 1;
+            a.handle = a.driver.goTo(a.player, chestStand(svc, s), 1.6);
+        } else {
+            a.mode = BotAgent.Mode.IDLE;
+        }
+    }
+
     private static void idleSocial(BotService svc, BotAgent a) {
         Player bot = a.player;
         long now = System.currentTimeMillis();
@@ -269,7 +406,10 @@ public final class BotBrain {
             if (p.getLocation().distanceSquared(bot.getLocation()) <= 20) {
                 if (ThreadLocalRandom.current().nextDouble() < 0.35) {
                     BotJobs.lookAt(svc, a, p.getEyeLocation());
-                    svc.sayTo(a, p, GREETS[ThreadLocalRandom.current().nextInt(GREETS.length)]);
+                    int idx = ThreadLocalRandom.current().nextInt(GREETS.length);
+                    if (idx == a.lastGreetIdx) idx = (idx + 1) % GREETS.length; // 别连着说同一句
+                    a.lastGreetIdx = idx;
+                    svc.sayTo(a, p, GREETS[idx]);
                     a.lastGreetAt = now;
                 }
                 return;
