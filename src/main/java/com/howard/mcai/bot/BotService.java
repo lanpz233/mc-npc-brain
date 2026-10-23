@@ -163,12 +163,32 @@ public final class BotService {
 
     // ============ 招募 / 遣散 ============
 
-    public void recruit(Player requester, String skinName) {
-        String account = freeAccountName();
+    /**
+     * 招募。customName 是玩家在 /ai bot new 后面给的名字（Fong 要求可自定义）：
+     * 英文/数字/下划线（3~16 位）当账号名用；其它一律当中文名用。皮肤借招募者自己的。
+     */
+    public void recruit(Player requester, String customName) {
+        String account = null;
+        String chinese = null;
+        if (customName != null && !customName.isBlank()) {
+            String name = customName.trim();
+            if (name.matches("[A-Za-z0-9_]{3,16}")) {
+                if (byAccount.containsKey(name.toLowerCase()) || Bukkit.getPlayerExact(name) != null) {
+                    requester.sendMessage("§c[MC-AI] 账号名 " + name + " 已经被占用了，换一个名字再试。");
+                    return;
+                }
+                account = name;
+            } else {
+                chinese = name.length() > 10 ? name.substring(0, 10) : name;
+            }
+        }
+        if (account == null) account = freeAccountName();
         if (account == null) { requester.sendMessage("§c[MC-AI] 名字池用完了，招不了更多假人。"); return; }
+        final String accountFinal = account;
         String gender = NameLibrary.randomGender();
-        BotState s = new BotState(account, plugin.uniqueRandomName(gender, -1), gender,
-                skinName == null || skinName.isBlank() ? requester.getName() : skinName);
+        BotState s = new BotState(account,
+                chinese != null ? chinese : plugin.uniqueRandomName(gender, -1), gender,
+                requester.getName());
         s.personalityTagIds = com.howard.mcai.ai.PersonalityTagLibrary.drawTagIds(false);
         BotAgent a = new BotAgent(s, new BotDriver(plugin.getNavService()));
         byAccount.put(account.toLowerCase(), a);
@@ -177,9 +197,9 @@ public final class BotService {
                 + at.getX() + " " + at.getY() + " " + at.getZ());
         requester.sendMessage("§a[MC-AI] 正在招募 " + s.chineseName + "（" + account + "）……");
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            Player p = Bukkit.getPlayerExact(account);
+            Player p = Bukkit.getPlayerExact(accountFinal);
             if (p == null) {
-                plugin.getLogger().warning("[MC-AI] 招募失败：假人 " + account + " 没出现（Leaves 没开？）");
+                plugin.getLogger().warning("[MC-AI] 招募失败：假人 " + accountFinal + " 没出现（Leaves 没开？）");
                 requester.sendMessage("§c[MC-AI] 招募失败，假人没来——服务器核心是 Leaves 吗？控制台看看有没有报错。");
                 return;
             }
@@ -222,9 +242,9 @@ public final class BotService {
 
     public void dismiss(BotAgent a) {
         a.expectGone = true; // 遣散不算死亡
+        say(a, "那我先走了，保重！"); // 先说再走：remove 之后活体引用就被摘了，话发不出去
         dispatchConsole("bot remove " + a.state.accountName);
         if (a.player != null) onBotGone(a.player);
-        say(a, "那我先走了，保重！");
     }
 
     // ============ 与 Leaves 说话的管道 ============
@@ -240,13 +260,23 @@ public final class BotService {
     // ============ 喊话（插件代发，与村民台词同一制式） ============
 
     public void say(BotAgent a, String text) {
-        plugin.getLogger().info("[chat] " + a.state.chineseName + ": " + text);
+        bubble(a, null, text);
         broadcastNear(a, "§6[" + a.state.chineseName + "] §f" + text);
     }
 
     public void sayTo(BotAgent a, Player to, String text) {
-        plugin.getLogger().info("[chat] " + a.state.chineseName + ">" + to.getName() + ": " + text);
+        bubble(a, to.getName(), text);
         broadcastNear(a, "§6[" + a.state.chineseName + ">" + to.getName() + "] §f" + text);
+    }
+
+    /** 头顶气泡（与村民同款 BubbleManager 会话框）；[chat] 日志由 BubbleManager 统一打，避免双份。 */
+    private void bubble(BotAgent a, String listenerName, String text) {
+        if (a.player == null || plugin.getBubbleManager() == null) {
+            plugin.getLogger().info("[chat] " + a.state.chineseName
+                    + (listenerName == null ? "" : ">" + listenerName) + ": " + text);
+            return;
+        }
+        plugin.getBubbleManager().showDialog(a.player, a.state.chineseName, listenerName, text);
     }
 
     private void broadcastNear(BotAgent a, String line) {
@@ -287,7 +317,7 @@ public final class BotService {
                 a.haltAll(this);
                 sender.sendMessage("§a[MC-AI] 已让 " + a.state.chineseName + " 停下。");
             }
-            default -> sender.sendMessage("§7用法：/ai bot new [皮肤名] | list | remove <名> | stop <名>");
+            default -> sender.sendMessage("§7用法：/ai bot new [名字] | list | remove <名> | stop <名>（new 后面填中文就是他的中文名，填英文就是账号名）");
         }
     }
 

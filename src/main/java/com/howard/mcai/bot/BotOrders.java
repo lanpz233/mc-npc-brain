@@ -17,20 +17,27 @@ public final class BotOrders {
         if (msg.isEmpty()) return false;
         BotState s = a.state;
 
-        if (has(msg, "停下", "别动", "站住", "回来待着", "不用了", "取消")) {
+        // 停下必须排在所有命令最前面：「别跟着我」这类话里带着"跟着我"，
+        // 先判停才不会被跟随组抢走（v0.7.0 实测：玩家说"别跟了"停不下来，就是栽在这儿）
+        if (isStopOrder(msg)) {
+            boolean wasFollowing = a.mode == BotAgent.Mode.FOLLOW;
             a.haltAll(svc);
-            svc.sayTo(a, from, "好，我停下了。");
+            svc.sayTo(a, from, wasFollowing ? "好，我不跟了，就在这儿待着。" : "好，我停下了。");
             return true;
         }
-        if (has(msg, "跟我来", "跟着我", "跟上", "随我来")) {
+        if (has(msg, "跟我来", "跟着我", "跟上", "随我来", "跟紧我", "过来跟我")) {
             a.haltAll(svc);
             a.mode = BotAgent.Mode.FOLLOW;
             a.followUuid = from.getUniqueId();
             svc.sayTo(a, from, "好，我跟着你。");
             return true;
         }
-        if (has(msg, "回家", "回据点", "回去休息", "回你的家")) {
-            if (!s.hasBase()) { svc.sayTo(a, from, "我还没安家呢，没地方回。"); return true; }
+        if (has(msg, "回家", "回据点", "回去休息", "回你的家", "回去吧", "回去了")) {
+            if (!s.hasBase()) {
+                a.haltAll(svc);
+                svc.sayTo(a, from, "我还没安家呢，就在这儿待着吧。");
+                return true;
+            }
             a.haltAll(svc);
             a.mode = BotAgent.Mode.RETURN_BASE; a.phase = 0;
             a.handle = a.driver.goTo(a.player, BotBrain.baseLoc(svc, s), 1.5);
@@ -151,6 +158,25 @@ public final class BotOrders {
 
     private static boolean has(String msg, String... keys) {
         for (String k : keys) if (msg.contains(k)) return true;
+        return false;
+    }
+
+    /**
+     * "让他停下来"的说法合集。真人说话的花样比词表多，所以分两层：
+     * 明确短语 + 短句兜底（整句很短、且是"停/别…"的语气就当停下，
+     * 避免把"我停下来歇会儿"这种长句误判——长句多半是闲聊不是命令）。
+     */
+    static boolean isStopOrder(String msg) {
+        if (has(msg, "停下", "别动", "站住", "回来待着", "不用了", "取消",
+                "别跟了", "别跟着", "别跟我", "不用跟", "别过来", "别跟上来",
+                "原地待着", "就在这待着", "待着别动", "别走了", "不用你了", "解散")) {
+            return true;
+        }
+        String t = msg.replaceAll("[\\s，。！？!?,.、~…]+", "");
+        if (t.length() <= 5 && (t.startsWith("停") || t.equals("别跟") || t.equals("别动了")
+                || t.equals("好了") || t.equals("够了"))) {
+            return true;
+        }
         return false;
     }
 }

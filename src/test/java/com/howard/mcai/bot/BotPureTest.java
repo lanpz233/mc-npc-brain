@@ -71,6 +71,21 @@ class BotPureTest {
     // ===== 档案 =====
 
     @Test
+    void stopOrderWords() {
+        // v0.7.0 实测事故：玩家说"别跟了"停不下来（词表没有、还被跟随语义包围）
+        org.junit.jupiter.api.Assertions.assertTrue(BotOrders.isStopOrder("别跟了"));
+        org.junit.jupiter.api.Assertions.assertTrue(BotOrders.isStopOrder("别跟着我了"));
+        org.junit.jupiter.api.Assertions.assertTrue(BotOrders.isStopOrder("停"));
+        org.junit.jupiter.api.Assertions.assertTrue(BotOrders.isStopOrder("停下吧"));
+        org.junit.jupiter.api.Assertions.assertTrue(BotOrders.isStopOrder("原地待着吧"));
+        org.junit.jupiter.api.Assertions.assertTrue(BotOrders.isStopOrder("不用跟了"));
+        // 不是命令的话不能误判
+        org.junit.jupiter.api.Assertions.assertFalse(BotOrders.isStopOrder("跟我来"));
+        org.junit.jupiter.api.Assertions.assertFalse(BotOrders.isStopOrder("今天天气不错"));
+        org.junit.jupiter.api.Assertions.assertFalse(BotOrders.isStopOrder("不停地夸我一下吧")); // 有"停"字但不是命令
+    }
+
+    @Test
     void botStateFavorAndFacts() {
         BotState s = new BotState("Alex", "李小明", "male", "Steve");
         UUID p = UUID.randomUUID();

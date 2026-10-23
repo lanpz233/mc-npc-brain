@@ -62,7 +62,11 @@ public final class DepositPlan {
         }
         int foodKept = 0;
         boolean torchKept = false;
-        for (Map.Entry<String, Integer> e : inv.entrySet()) {
+        // 固定按物品名排序遍历：口粮"总共留 16"要跨种类分配，先留谁取决于遍历顺序，
+        // 入参是 HashMap/Map.of 时顺序不稳定（v0.7.1 测试实测暴露：同一份背包两次算出不同留法）
+        java.util.List<Map.Entry<String, Integer>> entries = new java.util.ArrayList<>(inv.entrySet());
+        entries.sort(Map.Entry.comparingByKey());
+        for (Map.Entry<String, Integer> e : entries) {
             String key = e.getKey();
             int n = e.getValue();
             if (n <= 0) continue;

@@ -352,6 +352,8 @@ public final class McaiPlugin extends JavaPlugin {
         botService.start();
         Bukkit.getPluginManager().registerEvents(
                 new com.howard.mcai.bot.BotLifecycleListener(botService), this);
+        Bukkit.getPluginManager().registerEvents(
+                new com.howard.mcai.bot.BotInteractListener(botService), this);
         factTask = Bukkit.getScheduler().runTaskTimer(this, this::factTick, 600L, 600L);
 
         // 7.5 对话注视任务 —— 每 2 tick 让所有"正在对话"的村民持续面向玩家
