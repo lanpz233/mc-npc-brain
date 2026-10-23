@@ -61,4 +61,25 @@ class PromiseGuardTest {
         assertTrue(PromiseGuard.isUnbackedPromise(
                 "俺这儿有现成的面包，送你俩。", false, false, false));
     }
+
+    @Test
+    void stuffedIntoBackpackClaimIsUnbacked() {
+        // v0.6.1 实测事故原话：打劫没成交，她却说已经塞进玩家背包了
+        assertTrue(PromiseGuard.isUnbackedPromise(
+                "（顺手往你背包里塞了一把绿宝石）", false, false, false));
+    }
+
+    @Test
+    void heldOutClaimIsUnbacked() {
+        // 同场事故的另一句："捧出来"也是已完成式交付，没真交就得剥
+        assertTrue(PromiseGuard.isUnbackedPromise(
+                "（吓软了身子，嘴唇哆嗦，把剩下的五颗绿宝石捧出来）", false, false, false));
+    }
+
+    @Test
+    void backedStuffedClaimIsKept() {
+        // 真交出去了（reallyGave）→ "塞了一把"是如实汇报，不许删
+        assertFalse(PromiseGuard.isUnbackedPromise(
+                "（顺手往你背包里塞了一把绿宝石）", true, false, false));
+    }
 }

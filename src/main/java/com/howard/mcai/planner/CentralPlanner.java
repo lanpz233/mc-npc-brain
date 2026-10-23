@@ -339,7 +339,11 @@ public final class CentralPlanner extends BukkitRunnable {
      */
     private static final Pattern THREAT_PATTERN = Pattern.compile(
             "杀了你|砍死你|砍了你|打死你|弄死你|宰了你|灭了你|揍你|烧了你|拆了你|拆了你家|"
-                    + "打断你的腿|抢了你的|杀你全家|屠村|杀光|灭村|你等着|给我等着|让你好看|报复你");
+                    + "打断你的腿|抢了你的|杀你全家|屠村|杀光|灭村|你等着|给我等着|让你好看|报复你"
+                    // 劫财类（v0.6.2 补）：实测玩家打劫只说“打劫/把钱交出来/都交出来”，
+                    // 旧表只有要命的话 → 恐惧不涨、破防不掷、窗口不开，整场全靠模型即兴演
+                    + "|打劫|抢劫|把钱交出来|钱交出来|交出钱来|都交出来|全交出来|交出绿宝石|把绿宝石交出来"
+                    + "|买路财|留下买路|想不想活|活腻了|识相点");
 
     /** 一句冒犯话扣的好感（一次性，不做累加惩罚 —— 骂完这口气也就过去了） */
     private static final double OFFEND_FAVOR_HIT = -8.0;
@@ -440,7 +444,8 @@ public final class CentralPlanner extends BukkitRunnable {
                 + com.howard.mcai.ai.RobberyWill.fearTierZh(fear)
                 + "），只想破财消灾、保住性命。你的家底：绿宝石 " + emeralds + " 个、吃的 " + food + " 个，"
                 + "背包里的其他东西也都能拿出来谈。你还得靠这些东西过日子，所以先哭穷、只肯给一小部分，"
-                + "对方不依、继续吓你，你再一点一点往上加。谈成多少，就调用 surrender 工具，"
+                + "对方不依、继续吓你，你再一点一点往上加。谈成多少，就调用 surrender 工具"
+                + "（只能用 surrender，千万别用 give_item——那是送礼的门，会被规矩拦下来，说了也白说），"
                 + "按谈好的物品和数量交出去（交绿宝石就把物品填“绿宝石”）；只能交你真有的东西，"
                 + "交完就不要再答应多给。";
     }
@@ -1549,9 +1554,25 @@ public final class CentralPlanner extends BukkitRunnable {
         if (toolCall != null) {
             switch (toolCall.name()) {
                 case "give_item" -> {
-                    // give_item 已迁入统一柜：经 ToolDispatcher 执行（GiftPolicy 确定性裁决），
-                    // 结果带回给承诺守卫；注册表不可用时才回退老后门（迁移期保险丝，正常不会触发）
-                    if (isUnifiedTool("give_item")) {
+                    // 打劫保险丝（v0.6.2）：破防窗口开着时，他谈成了却顺手调了送礼工具——
+                    // 送礼按好感裁决必拒（实测拒信“交情很深才舍得给”），打劫就成了空话。
+                    // 窗口内的 give_item 一律转走 surrender 交割（参数同形 item/count/message），
+                    // 门控与记账都按打劫走，保证谈成的真交得出去。
+                    if (nearPlayer != null && vState.surrenderOpenFor(nearPlayer.getUniqueId())
+                            && isUnifiedTool("surrender")) {
+                        preUnifiedResult = dispatchUnifiedTool(vState,
+                                new ToolCall("surrender", toolCall.arguments()), nearPlayer);
+                        reallyGave = preUnifiedResult != null && preUnifiedResult.success()
+                                && preUnifiedResult.data() != null
+                                && preUnifiedResult.data().has("delivered")
+                                && preUnifiedResult.data().get("delivered").getAsInt() > 0;
+                        gatedReject = reallyGave ? null
+                                : "§e" + playerFacingReason(preUnifiedResult, "他没能把东西交出来");
+                        plugin.getLogger().info("§b[MC-AI] 打劫保险丝: give_item 已转 surrender 交割 → "
+                                + (reallyGave ? "成功" : "被拦下"));
+                    } else if (isUnifiedTool("give_item")) {
+                        // give_item 已迁入统一柜：经 ToolDispatcher 执行（GiftPolicy 确定性裁决），
+                        // 结果带回给承诺守卫；注册表不可用时才回退老后门（迁移期保险丝，正常不会触发）
                         preUnifiedResult = dispatchUnifiedTool(vState, toolCall, nearPlayer);
                         reallyGave = preUnifiedResult != null && preUnifiedResult.success();
                         gatedReject = reallyGave ? null
