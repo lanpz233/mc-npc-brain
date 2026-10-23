@@ -563,6 +563,37 @@ public final class VillagerState {
         if (restored != null) inventory.putAll(restored);
     }
 
+    /**
+     * 每日刷新背包（Fong 2026-10-23 定，取代旧「每日补货」）：以昨天的家底为
+     * 基底过日子——职业货/杂物小幅流动、总量封顶不再爆仓、口粮保底钉死；
+     * 钱（绿宝石）和私人物品（玩家给的/换来的）分毫不动。规矩本体在
+     * {@link DailyRefresh}（纯计算可测），这里只负责按运行时数据备好
+     * 「哪些算吃食/职业货/杂物」三张名单。随机按村民 + 天数做种子，
+     * 同一天重复调用结果一致（不会刷一次变一次）。
+     */
+    public synchronized DailyRefresh.Summary applyDailyRefresh(long day) {
+        java.util.Set<String> foods = new java.util.HashSet<>();
+        for (String key : inventory.keySet()) {
+            org.bukkit.Material m = org.bukkit.Material.matchMaterial(key);
+            if (m != null && m.isEdible()) foods.add(key);
+        }
+        foods.add(DailyRefresh.BREAD);  // 保底物本身必须在食物名单里，账才对得上
+        java.util.Set<String> goods = new java.util.HashSet<>();
+        for (var e : com.howard.mcai.ai.ProfessionPools.sellPool(profession)) goods.add(e.item().name());
+        for (var e : com.howard.mcai.ai.ProfessionPools.buyPool(profession)) goods.add(e.item().name());
+        for (String s : profession.allowedRecipes) {
+            goods.add(s.replace("minecraft:", "").toUpperCase());
+        }
+        java.util.Set<String> sundries = java.util.Set.of(LOOT_POOL);
+        java.util.Random rng = new java.util.Random(
+                getUniqueId().getMostSignificantBits() ^ getUniqueId().getLeastSignificantBits()
+                        ^ (day * 0x9E3779B97F4A7C15L));
+        DailyRefresh.Result result = DailyRefresh.refresh(
+                inventorySnapshot(), foods, goods, sundries, rng);
+        restoreInventory(result.inventory());
+        return result.summary();
+    }
+
     /** MemoryStore 从 JSON 恢复需求（持久化键固定顺序 ALL） */
     public synchronized void restoreNeeds(Map<String, Double> restored) {
         if (restored == null) return;
