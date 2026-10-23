@@ -105,9 +105,9 @@ public final class NeedsLayer extends TickLayer {
             // === 1. 情境判定（全在主线程，Paper API 安全） ===
             boolean sleeping = v.isSleeping();
             // 睡姿纠正（2026-10-21 实测：隔墙躺草地"睡"满一夜）：原版 AI 偶尔让村民在
-            // 不是床的位置进入睡眠，本层旧版只认 isSleeping 就回精力、从不核查躺哪。
-            // 身下两层 3×3 内没有真床 = 躺地上了 → 叫醒；本轮后段 trySleep 会按规矩
-            // 重新带他走回真床边。注：Paper 没有通用的"进入睡眠"事件可拦（只有玩家版），
+            // 不是床的位置进入睡眠，只认 isSleeping 就回精力、从不核查躺哪。
+            // 身下两层 3×3 内没有真床 = 躺地上了 → 叫醒，原版大脑会自己带他回床。
+            // 注：Paper 没有通用的"进入睡眠"事件可拦（只有玩家版），
             // 巡查叫醒就是正解 —— 犯一次最多躺一个巡查间隔（约 30 秒）。
             if (sleeping && !isOnBed(v)) {
                 v.wakeup();
@@ -160,11 +160,10 @@ public final class NeedsLayer extends TickLayer {
                 needs.satisfy(NeedsState.BOREDOM, 2.0 * minutes * 10);
             }
 
-            // === 2.5 真睡觉：疲惫 ≥70 + 天黑 → 找床真睡（不是干站着）
-            // 之前 autonomy 只会 move_to"走回家"，没有真正上床，疲惫永远下不来
-            if (!sleeping && night && needs.get(NeedsState.ENERGY) >= 70) {
-                trySleep(vs);
-            }
+            // === 2.5 睡觉归原版（Fong 2026-10-23 定）：本层不再找床、不再送睡。
+            // 原版大脑按作息带他回自己认领的床；这里只记账 —— 睡着时 ENERGY
+            // 已在上面按 ENERGY_SLEEP 回落，没睡的人整夜涨疲惫，第二天顶着
+            // 高疲惫过日子（状态档位与台词都认这个数）。
 
             // 需求渐变是"软状态"：离散事件（吃东西/自主行动/需求满足）各自已 markDirty，
             // 这里每 10 轮（约 5 分钟）补一次即可。之前每 30 秒全村全量写盘，
@@ -225,38 +224,17 @@ public final class NeedsLayer extends TickLayer {
         }
     }
 
-    // ===== 规则满足：真睡觉 =====
+    // ===== 睡觉：交给原版（Fong 2026-10-23 定） =====
 
     /**
-     * 真睡觉（规则动作，不调 LLM）：
-     * 疲惫 ≥70 + 天黑 → 找 16 格内的床；真走到床边（贴着整张床的中心、同层）才上床睡。
-     * 睡着后本层每轮按 ENERGY_SLEEP 回疲惫，天亮原版 AI 叫醒。
-     * 没床 → 不瞎跑（原地待着），等天亮或玩家搭话。
-     * <p>
-     * 旧版的毛病（实测截图）：扫到床的任意一格方块就把它的**角落坐标**当睡觉点，
-     * 且直线 2.5 格内（隔墙、站在地上都算）就躺下 —— 人横在床边、头不沾枕、随地乱睡。
-     * 现在认整张床：落点钉在床头格中心，触发条件是真到了床边。
+     * 睡觉不再归插件管：旧版按插件疲惫值就近找一张床（谁的都行）走过去
+     * 用 v.sleep() 躺下，看着像睡了，其实床不是他认下的、作息也不是原版的，
+     * Fong 实测评价「假睡觉」。现在整段删掉，让原版村民大脑按自己的作息
+     * 回他认领的床真睡：插件只在旁边看 isSleeping —— 睡着时回精力、
+     * 躺错地方（身下没床）照旧巡查叫醒；没床认领的人夜里就困着，
+     * 不拿假躺兜底（Fong 拍板）。疲惫（ENERGY）仍由本层记账：
+     * 睡着回、醒着涨，一夜没睡第二天就顶着高疲惫过日子。
      */
-    private void trySleep(VillagerState vs) {
-        Villager v = vs.entity();
-        if (v.isSleeping() || v.isDead()) return;
-        BedSpot bed = findNearbyBed(v, 16);
-        if (bed == null) return;  // 没床睡不了，别梦游
-        Location here = v.getLocation();
-        double dx = here.getX() - bed.center().getX();
-        double dz = here.getZ() - bed.center().getZ();
-        boolean atBed = dx * dx + dz * dz <= 1.9 * 1.9
-                && Math.abs(here.getY() - bed.center().getY()) <= 1.0;
-        if (atBed) {
-            if (v.sleep(bed.sleepAt())) {
-                plugin.getLogger().info("§b[MC-AI] 睡觉: " + Smalltalk.nameOf(vs)
-                        + " 上床了（疲惫 " + (int) vs.needs().get(NeedsState.ENERGY) + "）");
-            }
-            return;
-        }
-        // 还没走到：朝整张床的中心挪（walkTowards 每 20 tick 走一步，对话中自动取消；走到就睡）
-        walkTowards(vs, bed.center());
-    }
 
     /** 睡着时核查躺的位置：同层与下一层 3×3 内有真床方块才算睡在床上（躺床时实体就贴在床面上，两层必有一层是床） */
     private boolean isOnBed(Villager v) {
@@ -275,43 +253,6 @@ public final class NeedsLayer extends TickLayer {
         return false;
     }
 
-    /** 一张床的两个关键点：sleepAt = 床头格中心（躺下的锚点），center = 整张床的中心（走近的目标） */
-    private record BedSpot(Location sleepAt, Location center) {
-    }
-
-    /** 16 格内找最近的一张床（y 上下 2 格）：按床数据认出床头，整床只算一次。没有返回 null */
-    private BedSpot findNearbyBed(Villager v, int radius) {
-        org.bukkit.World w = v.getWorld();
-        Location c = v.getLocation();
-        int cx = c.getBlockX(), cy = c.getBlockY(), cz = c.getBlockZ();
-        BedSpot best = null;
-        double bestD2 = Double.MAX_VALUE;
-        for (int x = cx - radius; x <= cx + radius; x++) {
-            for (int y = cy - 2; y <= cy + 2; y++) {
-                for (int z = cz - radius; z <= cz + radius; z++) {
-                    org.bukkit.block.Block b = w.getBlockAt(x, y, z);
-                    if (!b.getType().name().endsWith("_BED")) continue;
-                    if (!(b.getBlockData() instanceof org.bukkit.block.data.type.Bed bedData)) continue;
-                    // 床占两格：不管扫到哪格，都换算回床头那格 —— 落点必须在床头，人才躺得正
-                    org.bukkit.block.Block head = bedData.getPart() == org.bukkit.block.data.type.Bed.Part.HEAD
-                            ? b : b.getRelative(bedData.getFacing());
-                    if (!(head.getBlockData() instanceof org.bukkit.block.data.type.Bed headData)
-                            || headData.getPart() != org.bukkit.block.data.type.Bed.Part.HEAD) continue;
-                    org.bukkit.block.Block foot = head.getRelative(bedData.getFacing().getOppositeFace());
-                    Location center = head.getLocation().add(0.5, 0, 0.5)
-                            .add(foot.getLocation().add(0.5, 0, 0.5)).multiply(0.5);
-                    double dx = center.getX() - c.getX(), dz = center.getZ() - c.getZ();
-                    double d2 = dx * dx + dz * dz + (center.getY() - cy) * (center.getY() - cy);
-                    if (d2 < bestD2) {
-                        bestD2 = d2;
-                        best = new BedSpot(head.getLocation().add(0.5, 0, 0.5), center);
-                    }
-                }
-            }
-        }
-        return best;
-    }
-
     // ===== LLM 自主行动 =====
 
     /**
@@ -321,12 +262,15 @@ public final class NeedsLayer extends TickLayer {
     private void maybeAutonomousAction(VillagerState vs, long cooldownMs) {
         var cfg = plugin.getPluginConfig();
         if (vs.interactingPlayer() != null || vs.llmBusy()) return;
-        // 睡着了别折腾：疲惫 ≥70 睡觉时会触发 trySleep 规则，LLM 再插一脚只会把人叫醒
+        // 睡着了别折腾：自主行动再插一脚只会把人叫醒
         if (vs.entity().isSleeping()) return;
         // 下雨天不瞎逛：村民躲雨是常识，vanilla AI 会找遮蔽；需求等雨停再说
         if (vs.entity().getWorld().hasStorm()) return;
         String dominant = vs.needs().dominantUrgent(cfg.needsThreshold());
         if (dominant == null) return;
+        // 夜里困意当头时别派活（睡觉归原版）：原版大脑正带他回床睡觉，
+        // 插件这时塞一个闲逛/社交任务就是跟睡觉抢人 —— 让路，等天亮再说
+        if (NeedsState.ENERGY.equals(dominant) && !vs.entity().getWorld().isDayTime()) return;
         long now = System.currentTimeMillis();
         Long cd = autonomyCooldown.get(vs.getUniqueId());
         if (cd != null && now - cd < cfg.needsAutonomyCooldownSeconds() * 1000L) return;
@@ -487,17 +431,6 @@ public final class NeedsLayer extends TickLayer {
             return villager.getPathfinder().findPath(target) != null;
         } catch (Exception e) {
             return false;
-        }
-    }
-
-    /** 朝目标连续走几步（setVelocity 单次走不远，每 20 tick 补一步共 5 步，对话中取消） */
-    private void walkTowards(VillagerState vs, Location target) {
-        Villager v = vs.entity();
-        for (int i = 0; i < 5; i++) {
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                if (!v.isValid() || v.isDead() || vs.interactingPlayer() != null) return;
-                CentralPlanner.moveEntityTowards(v, target, 1.0);
-            }, 20L * i);
         }
     }
 
