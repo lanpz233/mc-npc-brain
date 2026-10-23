@@ -25,12 +25,13 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class NavService {
 
-    /** 寻路结果：路点（世界坐标，脚位）+ 沿途要开的门格 + 是否真到了终点 */
-    public record Plan(List<Location> waypoints, List<int[]> doorCells, boolean reached) {}
+    /** 寻路结果：路点（世界坐标，脚位）+ 沿途要开的门格 + 是否真到了终点 + 逐路点格子类型（与路点一一对应，代驾接管算交接点用） */
+    public record Plan(List<Location> waypoints, List<int[]> doorCells, boolean reached,
+                       List<Byte> cellTypes) {}
 
     /** 兜底计划：A* 规划不出时直指目标点（reached=false，走一段再重规划——跟随跑偏时用） */
     public static Plan direct(Location to) {
-        return new Plan(List.of(to.clone()), List.of(), false);
+        return new Plan(List.of(to.clone()), List.of(), false, List.of(NavGrid.WALK));
     }
 
     private record CachedGrid(NavGrid grid, long atMs, String worldName) {}
@@ -55,18 +56,23 @@ public final class NavService {
         if (r.empty()) return null;
         List<int[]> cells = grid.smooth(r.cells());
         List<Location> wps = new ArrayList<>();
+        List<Byte> types = new ArrayList<>();
         List<int[]> doors = new ArrayList<>();
         for (int i = 0; i < cells.size(); i++) {
             int[] c = cells.get(i);
             // 起点格不用作路点（人已经站在那）
-            if (i > 0) wps.add(new Location(world, c[0] + 0.5, c[1], c[2] + 0.5));
+            if (i > 0) {
+                wps.add(new Location(world, c[0] + 0.5, c[1], c[2] + 0.5));
+                types.add(grid.at(c[0], c[1], c[2]));
+            }
             if (grid.at(c[0], c[1], c[2]) == NavGrid.DOOR) doors.add(c);
         }
         if (wps.isEmpty()) {
             // 只剩起点 = 人已经在终点格里
             wps.add(new Location(world, to.getX(), to.getY(), to.getZ()));
+            types.add(NavGrid.WALK);
         }
-        return new Plan(wps, doors, r.reached());
+        return new Plan(wps, doors, r.reached(), types);
     }
 
     /** 取（或重建）覆盖 from/to 的快照；缓存未过期且新起终点都在盒内就复用 */

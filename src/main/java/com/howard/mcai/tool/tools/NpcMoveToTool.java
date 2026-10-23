@@ -142,13 +142,14 @@ public final class NpcMoveToTool implements NpcTool {
         private long lastRepathMs;
         /** 已重下寻路指令的次数 */
         private int repathCount;
-        /** 自研寻路执行器（v0.5.0）：非 null 且 engineMode 时走它；规划不出路时退回原版直达 */
+        /** 自研代驾执行器：仅在接管段非 null（原版走不通时接管一小段，见 escalateOrFail） */
         private NavDriver driver;
-        private boolean engineMode;
-        /** 自研寻路已重规划次数（卡住/半路路径走完时重算） */
-        private int replanCount;
-        /** 单个任务最多重规划次数，用尽判走不通 */
-        private static final int MAX_REPLANS = 4;
+        /** 当前是否处于自研接管段 */
+        private boolean takeoverMode;
+        /** 本任务已接管次数（防原版 ↔ 自研来回踢皮球） */
+        private int takeoverCount;
+        /** 单个任务最多接管次数，用尽判走不通 */
+        private static final int MAX_TAKEOVERS = 2;
         /** 无进展判定的工作值：本 tick 算出的"离目标最近距离/刷新时刻"，tick 末随 progressData 写回 */
         private double pendingBest = Double.MAX_VALUE;
         private long pendingBestSince;
@@ -201,26 +202,13 @@ public final class NpcMoveToTool implements NpcTool {
             villager.setTarget(null);
             villager.setVelocity(new Vector(0, villager.getVelocity().getY(), 0));
             repathCount = 0;
-            replanCount = 0;
+            takeoverCount = 0;
+            takeoverMode = false;
             double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
-            // 自研寻路优先（v0.5.0）：全局路线由插件 A* 定死（认门/梯子/水、会绕整栋房子），
-            // 每段短路仍交原版导航的腿走。规划不出（目标被彻底封死等）才退回原版直达，保底不比旧版差。
-            NavService.Plan plan = plugin.getNavService() != null
-                    ? plugin.getNavService().plan(state.getUniqueId(), villager.getLocation(), target)
-                    : null;
-            if (plan != null) {
-                engineMode = true;
-                driver = new NavDriver(plugin, plan);
-                // 全自研驾驶（v0.5.1）：循环会把 AI 压关，身体归插件开，防原版大脑抢方向
-                driver.start(villager, speed);
-                plugin.getLogger().info("[task] npc.move_to 自研寻路: 目标 ("
-                        + round(target.getX()) + ", " + round(target.getY()) + ", " + round(target.getZ())
-                        + ") 路点 " + plan.waypoints().size() + " 个"
-                        + (plan.reached() ? "" : "（部分路径，走完重规划）"));
-            } else {
-                engineMode = false;
-                startPathing(villager, target, speed);
-            }
+            // 代驾模式（v0.6.0，Fong 拍板）：原版导航做主先走；它走不通（没路/
+            // 没进展/卡住）时才由自研 A* 接管一小段（梯子、宽水这类原版死角），
+            // 过了死角立刻交还 —— 方向盘只有一个，见 escalateOrFail。
+            startPathing(villager, target, speed);
         }
 
         /**
@@ -273,9 +261,9 @@ public final class NpcMoveToTool implements NpcTool {
                 return;
             }
 
-            // 自研寻路模式（v0.5.0）：路线与卡住判定都归 NavDriver，这里只管重规划与收尾
-            if (engineMode) {
-                tickEngine(task, state, villager, target, arguments, nowMs, horizontal);
+            // 自研接管段：驾驶归 NavDriver，本层只看交接/卡住做交还
+            if (takeoverMode) {
+                tickTakeover(task, state, villager, target, arguments, nowMs, horizontal);
                 return;
             }
 
@@ -284,12 +272,8 @@ public final class NpcMoveToTool implements NpcTool {
             // 让上层尽早换目标。
             Pathfinder pathfinder = villager.getPathfinder();
             if (!pathfinder.hasPath() && repathCount >= MAX_REPATHS) {
-                stop(state);
-                settleNeedFailure(state, target);
-                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                escalateOrFail(task, state, target, arguments, nowMs, horizontal,
                         "无可行路径：重寻路 " + MAX_REPATHS + " 次后仍没有路径，剩余 " + round(horizontal) + " 格");
-                plugin.getLogger().info("[task] npc.move_to 无可行路径, 提前失败: npc=" + task.npcId()
-                        + " 剩余 " + round(horizontal) + " 格");
                 return;
             }
 
@@ -342,13 +326,9 @@ public final class NpcMoveToTool implements NpcTool {
                                 + " 曾到达 " + round(best) + " 格，当前剩余 " + round(horizontal) + " 格");
                         return;
                     } else {
-                        stop(state);
-                        settleNeedFailure(state, target);
-                        task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                        escalateOrFail(task, state, target, arguments, nowMs, horizontal,
                                 "靠近不了目标：" + (NO_PROGRESS_WINDOW_MS / 1000) + " 秒内没能更接近，剩余 "
                                         + round(horizontal) + " 格");
-                        plugin.getLogger().info("[task] npc.move_to 无进展, 提前失败: npc=" + task.npcId()
-                                + " 剩余 " + round(horizontal) + " 格");
                         return;
                     }
                 }
@@ -404,9 +384,7 @@ public final class NpcMoveToTool implements NpcTool {
                 lastZ = current.getZ();
                 lastProgressMs = nowMs;
             } else if (nowMs - lastProgressMs >= STUCK_WINDOW_MS) {
-                stop(state);
-                settleNeedFailure(state, target);
-                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
+                escalateOrFail(task, state, target, arguments, nowMs, horizontal,
                         "移动卡住：" + (STUCK_WINDOW_MS / 1000) + " 秒内位移不足 " + STUCK_MIN_MOVE + " 格");
                 return;
             }
@@ -429,12 +407,17 @@ public final class NpcMoveToTool implements NpcTool {
         }
 
         /**
-         * 自研寻路模式的 tick：喂路点走；卡住或半路路径走完 → 重规划；
-         * 真到达/抵近门口 → 按完成收尾。挂账结算口径与原版直达模式一致。
+         * 代驾接管段的 tick：驾驶员开到交接点（特殊段之后的第一个普通格）就交还；
+         * 接管段里也卡住 → 同样交还，让原版监测再判一次（接管次数有上限，
+         * 不会无限踢皮球）。到达判定在 tick 开头已全局处理，这里不会漏收尾。
          */
-        private void tickEngine(NpcTask task, VillagerState state, Villager villager, Location target,
-                                JsonObject arguments, long nowMs, double horizontal) {
-            // 偏离守卫（与直达模式同口径）：被僵尸赶得比允许范围还远就放弃
+        private void tickTakeover(NpcTask task, VillagerState state, Villager villager, Location target,
+                                  JsonObject arguments, long nowMs, double horizontal) {
+            if (driver == null) {  // 防御：接管标志与驾驶员不一致时退回原版监测
+                takeoverMode = false;
+                return;
+            }
+            // 偏离守卫（与原版模式同口径）：被僵尸赶得比允许范围还远就放弃
             if (horizontal > MAX_DISTANCE + DRIFT_TOLERANCE) {
                 stop(state);
                 settleNeedFailure(state, target);
@@ -442,66 +425,101 @@ public final class NpcMoveToTool implements NpcTool {
                         "NPC 偏离目标：剩余 " + round(horizontal) + " 格，超出允许范围");
                 return;
             }
-            double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
-            // 驾驶在 NavDriver 的快速循环里进行（v0.5.1），任务 tick 只读状态做决策
             NavDriver.Status status = driver.status();
-            if (status == NavDriver.Status.ARRIVED) {
-                if (driver.reachedGoal() || horizontal <= DOORSTEP_DISTANCE) {
-                    stop(state);
-                    settleNeedSuccess(state);
-                    JsonObject data = result(task, villager);
-                    if (!driver.reachedGoal()) {
-                        data.addProperty("close_enough", true);
-                        plugin.getLogger().info("[task] npc.move_to 自研寻路抵近完成: npc=" + task.npcId()
-                                + " 剩余 " + round(horizontal) + " 格");
-                    }
-                    task.complete(nowMs, data);
-                } else {
-                    // 半路路径走完了还没到：从当前位置重新规划，继续往目标去
-                    replan(task, state, villager, target, speed, nowMs, horizontal);
-                }
+            if (status == NavDriver.Status.ARRIVED || status == NavDriver.Status.STUCK) {
+                boolean arrived = status == NavDriver.Status.ARRIVED;
+                plugin.getLogger().info("[task] npc.move_to 代驾" + (arrived ? "到达交接点" : "接管段卡住")
+                        + ", 交还原版: npc=" + task.npcId() + " 剩余 " + round(horizontal) + " 格");
+                handBackToVanilla(task, villager, target, arguments, nowMs, horizontal);
                 return;
-            }
-            if (status == NavDriver.Status.STUCK) {
-                plugin.getLogger().info("[task] npc.move_to 自研寻路卡住, 准备重规划("
-                        + (replanCount + 1) + "/" + MAX_REPLANS + ") npc=" + task.npcId()
-                        + " 剩余 " + round(horizontal) + " 格");
-                if (!replan(task, state, villager, target, speed, nowMs, horizontal)) return;
             }
             JsonObject progressData = new JsonObject();
             progressData.addProperty("target_x", target.getX());
             progressData.addProperty("target_y", target.getY());
             progressData.addProperty("target_z", target.getZ());
             progressData.addProperty("remaining_distance", round(horizontal));
-            progressData.addProperty("engine", "custom");
-            progressData.addProperty("replans", replanCount);
+            progressData.addProperty("engine", "takeover");
+            progressData.addProperty("takeovers", takeoverCount);
             task.updateData(progressData);
         }
 
-        /** 从当前位置重新规划一次；次数用尽或规划不出 → 判失败收尾并返回 false */
-        private boolean replan(NpcTask task, VillagerState state, Villager villager,
-                               Location target, double speed, long nowMs, double horizontal) {
-            if (replanCount >= MAX_REPLANS || plugin.getNavService() == null) {
-                stop(state);
-                settleNeedFailure(state, target);
-                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
-                        "自研寻路走不通：重规划 " + replanCount + " 次后仍到不了，剩余 "
-                                + round(horizontal) + " 格");
-                return false;
+        /** 交还方向盘：停自研驾驶、重置原版侧的进展锚点、重新向目标下令 */
+        private void handBackToVanilla(NpcTask task, Villager villager, Location target,
+                                       JsonObject arguments, long nowMs, double horizontal) {
+            if (driver != null) {
+                driver.stop();
+                driver = null;
             }
-            replanCount++;
+            takeoverMode = false;
+            repathCount = 0;
+            lastRepathMs = nowMs;
+            Location current = villager.getLocation();
+            int detourExtends = task.data() != null && task.data().has("detour_extends")
+                    ? task.data().get("detour_extends").getAsInt() : 0;
+            JsonObject anchors = new JsonObject();
+            anchors.addProperty("target_x", target.getX());
+            anchors.addProperty("target_y", target.getY());
+            anchors.addProperty("target_z", target.getZ());
+            anchors.addProperty("remaining_distance", round(horizontal));
+            anchors.addProperty("last_progress_x", current.getX());
+            anchors.addProperty("last_progress_z", current.getZ());
+            anchors.addProperty("last_progress_ms", nowMs);
+            anchors.addProperty("best_distance", horizontal);
+            anchors.addProperty("best_since_ms", nowMs);
+            anchors.addProperty("best_x", current.getX());
+            anchors.addProperty("best_z", current.getZ());
+            anchors.addProperty("detour_extends", detourExtends);
+            task.updateData(anchors);
+            double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
+            villager.getPathfinder().moveTo(target, speed);
+        }
+
+        /**
+         * 原版走不通时的升级处理（代驾模式的核心）：先问自研 A* 有没有路 ——
+         * 有路就只接管到「特殊段（梯子/宽水）之后的第一个普通格」为止
+         * （没有特殊段就只拨正几个路点），开完立刻交还；没路、或接管次数
+         * 用尽 → 按原失败口径收尾。方向盘每一刻只在一双手里，不打架。
+         */
+        private void escalateOrFail(NpcTask task, VillagerState state, Location target,
+                                    JsonObject arguments, long nowMs, double horizontal,
+                                    String failMessage) {
+            Villager villager = state.entity();
+            if (takeoverCount >= MAX_TAKEOVERS || plugin.getNavService() == null) {
+                hardFail(task, state, target, nowMs, failMessage);
+                return;
+            }
             NavService.Plan plan = plugin.getNavService().plan(state.getUniqueId(), villager.getLocation(), target);
-            if (plan == null) {
-                stop(state);
-                settleNeedFailure(state, target);
-                task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK,
-                        "自研寻路规划不出路线，剩余 " + round(horizontal) + " 格");
-                return false;
+            if (plan == null || plan.waypoints().isEmpty()) {
+                hardFail(task, state, target, nowMs, failMessage);
+                return;
             }
+            int handover = com.howard.mcai.nav.TakeoverSegments.handoverIndex(plan.cellTypes());
+            if (handover < 0) {
+                hardFail(task, state, target, nowMs, failMessage);
+                return;
+            }
+            takeoverCount++;
+            java.util.List<Location> subWaypoints = plan.waypoints().subList(0, handover + 1);
+            boolean subReached = handover == plan.waypoints().size() - 1 && plan.reached();
+            NavService.Plan subPlan = new NavService.Plan(subWaypoints, plan.doorCells(),
+                    subReached, plan.cellTypes().subList(0, handover + 1));
             if (driver != null) driver.stop();
-            driver = new NavDriver(plugin, plan);
+            driver = new NavDriver(plugin, subPlan);
+            double speed = ToolArgs.number(arguments, "speed", DEFAULT_SPEED_MULTIPLIER);
             driver.start(villager, speed);
-            return true;
+            takeoverMode = true;
+            plugin.getLogger().info("[task] npc.move_to 代驾接管(" + takeoverCount + "/" + MAX_TAKEOVERS
+                    + "): npc=" + task.npcId() + " 全程 " + plan.waypoints().size()
+                    + " 个路点，接管到第 " + (handover + 1) + " 个，剩余 " + round(horizontal) + " 格");
+        }
+
+        /** 接管也救不了（或次数用尽）：按原失败口径收尾 */
+        private void hardFail(NpcTask task, VillagerState state, Location target,
+                              long nowMs, String failMessage) {
+            stop(state);
+            settleNeedFailure(state, target);
+            task.fail(nowMs, ToolResult.ErrorCode.MOVE_STUCK, failMessage);
+            plugin.getLogger().info("[task] npc.move_to 失败收尾: npc=" + task.npcId() + " " + failMessage);
         }
 
         @Override
@@ -566,11 +584,12 @@ public final class NpcMoveToTool implements NpcTool {
 
         private void stop(VillagerState state) {
             if (state == null) return;
-            // 自研驾驶先停（v0.5.1）：不停的话循环还会继续给速度，任务完了人还在走
+            // 自研代驾先停：不停的话驾驶循环还会继续下令，任务完了人还在走
             if (driver != null) {
                 driver.stop();
                 driver = null;
             }
+            takeoverMode = false;
             Villager villager = state.entity();
             if (villager == null || !villager.isValid()) return;
 
