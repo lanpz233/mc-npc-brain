@@ -346,6 +346,19 @@ public final class PromptBuilder {
             org.bukkit.Bukkit.getLogger().warning("§c[MC-AI] shopBlock 空！职业=" + villagerState.profession() + " 名字=" + villagerState.entity().getCustomName());
         }
 
+        // --- 2.25 赠送判定结论（插件预判，2026-10-26 第 2 档提示词优化）---
+        // 好感数字门槛已撤出提示词（backpack_rules 改结论制）：这里用 GiftPolicy
+        // 同口径先判好“能不能白送”，把定性结论（档位词＋能/不能、无数字）写给
+        // 模型，模型只按结论演送/婉拒，最终裁决仍在 give_item 执行时由插件复核。
+        // 只在真有得送时出现：没有对话玩家、或背包空空（无物可送）就不塞，
+        // 免得与赠送无关的轮次白占篇幅。
+        if (nearPlayer != null && !villagerState.inventorySnapshot().isEmpty()) {
+            boolean envoy = villagerState.rank() == com.howard.mcai.security.NpcRank.ENVOY;
+            double favor = villagerState.emotion().favor(nearPlayer.getUniqueId());
+            ctx.append("\n### 赠送判定 (Gift verdict — 系统已判好，照此演)\n");
+            ctx.append(GiftBrief.brief(favor, envoy)).append("\n");
+        }
+
         // --- 2.3 Scene context（场景状态 JSON，让模型知道现在发生了什么） ---
         ctx.append("\n").append(buildSceneContext(villagerState, nearPlayer));
 
